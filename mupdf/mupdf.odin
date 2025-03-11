@@ -2,16 +2,17 @@ package mupdf
 
 import "core:c"
 
-when ODIN_OS == .Windows do foreign import libextract "Release/libextract.lib"
-when ODIN_OS == .Windows do foreign import libleptonica "Release/libleptonica.lib"
-when ODIN_OS == .Windows do foreign import libmubarcode "Release/libmubarcode.lib"
-when ODIN_OS == .Windows do foreign import libpkscs7 "Release/libpkscs7.lib"
-when ODIN_OS == .Windows do foreign import libresources "Release/libresources.lib"
-when ODIN_OS == .Windows do foreign import libtesseract "Release/libtesseract.lib"
 when ODIN_OS == .Windows do foreign import libthirdparty "Release/libthirdparty.lib"
-when ODIN_OS == .Windows do foreign import libzxing "Release/libzxing.lib"
 when ODIN_OS == .Windows do foreign import mupdf "Release/libmupdf.lib"
-// TODO: Linux import
+
+when ODIN_OS == .Linux {
+	@(require)
+	foreign import mupdf "release/libmupdf.a"
+}
+when ODIN_OS == .Linux {
+	@(require)
+	foreign import libthirdparty "release/libmupdf-third.a"
+}
 
 pdf_context :: struct {
 	alloc_context: rawptr,
