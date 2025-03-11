@@ -2,9 +2,22 @@ package main
 
 import "core:c"
 import "core:fmt"
-import "vendor:raylib"
+import "vendor:sdl3"
 
 import "mupdf"
+
+draw :: proc(renderer: ^sdl3.Renderer) {
+	sdl3.SetRenderDrawColor(renderer, 255, 255, 255, 255)
+	sdl3.RenderClear(renderer)
+	sdl3.RenderPresent(renderer)
+}
+
+filter_event :: proc "cdecl" (user_data: rawptr, event: ^sdl3.Event) -> bool {
+	if event.type == sdl3.EventType.WINDOW_RESIZED {
+		return false
+	}
+	return true
+}
 
 main :: proc() {
 	file_name: cstring = "./test.pdf"
@@ -34,29 +47,32 @@ main :: proc() {
 	samples: [^]c.char = auto_cast pix.samples
 	stride: i32 = auto_cast pix.stride
 
-	raylib.InitWindow(1600, 900, "Pdf")
-	raylib.SetTargetFPS(60)
-
-	img := raylib.Image {
-		data    = auto_cast pix.samples,
-		width   = pix.w,
-		height  = pix.h,
-		mipmaps = 1,
-		format  = raylib.PixelFormat.UNCOMPRESSED_R8G8B8,
+	if !sdl3.Init(sdl3.INIT_VIDEO) {
+		fmt.println("ERROR: ", sdl3.GetError())
 	}
-	texture := raylib.LoadTextureFromImage(img)
-	defer raylib.UnloadTexture(texture)
+	defer sdl3.Quit()
+	sdl3.SetEventFilter(filter_event, nil)
 
-
-	for !raylib.WindowShouldClose() {
-		raylib.BeginDrawing()
-		raylib.ClearBackground(raylib.RAYWHITE)
-		raylib.DrawTexture(texture, 0, 0, raylib.WHITE)
-		raylib.DrawText("Hello world", 700, 400, 20, raylib.LIGHTGRAY)
-		raylib.EndDrawing()
+	window := sdl3.CreateWindow("Pdf", 800, 600, sdl3.WINDOW_RESIZABLE)
+	if window == nil {
+		fmt.println("ERROR: ", sdl3.GetError())
 	}
+	defer sdl3.DestroyWindow(window)
+	renderer := sdl3.CreateRenderer(window, nil)
+	if renderer == nil {
+		fmt.println("ERROR: ", sdl3.GetError())
+	}
+	defer sdl3.DestroyRenderer(renderer)
+	sdl3.SetRenderVSync(renderer, sdl3.RENDERER_VSYNC_ADAPTIVE)
 
-	raylib.CloseWindow()
+	quit := false
+	event: sdl3.Event
+	for !quit {
+		for sdl3.PollEvent(&event) {
+			if event.type == sdl3.EventType.QUIT {
+				quit = true
+			}
+		}
+		draw(renderer)
+	}
 }
-
-// Compile with odin.exe run . -extra-linker-flags:"/NODEFAULTLIB:libcmt" on windows
