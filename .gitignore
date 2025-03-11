@@ -1,2 +1,4 @@
 *.exe
 build
+mupdf/Release/**/*
+mupdf/release/**/*
