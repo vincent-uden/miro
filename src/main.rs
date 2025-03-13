@@ -8,6 +8,8 @@ use clap::Parser;
 use iced::Theme;
 
 mod app;
+mod custom_serde_functions;
+mod pdf;
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]

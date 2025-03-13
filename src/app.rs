@@ -1,7 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use iced::{
-    Border, Element, Length, alignment,
+    Border, Element, Length,
+    advanced::image,
+    alignment,
     border::Radius,
     widget::{self, button, text, vertical_space},
 };
@@ -10,10 +12,15 @@ use iced_aw::{
     menu::{self, Item},
     menu_bar,
 };
+use mupdf::{Colorspace, Document, Matrix};
 use serde::{Deserialize, Serialize};
 
+use crate::pdf::PdfViewer;
+
 #[derive(Debug, Default)]
-pub struct App {}
+pub struct App {
+    img_handle: Option<image::Handle>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AppMessage {
@@ -23,6 +30,14 @@ pub enum AppMessage {
 
 impl App {
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
+        match message {
+            AppMessage::OpenFile(path_buf) => {
+                self.load_file(&path_buf);
+            }
+            AppMessage::Debug(s) => {
+                format!("[DEBUG] {s}");
+            }
+        }
         iced::Task::none()
     }
 
@@ -48,9 +63,31 @@ impl App {
             ..primary(theme, status)
         });
 
-        let c = widget::column![mb, vertical_space(),];
+        let image: Element<'_, AppMessage> = if let Some(h) = &self.img_handle {
+            PdfViewer::<image::Handle>::new(h).into()
+        } else {
+            vertical_space().into()
+        };
+
+        let c = widget::column![mb, vertical_space(), image];
 
         c.into()
+    }
+
+    fn load_file(&mut self, path: &Path) {
+        let doc = Document::open(path.to_str().unwrap()).unwrap();
+        let page = doc.load_page(0).unwrap();
+        let matrix = Matrix::default();
+        let pixmap = page
+            .to_pixmap(&matrix, &Colorspace::device_rgb(), 1.0, false)
+            .unwrap();
+        let image = pixmap.pixels().unwrap();
+        let image_data: Vec<_> = image.iter().flat_map(|&num| num.to_le_bytes()).collect();
+        self.img_handle = Some(image::Handle::from_rgba(
+            pixmap.width(),
+            pixmap.height(),
+            image_data,
+        ));
     }
 }
 
