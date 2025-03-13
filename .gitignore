@@ -5,3 +5,8 @@ mupdf/release/**/*
 *.pdf
 miro
 *.o
+
+
+# Added by cargo
+
+/target
