@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use app::App;
+use app::{App, AppMessage};
 use clap::Parser;
 use iced::Theme;
 
@@ -24,6 +24,7 @@ fn main() -> iced::Result {
     iced::application("App", App::update, App::view)
         .antialiasing(true)
         .theme(theme)
+        .subscription(App::subscription)
         .run_with(|| {
             let mut state = App::default();
             match args.path {
