@@ -5,7 +5,7 @@ use iced::{
     advanced::image,
     alignment,
     border::Radius,
-    keyboard::on_key_press,
+    keyboard::{key::Named, on_key_press},
     widget::{self, button, text, vertical_space},
 };
 use iced_aw::{Menu, menu::primary, menu_items, style::Status};
@@ -23,6 +23,7 @@ pub struct App {
     doc: Option<Document>,
     page: i32,
     img_handle: Option<image::Handle>,
+    scale: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,9 +32,18 @@ pub enum AppMessage {
     Debug(String),
     NextPage,
     PreviousPage,
+    ZoomIn,
+    ZoomOut,
+    ZoomHome,
 }
 
 impl App {
+    pub fn new() -> Self {
+        Self {
+            scale: 1.0,
+            ..Default::default()
+        }
+    }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         match message {
             AppMessage::OpenFile(path_buf) => {
@@ -61,6 +71,15 @@ impl App {
                     self.show_current_page();
                 }
             }
+            AppMessage::ZoomIn => {
+                self.scale *= 1.1;
+                self.show_current_page();
+            }
+            AppMessage::ZoomOut => {
+                self.scale /= 1.1;
+                self.show_current_page();
+            }
+            AppMessage::ZoomHome => todo!(),
         }
         iced::Task::none()
     }
@@ -88,12 +107,15 @@ impl App {
         });
 
         let image: Element<'_, AppMessage> = if let Some(h) = &self.img_handle {
-            PdfViewer::<image::Handle>::new(h).into()
+            PdfViewer::<image::Handle>::new(h)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         } else {
             vertical_space().into()
         };
 
-        let c = widget::column![mb, vertical_space(), image];
+        let c = widget::column![mb, image];
 
         c.into()
     }
@@ -107,6 +129,10 @@ impl App {
                     Some(AppMessage::PreviousPage)
                 } else if c == "j" {
                     Some(AppMessage::NextPage)
+                } else if c == "+" {
+                    Some(AppMessage::ZoomIn)
+                } else if c == "-" {
+                    Some(AppMessage::ZoomOut)
                 } else {
                     None
                 }
@@ -126,7 +152,7 @@ impl App {
         if let Some(doc) = &self.doc {
             let page = doc.load_page(self.page).unwrap();
             let mut matrix = Matrix::default();
-            matrix.scale(5.0, 5.0);
+            matrix.scale(self.scale, self.scale);
             let pixmap = page
                 .to_pixmap(&matrix, &Colorspace::device_rgb(), 1.0, false)
                 .unwrap();

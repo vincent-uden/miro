@@ -26,7 +26,7 @@ fn main() -> iced::Result {
         .theme(theme)
         .subscription(App::subscription)
         .run_with(|| {
-            let mut state = App::default();
+            let mut state = App::new();
             match args.path {
                 Some(p) => {
                     let _ = state.update(app::AppMessage::OpenFile(p));
@@ -40,3 +40,4 @@ fn main() -> iced::Result {
 pub fn theme(_: &App) -> Theme {
     Theme::TokyoNight
 }
+// TODO: Why arent the two different subscriptions working nicely togather???

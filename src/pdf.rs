@@ -26,7 +26,7 @@ impl<Handle> PdfViewer<Handle> {
             handle: handle.into(),
             width: Length::Shrink,
             height: Length::Shrink,
-            content_fit: ContentFit::Cover,
+            content_fit: ContentFit::None,
             filter_method: FilterMethod::default(),
             rotation: Rotation::default(),
             opacity: 1.0,
@@ -237,4 +237,3 @@ where
         Element::new(image)
     }
 }
-
