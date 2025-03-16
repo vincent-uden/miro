@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::custom_serde_functions::*;
 use iced::{
     Color, ContentFit, Element, Length, Point, Rectangle, Rotation, Size, Vector,
     advanced::{
@@ -13,8 +14,13 @@ use iced::{
 use mupdf::{Colorspace, Document, Matrix};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Default)]
+pub struct State {
+    pub bounds: Rectangle,
+}
+
 #[derive(Debug)]
-pub struct InnerPdfViewer<Handle = image::Handle> {
+pub struct InnerPdfViewer<'a, Handle = image::Handle> {
     handle: Handle,
     width: Length,
     height: Length,
@@ -23,11 +29,12 @@ pub struct InnerPdfViewer<Handle = image::Handle> {
     rotation: Rotation,
     opacity: f32,
     translation: Vector,
+    state: &'a State,
 }
 
-impl<Handle> InnerPdfViewer<Handle> {
+impl<'a, Handle> InnerPdfViewer<'a, Handle> {
     /// Creates a new [`Image`] with the given path.
-    pub fn new(handle: impl Into<Handle>) -> Self {
+    pub fn new(handle: impl Into<Handle>, state: &'a State) -> Self {
         InnerPdfViewer {
             handle: handle.into(),
             width: Length::Shrink,
@@ -37,6 +44,7 @@ impl<Handle> InnerPdfViewer<Handle> {
             rotation: Rotation::default(),
             opacity: 1.0,
             translation: Vector::ZERO,
+            state,
         }
     }
 
@@ -171,7 +179,7 @@ pub fn draw<Renderer, Handle>(
     renderer.with_layer(bounds, render);
 }
 
-impl<Message, Theme, Renderer, Handle> Widget<Message, Theme, Renderer> for InnerPdfViewer<Handle>
+impl<'a, Theme, Renderer, Handle> Widget<PdfMessage, Theme, Renderer> for InnerPdfViewer<'a, Handle>
 where
     Renderer: image::Renderer<Handle = Handle>,
     Handle: Clone,
@@ -219,15 +227,45 @@ where
             self.translation,
         )
     }
+
+    fn on_event(
+        &mut self,
+        _state: &mut Tree,
+        event: iced::Event,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _renderer: &Renderer,
+        _clipboard: &mut dyn iced::advanced::Clipboard,
+        shell: &mut iced::advanced::Shell<'_, PdfMessage>,
+        _viewport: &Rectangle,
+    ) -> iced::advanced::graphics::core::event::Status {
+        let bounds = layout.bounds();
+        let out = match event {
+            iced::Event::Window(event) => match event {
+                iced::window::Event::Opened {
+                    position: _,
+                    size: _,
+                } => Some(PdfMessage::UpdateBounds(bounds)),
+                iced::window::Event::Moved(_) => Some(PdfMessage::UpdateBounds(bounds)),
+                iced::window::Event::Resized(_) => Some(PdfMessage::UpdateBounds(bounds)),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(msg) = out {
+            shell.publish(msg);
+        }
+        iced::event::Status::Ignored
+    }
 }
 
-impl<'a, Message, Theme, Renderer, Handle> From<InnerPdfViewer<Handle>>
-    for Element<'a, Message, Theme, Renderer>
+impl<'a, Theme, Renderer, Handle> From<InnerPdfViewer<'a, Handle>>
+    for Element<'a, PdfMessage, Theme, Renderer>
 where
     Renderer: image::Renderer<Handle = Handle>,
     Handle: Clone + 'a,
 {
-    fn from(image: InnerPdfViewer<Handle>) -> Element<'a, Message, Theme, Renderer> {
+    fn from(image: InnerPdfViewer<'a, Handle>) -> Element<'a, PdfMessage, Theme, Renderer> {
         Element::new(image)
     }
 }
@@ -239,6 +277,8 @@ pub struct PdfViewer {
     img_handle: Option<image::Handle>,
     scale: f32,
     translation: Vector,
+    inner_state: State,
+    initial_page_size: Size,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,6 +292,11 @@ pub enum PdfMessage {
     ZoomFit,
     MoveHorizontal(f32),
     MoveVertical(f32),
+    #[serde(
+        serialize_with = "serialize_rectangle",
+        deserialize_with = "deserialize_rectangle"
+    )]
+    UpdateBounds(Rectangle),
 }
 
 impl PdfViewer {
@@ -296,13 +341,10 @@ impl PdfViewer {
                 self.show_current_page();
             }
             PdfMessage::ZoomFit => {
-                if let Some(image::Handle::Rgba {
-                    id,
-                    width,
-                    height,
-                    pixels,
-                }) = &self.img_handle
-                {}
+                let x_scale = self.inner_state.bounds.width / (self.initial_page_size.width);
+                let y_scale = self.inner_state.bounds.height / (self.initial_page_size.height);
+                self.scale = x_scale.min(y_scale);
+                self.show_current_page();
             }
             PdfMessage::MoveHorizontal(delta) => {
                 self.translation.x += delta;
@@ -313,13 +355,16 @@ impl PdfViewer {
             PdfMessage::OpenFile(path_buf) => {
                 self.load_file(&path_buf);
             }
+            PdfMessage::UpdateBounds(rectangle) => {
+                self.inner_state.bounds = rectangle;
+            }
         }
         iced::Task::none()
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         let image: Element<'_, PdfMessage> = if let Some(h) = &self.img_handle {
-            InnerPdfViewer::<image::Handle>::new(h)
+            InnerPdfViewer::<image::Handle>::new(h, &self.inner_state)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .translation(self.translation)
@@ -336,6 +381,15 @@ impl PdfViewer {
         self.doc = Some(doc);
         self.page = 0;
         self.show_current_page();
+        if let Some(image::Handle::Rgba {
+            id: _,
+            width,
+            height,
+            pixels: _,
+        }) = self.img_handle
+        {
+            self.initial_page_size = Size::new(width as f32, height as f32);
+        }
     }
 
     fn show_current_page(&mut self) {

@@ -97,10 +97,12 @@ impl App {
                         Some(AppMessage::PdfMessage(PdfMessage::MoveVertical(move_step)))
                     } else if c == "+" {
                         Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
-                    } else if c == "-" {
+                    } else if c == "-" && !modifiers.shift() {
                         Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
                     } else if c == "0" {
                         Some(AppMessage::PdfMessage(PdfMessage::ZoomHome))
+                    } else if c == "-" && modifiers.shift() {
+                        Some(AppMessage::PdfMessage(PdfMessage::ZoomFit))
                     } else if c == "h" {
                         Some(AppMessage::PdfMessage(PdfMessage::MoveHorizontal(
                             -move_step,
