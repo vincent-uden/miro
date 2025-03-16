@@ -1,109 +1,52 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use iced::{
-    Border, Element, Length, Subscription, Vector,
-    advanced::image,
-    alignment,
+    Border, Element, Length, Subscription, alignment,
     border::Radius,
-    keyboard::{Modifiers, key::Named, on_key_press},
-    widget::{self, button, text, text_input, vertical_space},
+    widget::{self, button, text, text_input},
 };
 use iced_aw::{Menu, menu::primary, menu_items, style::Status};
 use iced_aw::{
     menu::{self, Item},
     menu_bar,
 };
-use mupdf::{Colorspace, Document, Matrix};
 use serde::{Deserialize, Serialize};
 
-use crate::pdf::PdfViewer;
+use crate::pdf::{PdfMessage, PdfViewer};
 
 #[derive(Debug, Default)]
 pub struct App {
-    doc: Option<Document>,
-    page: i32,
-    img_handle: Option<image::Handle>,
-    scale: f32,
-    translation: Vector,
+    pub pdfs: Vec<PdfViewer>,
+    pub pdf_idx: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AppMessage {
     OpenFile(PathBuf),
     Debug(String),
-    NextPage,
-    PreviousPage,
-    ZoomIn,
-    ZoomOut,
-    ZoomHome,
-    ZoomFit,
-    MoveHorizontal(f32),
-    MoveVertical(f32),
+    PdfMessage(PdfMessage),
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            scale: 1.0,
+            pdfs: vec![PdfViewer::new()],
             ..Default::default()
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         match message {
-            AppMessage::OpenFile(path_buf) => {
-                self.load_file(&path_buf);
-            }
+            AppMessage::OpenFile(path_buf) => self.pdfs[self.pdf_idx]
+                .update(PdfMessage::OpenFile(path_buf))
+                .map(AppMessage::PdfMessage),
             AppMessage::Debug(s) => {
                 println!("[DEBUG] {s}");
+                iced::Task::none()
             }
-            AppMessage::NextPage => {
-                if self.page
-                    < self
-                        .doc
-                        .as_ref()
-                        .map(|d| d.page_count().unwrap_or(0))
-                        .unwrap_or(0)
-                        - 1
-                {
-                    self.page += 1;
-                    self.show_current_page();
-                }
-            }
-            AppMessage::PreviousPage => {
-                if self.page > 0 {
-                    self.page -= 1;
-                    self.show_current_page();
-                }
-            }
-            AppMessage::ZoomIn => {
-                self.scale *= 1.1;
-                self.show_current_page();
-            }
-            AppMessage::ZoomOut => {
-                self.scale /= 1.1;
-                self.show_current_page();
-            }
-            AppMessage::ZoomHome => {
-                self.scale = 1.0;
-                self.show_current_page();
-            }
-            AppMessage::ZoomFit => {
-                if let Some(image::Handle::Rgba {
-                    id,
-                    width,
-                    height,
-                    pixels,
-                }) = &self.img_handle
-                {}
-            }
-            AppMessage::MoveHorizontal(delta) => {
-                self.translation.x += delta;
-            }
-            AppMessage::MoveVertical(delta) => {
-                self.translation.y += delta;
-            }
+            AppMessage::PdfMessage(msg) => self.pdfs[self.pdf_idx]
+                .update(msg)
+                .map(AppMessage::PdfMessage),
         }
-        iced::Task::none()
     }
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
@@ -128,15 +71,7 @@ impl App {
             ..primary(theme, status)
         });
 
-        let image: Element<'_, AppMessage> = if let Some(h) = &self.img_handle {
-            PdfViewer::<image::Handle>::new(h)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .translation(self.translation)
-                .into()
-        } else {
-            vertical_space().into()
-        };
+        let image = self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage);
 
         let command_bar = text_input(":", "").width(Length::Fill);
 
@@ -153,23 +88,27 @@ impl App {
             match key {
                 key::Key::Character(c) => {
                     if c == "k" && modifiers.shift() {
-                        Some(AppMessage::PreviousPage)
+                        Some(AppMessage::PdfMessage(PdfMessage::PreviousPage))
                     } else if c == "k" && !modifiers.shift() {
-                        Some(AppMessage::MoveVertical(-move_step))
+                        Some(AppMessage::PdfMessage(PdfMessage::MoveVertical(-move_step)))
                     } else if c == "j" && modifiers.shift() {
-                        Some(AppMessage::NextPage)
+                        Some(AppMessage::PdfMessage(PdfMessage::NextPage))
                     } else if c == "j" && !modifiers.shift() {
-                        Some(AppMessage::MoveVertical(move_step))
+                        Some(AppMessage::PdfMessage(PdfMessage::MoveVertical(move_step)))
                     } else if c == "+" {
-                        Some(AppMessage::ZoomIn)
+                        Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
                     } else if c == "-" {
-                        Some(AppMessage::ZoomOut)
+                        Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
                     } else if c == "0" {
-                        Some(AppMessage::ZoomHome)
+                        Some(AppMessage::PdfMessage(PdfMessage::ZoomHome))
                     } else if c == "h" {
-                        Some(AppMessage::MoveHorizontal(-move_step))
+                        Some(AppMessage::PdfMessage(PdfMessage::MoveHorizontal(
+                            -move_step,
+                        )))
                     } else if c == "l" {
-                        Some(AppMessage::MoveHorizontal(move_step))
+                        Some(AppMessage::PdfMessage(PdfMessage::MoveHorizontal(
+                            move_step,
+                        )))
                     } else {
                         None
                     }
@@ -177,31 +116,6 @@ impl App {
                 _ => None,
             }
         })
-    }
-
-    fn load_file(&mut self, path: &Path) {
-        let doc = Document::open(path.to_str().unwrap()).unwrap();
-        self.doc = Some(doc);
-        self.page = 0;
-        self.show_current_page();
-    }
-
-    fn show_current_page(&mut self) {
-        if let Some(doc) = &self.doc {
-            let page = doc.load_page(self.page).unwrap();
-            let mut matrix = Matrix::default();
-            matrix.scale(self.scale, self.scale);
-            let pixmap = page
-                .to_pixmap(&matrix, &Colorspace::device_rgb(), 1.0, false)
-                .unwrap();
-            let mut image_data = pixmap.samples().to_vec();
-            image_data.clone_from_slice(pixmap.samples());
-            self.img_handle = Some(image::Handle::from_rgba(
-                pixmap.width(),
-                pixmap.height(),
-                image_data,
-            ));
-        }
     }
 }
 

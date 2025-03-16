@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use iced::{
     Color, ContentFit, Element, Length, Point, Rectangle, Rotation, Size, Vector,
     advanced::{
@@ -6,10 +8,13 @@ use iced::{
         layout, mouse, renderer,
         widget::Tree,
     },
+    widget::vertical_space,
 };
+use mupdf::{Colorspace, Document, Matrix};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
-pub struct PdfViewer<Handle = image::Handle> {
+pub struct InnerPdfViewer<Handle = image::Handle> {
     handle: Handle,
     width: Length,
     height: Length,
@@ -20,10 +25,10 @@ pub struct PdfViewer<Handle = image::Handle> {
     translation: Vector,
 }
 
-impl<Handle> PdfViewer<Handle> {
+impl<Handle> InnerPdfViewer<Handle> {
     /// Creates a new [`Image`] with the given path.
     pub fn new(handle: impl Into<Handle>) -> Self {
-        PdfViewer {
+        InnerPdfViewer {
             handle: handle.into(),
             width: Length::Shrink,
             height: Length::Shrink,
@@ -166,7 +171,7 @@ pub fn draw<Renderer, Handle>(
     renderer.with_layer(bounds, render);
 }
 
-impl<Message, Theme, Renderer, Handle> Widget<Message, Theme, Renderer> for PdfViewer<Handle>
+impl<Message, Theme, Renderer, Handle> Widget<Message, Theme, Renderer> for InnerPdfViewer<Handle>
 where
     Renderer: image::Renderer<Handle = Handle>,
     Handle: Clone,
@@ -216,13 +221,138 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer, Handle> From<PdfViewer<Handle>>
+impl<'a, Message, Theme, Renderer, Handle> From<InnerPdfViewer<Handle>>
     for Element<'a, Message, Theme, Renderer>
 where
     Renderer: image::Renderer<Handle = Handle>,
     Handle: Clone + 'a,
 {
-    fn from(image: PdfViewer<Handle>) -> Element<'a, Message, Theme, Renderer> {
+    fn from(image: InnerPdfViewer<Handle>) -> Element<'a, Message, Theme, Renderer> {
         Element::new(image)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct PdfViewer {
+    doc: Option<Document>,
+    page: i32,
+    img_handle: Option<image::Handle>,
+    scale: f32,
+    translation: Vector,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PdfMessage {
+    OpenFile(PathBuf),
+    NextPage,
+    PreviousPage,
+    ZoomIn,
+    ZoomOut,
+    ZoomHome,
+    ZoomFit,
+    MoveHorizontal(f32),
+    MoveVertical(f32),
+}
+
+impl PdfViewer {
+    pub fn new() -> Self {
+        Self {
+            scale: 1.0,
+            ..Default::default()
+        }
+    }
+
+    pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
+        match message {
+            PdfMessage::NextPage => {
+                if self.page
+                    < self
+                        .doc
+                        .as_ref()
+                        .map(|d| d.page_count().unwrap_or(0))
+                        .unwrap_or(0)
+                        - 1
+                {
+                    self.page += 1;
+                    self.show_current_page();
+                }
+            }
+            PdfMessage::PreviousPage => {
+                if self.page > 0 {
+                    self.page -= 1;
+                    self.show_current_page();
+                }
+            }
+            PdfMessage::ZoomIn => {
+                self.scale *= 1.1;
+                self.show_current_page();
+            }
+            PdfMessage::ZoomOut => {
+                self.scale /= 1.1;
+                self.show_current_page();
+            }
+            PdfMessage::ZoomHome => {
+                self.scale = 1.0;
+                self.show_current_page();
+            }
+            PdfMessage::ZoomFit => {
+                if let Some(image::Handle::Rgba {
+                    id,
+                    width,
+                    height,
+                    pixels,
+                }) = &self.img_handle
+                {}
+            }
+            PdfMessage::MoveHorizontal(delta) => {
+                self.translation.x += delta;
+            }
+            PdfMessage::MoveVertical(delta) => {
+                self.translation.y += delta;
+            }
+            PdfMessage::OpenFile(path_buf) => {
+                self.load_file(&path_buf);
+            }
+        }
+        iced::Task::none()
+    }
+
+    pub fn view(&self) -> iced::Element<'_, PdfMessage> {
+        let image: Element<'_, PdfMessage> = if let Some(h) = &self.img_handle {
+            InnerPdfViewer::<image::Handle>::new(h)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .translation(self.translation)
+                .into()
+        } else {
+            vertical_space().into()
+        };
+        image
+    }
+
+    fn load_file(&mut self, path: &Path) {
+        println!("Opening file");
+        let doc = Document::open(path.to_str().unwrap()).unwrap();
+        self.doc = Some(doc);
+        self.page = 0;
+        self.show_current_page();
+    }
+
+    fn show_current_page(&mut self) {
+        if let Some(doc) = &self.doc {
+            let page = doc.load_page(self.page).unwrap();
+            let mut matrix = Matrix::default();
+            matrix.scale(self.scale, self.scale);
+            let pixmap = page
+                .to_pixmap(&matrix, &Colorspace::device_rgb(), 1.0, false)
+                .unwrap();
+            let mut image_data = pixmap.samples().to_vec();
+            image_data.clone_from_slice(pixmap.samples());
+            self.img_handle = Some(image::Handle::from_rgba(
+                pixmap.width(),
+                pixmap.height(),
+                image_data,
+            ));
+        }
     }
 }
