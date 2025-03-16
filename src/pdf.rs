@@ -390,7 +390,11 @@ impl PdfViewer {
         {
             self.initial_page_size = Size::new(width as f32, height as f32);
         }
-        self.name = path.to_string_lossy().to_string();
+        self.name = path
+            .file_name()
+            .expect("The pdf must have a file name")
+            .to_string_lossy()
+            .to_string();
     }
 
     fn show_current_page(&mut self) {

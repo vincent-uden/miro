@@ -1,15 +1,20 @@
 use std::path::PathBuf;
 
 use iced::{
-    Border, Element, Length, Subscription, alignment,
-    border::Radius,
-    widget::{self, button, container, scrollable, text, text_input},
+    Background, Border, Element, Length, Shadow, Subscription, Theme, alignment,
+    border::{self, Radius},
+    theme::palette,
+    widget::{
+        self, button, container, scrollable, text, text::IntoFragment, text_input, vertical_space,
+    },
 };
-use iced_aw::{Menu, menu::primary, menu_items, style::Status};
+use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
 use iced_aw::{
     menu::{self, Item},
     menu_bar,
 };
+use iced_fonts::required::{RequiredIcons, icon_to_string};
+use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 
 use crate::pdf::{PdfMessage, PdfViewer};
@@ -23,23 +28,34 @@ pub struct App {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AppMessage {
     OpenFile(PathBuf),
+    OpenNewFile,
     Debug(String),
     PdfMessage(PdfMessage),
     OpenTab(usize),
+    CloseTab(usize),
+    PreviousTab,
+    NextTab,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            pdfs: vec![PdfViewer::new()],
+            pdfs: vec![],
             ..Default::default()
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         match message {
-            AppMessage::OpenFile(path_buf) => self.pdfs[self.pdf_idx]
-                .update(PdfMessage::OpenFile(path_buf))
-                .map(AppMessage::PdfMessage),
+            AppMessage::OpenFile(path_buf) => {
+                if self.pdfs.is_empty() {
+                    self.pdfs.push(PdfViewer::new());
+                    self.pdf_idx = 0;
+                }
+                let out = self.pdfs[self.pdf_idx]
+                    .update(PdfMessage::OpenFile(path_buf))
+                    .map(AppMessage::PdfMessage);
+                out
+            }
             AppMessage::Debug(s) => {
                 println!("[DEBUG] {s}");
                 iced::Task::none()
@@ -49,6 +65,30 @@ impl App {
                 .map(AppMessage::PdfMessage),
             AppMessage::OpenTab(i) => {
                 self.pdf_idx = i;
+                iced::Task::none()
+            }
+            AppMessage::OpenNewFile => {
+                if let Some(path_buf) = FileDialog::new().add_filter("Pdf", &["pdf"]).pick_file() {
+                    self.pdfs.push(PdfViewer::new());
+                    self.pdf_idx = self.pdfs.len() - 1;
+                    iced::Task::done(AppMessage::OpenFile(path_buf))
+                } else {
+                    iced::Task::none()
+                }
+            }
+            AppMessage::CloseTab(i) => {
+                self.pdfs.remove(i);
+                if self.pdf_idx >= self.pdfs.len() {
+                    self.pdf_idx = self.pdfs.len() - 1;
+                }
+                iced::Task::none()
+            }
+            AppMessage::PreviousTab => {
+                self.pdf_idx = (self.pdf_idx - 1).max(0);
+                iced::Task::none()
+            }
+            AppMessage::NextTab => {
+                self.pdf_idx = (self.pdf_idx + 1).min(self.pdfs.len() - 1);
                 iced::Task::none()
             }
         }
@@ -61,14 +101,14 @@ impl App {
         let mb = menu_bar!(
             (debug_button_s("File"), menu_tpl_1(menu_items!(
                 (debug_button("New"))
-                (debug_button("Open"))
+                (menu_button("Open", AppMessage::OpenNewFile))
             )))
             (debug_button_s("Edit"), menu_tpl_1(menu_items!(
                 (debug_button("Undo"))
                 (debug_button("Redo"))
             )))
         ).draw_path(menu::DrawPath::Backdrop)
-            .style(|theme:&iced::Theme, status: Status | menu::Style{
+            .style(|theme:&iced::Theme, status: iced_aw::style::Status| menu::Style{
             path_border: Border{
                 radius: Radius::new(6.0),
                 ..Default::default()
@@ -76,12 +116,25 @@ impl App {
             ..primary(theme, status)
         });
 
-        let image = self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage);
+        let image: Element<'_, AppMessage> = if !self.pdfs.is_empty() {
+            self.pdfs[self.pdf_idx]
+                .view()
+                .map(AppMessage::PdfMessage)
+                .into()
+        } else {
+            vertical_space().into()
+        };
 
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
-            command_bar = command_bar.push(labeled_button(&pdf.name, AppMessage::OpenTab(i)));
+            command_bar = command_bar.push(file_tab(
+                &pdf.name,
+                AppMessage::OpenTab(i),
+                AppMessage::CloseTab(i),
+                i == self.pdf_idx,
+            ));
         }
+        command_bar = command_bar.spacing(4.0);
         let tabs = scrollable(command_bar);
 
         let c = widget::column![mb, image, tabs];
@@ -112,14 +165,18 @@ impl App {
                         Some(AppMessage::PdfMessage(PdfMessage::ZoomHome))
                     } else if c == "-" && modifiers.shift() {
                         Some(AppMessage::PdfMessage(PdfMessage::ZoomFit))
-                    } else if c == "h" {
+                    } else if c == "h" && !modifiers.shift() {
                         Some(AppMessage::PdfMessage(PdfMessage::MoveHorizontal(
                             -move_step,
                         )))
-                    } else if c == "l" {
+                    } else if c == "h" && modifiers.shift() {
+                        Some(AppMessage::PreviousTab)
+                    } else if c == "l" && !modifiers.shift() {
                         Some(AppMessage::PdfMessage(PdfMessage::MoveHorizontal(
                             move_step,
                         )))
+                    } else if c == "l" && modifiers.shift() {
+                        Some(AppMessage::NextTab)
                     } else {
                         None
                     }
@@ -153,4 +210,84 @@ fn debug_button(label: &str) -> button::Button<AppMessage, iced::Theme, iced::Re
 
 fn debug_button_s(label: &str) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
     labeled_button(label, AppMessage::Debug(label.into())).width(Length::Shrink)
+}
+
+fn menu_button(
+    label: &str,
+    msg: AppMessage,
+) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
+    base_button(text(label), msg).width(Length::Fill)
+}
+
+fn file_tab(
+    label: &str,
+    on_press: AppMessage,
+    on_close: AppMessage,
+    is_open: bool,
+) -> Element<'_, AppMessage> {
+    container(
+        widget::row![
+            labeled_button(label, on_press).style(file_tab_style),
+            // TODO: Fix alignment on the x, it doesnt look great next to the text
+            base_button(
+                text(icon_to_string(RequiredIcons::X))
+                    .align_y(alignment::Vertical::Bottom)
+                    .font(REQUIRED_FONT),
+                on_close
+            )
+            .style(file_tab_style),
+        ]
+        .spacing(2.0),
+    )
+    .style(move |theme| {
+        let palette = theme.extended_palette();
+        let pair = if is_open {
+            palette.secondary.strong
+        } else {
+            palette.secondary.base
+        };
+        container::Style {
+            text_color: Some(pair.text),
+            background: Some(Background::Color(pair.color)),
+            border: border::rounded(border::top(4)),
+            shadow: Shadow::default(),
+        }
+    })
+    .into()
+}
+
+pub fn file_tab_style(theme: &Theme, status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    let base = styled(palette.secondary.base);
+
+    match status {
+        button::Status::Active | button::Status::Pressed => button::Style {
+            background: None,
+            ..base
+        },
+        button::Status::Hovered => button::Style {
+            background: None,
+            ..base
+        },
+        button::Status::Disabled => disabled(base),
+    }
+}
+
+fn styled(pair: palette::Pair) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(pair.color)),
+        text_color: pair.text,
+        border: border::rounded(2),
+        ..button::Style::default()
+    }
+}
+
+fn disabled(style: button::Style) -> button::Style {
+    button::Style {
+        background: style
+            .background
+            .map(|background| background.scale_alpha(0.5)),
+        text_color: style.text_color.scale_alpha(0.5),
+        ..style
+    }
 }

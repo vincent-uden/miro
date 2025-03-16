@@ -24,6 +24,7 @@ fn main() -> iced::Result {
     iced::application("App", App::update, App::view)
         .antialiasing(true)
         .theme(theme)
+        .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
         .run_with(|| {
             let mut state = App::new();
@@ -38,6 +39,6 @@ fn main() -> iced::Result {
 }
 
 pub fn theme(_: &App) -> Theme {
-    Theme::Dark
+    Theme::TokyoNight
 }
 // TODO: Why arent the two different subscriptions working nicely togather???
