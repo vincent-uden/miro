@@ -38,6 +38,6 @@ fn main() -> iced::Result {
 }
 
 pub fn theme(_: &App) -> Theme {
-    Theme::TokyoNight
+    Theme::Dark
 }
 // TODO: Why arent the two different subscriptions working nicely togather???

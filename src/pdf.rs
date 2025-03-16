@@ -1,5 +1,5 @@
 use iced::{
-    ContentFit, Element, Length, Point, Rectangle, Rotation, Size, Vector,
+    Color, ContentFit, Element, Length, Point, Rectangle, Rotation, Size, Vector,
     advanced::{
         Layout, Widget,
         image::{self, FilterMethod},
@@ -17,6 +17,7 @@ pub struct PdfViewer<Handle = image::Handle> {
     filter_method: FilterMethod,
     rotation: Rotation,
     opacity: f32,
+    translation: Vector,
 }
 
 impl<Handle> PdfViewer<Handle> {
@@ -30,6 +31,7 @@ impl<Handle> PdfViewer<Handle> {
             filter_method: FilterMethod::default(),
             rotation: Rotation::default(),
             opacity: 1.0,
+            translation: Vector::ZERO,
         }
     }
 
@@ -71,6 +73,11 @@ impl<Handle> PdfViewer<Handle> {
     /// and `1.0` meaning completely opaque.
     pub fn opacity(mut self, opacity: impl Into<f32>) -> Self {
         self.opacity = opacity.into();
+        self
+    }
+
+    pub fn translation(mut self, translation: Vector) -> Self {
+        self.translation = translation;
         self
     }
 }
@@ -121,38 +128,25 @@ pub fn draw<Renderer, Handle>(
     renderer: &mut Renderer,
     layout: Layout<'_>,
     handle: &Handle,
-    content_fit: ContentFit,
     filter_method: FilterMethod,
-    rotation: Rotation,
     opacity: f32,
+    translation: Vector,
 ) where
     Renderer: image::Renderer<Handle = Handle>,
     Handle: Clone,
 {
     let Size { width, height } = renderer.measure_image(handle);
     let image_size = Size::new(width as f32, height as f32);
-    let rotated_size = rotation.apply(image_size);
 
     let bounds = layout.bounds();
-    let adjusted_fit = content_fit.fit(rotated_size, bounds.size());
+    let final_size = image_size;
 
-    let scale = Vector::new(
-        adjusted_fit.width / rotated_size.width,
-        adjusted_fit.height / rotated_size.height,
+    let mut position = Point::new(
+        (bounds.width - image_size.width) / 2.0,
+        (bounds.height - image_size.height) / 2.0,
     );
-
-    let final_size = image_size * scale;
-
-    let position = match content_fit {
-        ContentFit::None => Point::new(
-            bounds.x + (rotated_size.width - adjusted_fit.width) / 2.0,
-            bounds.y + (rotated_size.height - adjusted_fit.height) / 2.0,
-        ),
-        _ => Point::new(
-            bounds.center_x() - final_size.width / 2.0,
-            bounds.center_y() - final_size.height / 2.0,
-        ),
-    };
+    position.x -= translation.x;
+    position.y -= translation.y;
 
     let drawing_bounds = Rectangle::new(position, final_size);
 
@@ -161,7 +155,7 @@ pub fn draw<Renderer, Handle>(
             image::Image {
                 handle: handle.clone(),
                 filter_method,
-                rotation: rotation.radians(),
+                rotation: iced::Radians::from(0.0),
                 opacity,
                 snap: true,
             },
@@ -169,11 +163,7 @@ pub fn draw<Renderer, Handle>(
         );
     };
 
-    if adjusted_fit.width > bounds.width || adjusted_fit.height > bounds.height {
-        renderer.with_layer(bounds, render);
-    } else {
-        render(renderer);
-    }
+    renderer.with_layer(bounds, render);
 }
 
 impl<Message, Theme, Renderer, Handle> Widget<Message, Theme, Renderer> for PdfViewer<Handle>
@@ -219,11 +209,10 @@ where
             renderer,
             layout,
             &self.handle,
-            self.content_fit,
             self.filter_method,
-            self.rotation,
             self.opacity,
-        );
+            self.translation,
+        )
     }
 }
 

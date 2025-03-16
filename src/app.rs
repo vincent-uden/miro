@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use iced::{
-    Border, Element, Length, Subscription,
+    Border, Element, Length, Subscription, Vector,
     advanced::image,
     alignment,
     border::Radius,
-    keyboard::{key::Named, on_key_press},
-    widget::{self, button, text, vertical_space},
+    keyboard::{Modifiers, key::Named, on_key_press},
+    widget::{self, button, text, text_input, vertical_space},
 };
 use iced_aw::{Menu, menu::primary, menu_items, style::Status};
 use iced_aw::{
@@ -24,6 +24,7 @@ pub struct App {
     page: i32,
     img_handle: Option<image::Handle>,
     scale: f32,
+    translation: Vector,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +36,9 @@ pub enum AppMessage {
     ZoomIn,
     ZoomOut,
     ZoomHome,
+    ZoomFit,
+    MoveHorizontal(f32),
+    MoveVertical(f32),
 }
 
 impl App {
@@ -79,7 +83,25 @@ impl App {
                 self.scale /= 1.1;
                 self.show_current_page();
             }
-            AppMessage::ZoomHome => todo!(),
+            AppMessage::ZoomHome => {
+                self.scale = 1.0;
+                self.show_current_page();
+            }
+            AppMessage::ZoomFit => {
+                if let Some(image::Handle::Rgba {
+                    id,
+                    width,
+                    height,
+                    pixels,
+                }) = &self.img_handle
+                {}
+            }
+            AppMessage::MoveHorizontal(delta) => {
+                self.translation.x += delta;
+            }
+            AppMessage::MoveVertical(delta) => {
+                self.translation.y += delta;
+            }
         }
         iced::Task::none()
     }
@@ -110,12 +132,15 @@ impl App {
             PdfViewer::<image::Handle>::new(h)
                 .width(Length::Fill)
                 .height(Length::Fill)
+                .translation(self.translation)
                 .into()
         } else {
             vertical_space().into()
         };
 
-        let c = widget::column![mb, image];
+        let command_bar = text_input(":", "").width(Length::Fill);
+
+        let c = widget::column![mb, image, command_bar];
 
         c.into()
     }
@@ -123,21 +148,34 @@ impl App {
     pub fn subscription(&self) -> Subscription<AppMessage> {
         use iced::keyboard::{self, key};
 
-        keyboard::on_key_press(|key, modifiers| match (key, modifiers) {
-            (key::Key::Character(c), _) => {
-                if c == "k" {
-                    Some(AppMessage::PreviousPage)
-                } else if c == "j" {
-                    Some(AppMessage::NextPage)
-                } else if c == "+" {
-                    Some(AppMessage::ZoomIn)
-                } else if c == "-" {
-                    Some(AppMessage::ZoomOut)
-                } else {
-                    None
+        keyboard::on_key_press(|key, modifiers| {
+            let move_step = 20.0;
+            match key {
+                key::Key::Character(c) => {
+                    if c == "k" && modifiers.shift() {
+                        Some(AppMessage::PreviousPage)
+                    } else if c == "k" && !modifiers.shift() {
+                        Some(AppMessage::MoveVertical(-move_step))
+                    } else if c == "j" && modifiers.shift() {
+                        Some(AppMessage::NextPage)
+                    } else if c == "j" && !modifiers.shift() {
+                        Some(AppMessage::MoveVertical(move_step))
+                    } else if c == "+" {
+                        Some(AppMessage::ZoomIn)
+                    } else if c == "-" {
+                        Some(AppMessage::ZoomOut)
+                    } else if c == "0" {
+                        Some(AppMessage::ZoomHome)
+                    } else if c == "h" {
+                        Some(AppMessage::MoveHorizontal(-move_step))
+                    } else if c == "l" {
+                        Some(AppMessage::MoveHorizontal(move_step))
+                    } else {
+                        None
+                    }
                 }
+                _ => None,
             }
-            _ => None,
         })
     }
 
