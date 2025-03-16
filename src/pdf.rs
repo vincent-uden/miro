@@ -155,8 +155,8 @@ pub fn draw<Renderer, Handle>(
     let final_size = image_size;
 
     let mut position = Point::new(
-        (bounds.width - image_size.width) / 2.0,
-        (bounds.height - image_size.height) / 2.0,
+        bounds.x + (bounds.width - image_size.width) / 2.0,
+        bounds.y + (bounds.height - image_size.height) / 2.0,
     );
     position.x -= translation.x;
     position.y -= translation.y;
@@ -272,6 +272,7 @@ where
 
 #[derive(Debug, Default)]
 pub struct PdfViewer {
+    pub name: String,
     doc: Option<Document>,
     page: i32,
     img_handle: Option<image::Handle>,
@@ -376,7 +377,6 @@ impl PdfViewer {
     }
 
     fn load_file(&mut self, path: &Path) {
-        println!("Opening file");
         let doc = Document::open(path.to_str().unwrap()).unwrap();
         self.doc = Some(doc);
         self.page = 0;
@@ -390,6 +390,7 @@ impl PdfViewer {
         {
             self.initial_page_size = Size::new(width as f32, height as f32);
         }
+        self.name = path.to_string_lossy().to_string();
     }
 
     fn show_current_page(&mut self) {

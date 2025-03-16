@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use iced::{
     Border, Element, Length, Subscription, alignment,
     border::Radius,
-    widget::{self, button, text, text_input},
+    widget::{self, button, container, scrollable, text, text_input},
 };
 use iced_aw::{Menu, menu::primary, menu_items, style::Status};
 use iced_aw::{
@@ -25,6 +25,7 @@ pub enum AppMessage {
     OpenFile(PathBuf),
     Debug(String),
     PdfMessage(PdfMessage),
+    OpenTab(usize),
 }
 
 impl App {
@@ -46,6 +47,10 @@ impl App {
             AppMessage::PdfMessage(msg) => self.pdfs[self.pdf_idx]
                 .update(msg)
                 .map(AppMessage::PdfMessage),
+            AppMessage::OpenTab(i) => {
+                self.pdf_idx = i;
+                iced::Task::none()
+            }
         }
     }
 
@@ -73,9 +78,13 @@ impl App {
 
         let image = self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage);
 
-        let command_bar = text_input(":", "").width(Length::Fill);
+        let mut command_bar = widget::Row::new();
+        for (i, pdf) in self.pdfs.iter().enumerate() {
+            command_bar = command_bar.push(labeled_button(&pdf.name, AppMessage::OpenTab(i)));
+        }
+        let tabs = scrollable(command_bar);
 
-        let c = widget::column![mb, image, command_bar];
+        let c = widget::column![mb, image, tabs];
 
         c.into()
     }
