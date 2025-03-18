@@ -4,9 +4,7 @@ use iced::{
     Background, Border, Element, Length, Shadow, Subscription, Theme, alignment,
     border::{self, Radius},
     theme::palette,
-    widget::{
-        self, button, container, scrollable, text, text::IntoFragment, text_input, vertical_space,
-    },
+    widget::{self, button, container, scrollable, text, vertical_space},
 };
 use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
 use iced_aw::{
@@ -17,7 +15,10 @@ use iced_fonts::required::{RequiredIcons, icon_to_string};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 
-use crate::pdf::{PdfMessage, PdfViewer};
+use crate::{
+    APP_KEYMAP,
+    pdf::{PdfMessage, PdfViewer},
+};
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -143,46 +144,10 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
-        use iced::keyboard::{self, key};
-
+        use iced::keyboard::{self};
         keyboard::on_key_press(|key, modifiers| {
-            let move_step = 20.0;
-            match key {
-                key::Key::Character(c) => {
-                    if c == "k" && modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::PreviousPage))
-                    } else if c == "k" && !modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::MoveVertical(-move_step)))
-                    } else if c == "j" && modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::NextPage))
-                    } else if c == "j" && !modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::MoveVertical(move_step)))
-                    } else if c == "+" {
-                        Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
-                    } else if c == "-" && !modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
-                    } else if c == "0" {
-                        Some(AppMessage::PdfMessage(PdfMessage::ZoomHome))
-                    } else if c == "-" && modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::ZoomFit))
-                    } else if c == "h" && !modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::MoveHorizontal(
-                            -move_step,
-                        )))
-                    } else if c == "h" && modifiers.shift() {
-                        Some(AppMessage::PreviousTab)
-                    } else if c == "l" && !modifiers.shift() {
-                        Some(AppMessage::PdfMessage(PdfMessage::MoveHorizontal(
-                            move_step,
-                        )))
-                    } else if c == "l" && modifiers.shift() {
-                        Some(AppMessage::NextTab)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
+            let key_map = APP_KEYMAP.read().unwrap();
+            key_map.event(key, modifiers)
         })
     }
 }

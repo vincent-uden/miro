@@ -1,15 +1,23 @@
 // Widgets to use from iced-aw
 // - Menu (File -> Open/Save and so on)
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{LazyLock, RwLock},
+};
 
 use app::{App, AppMessage};
 use clap::Parser;
 use iced::Theme;
+use keymap::KeyMap;
 
 mod app;
 mod custom_serde_functions;
+mod keymap;
 mod pdf;
+
+static APP_KEYMAP: LazyLock<RwLock<KeyMap<AppMessage>>> =
+    LazyLock::new(|| KeyMap::<AppMessage>::default().into());
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]
@@ -41,4 +49,3 @@ fn main() -> iced::Result {
 pub fn theme(_: &App) -> Theme {
     Theme::TokyoNight
 }
-// TODO: Why arent the two different subscriptions working nicely togather???
