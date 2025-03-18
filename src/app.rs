@@ -1,10 +1,14 @@
 use std::path::PathBuf;
 
 use iced::{
-    Background, Border, Element, Length, Shadow, Subscription, Theme, alignment,
+    Background, Border, Element, Length, Padding, Shadow, Subscription, Theme, alignment,
     border::{self, Radius},
     theme::palette,
-    widget::{self, button, container, scrollable, text, vertical_space},
+    widget::{
+        self, button, container, scrollable,
+        scrollable::{Direction, Scrollbar},
+        text, vertical_space,
+    },
 };
 use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
 use iced_aw::{
@@ -101,12 +105,8 @@ impl App {
         #[rustfmt::skip]
         let mb = menu_bar!(
             (debug_button_s("File"), menu_tpl_1(menu_items!(
-                (debug_button("New"))
                 (menu_button("Open", AppMessage::OpenNewFile))
-            )))
-            (debug_button_s("Edit"), menu_tpl_1(menu_items!(
-                (debug_button("Undo"))
-                (debug_button("Redo"))
+                (menu_button("Close", AppMessage::CloseTab(self.pdf_idx)))
             )))
         ).draw_path(menu::DrawPath::Backdrop)
             .style(|theme:&iced::Theme, status: iced_aw::style::Status| menu::Style{
@@ -135,8 +135,10 @@ impl App {
                 i == self.pdf_idx,
             ));
         }
-        command_bar = command_bar.spacing(4.0);
-        let tabs = scrollable(command_bar);
+        command_bar = command_bar.spacing(4.0).height(Length::Shrink);
+        let tabs = scrollable(command_bar).direction(Direction::Horizontal(
+            Scrollbar::default().scroller_width(0.0).width(0.0),
+        ));
 
         let c = widget::column![mb, image, tabs];
 
