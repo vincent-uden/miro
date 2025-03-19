@@ -27,7 +27,7 @@ pub fn file_watcher() -> impl Stream<Item = WatchNotification> {
 
         let (mut debouncer, mut file_events) = AsyncDebouncer::new_with_channel(
             Duration::from_millis(200),
-            Some(Duration::from_secs(200)),
+            Some(Duration::from_millis(200)),
         )
         .await
         .unwrap();

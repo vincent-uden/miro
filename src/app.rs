@@ -132,21 +132,41 @@ impl App {
     }
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
-        let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(5.0);
+        let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
 
-        #[rustfmt::skip]
-        let mb = menu_bar!(
-            (debug_button_s("File"), menu_tpl_1(menu_items!(
-                (menu_button("Open", AppMessage::OpenNewFileFinder))
-                (menu_button("Close", AppMessage::CloseTab(self.pdf_idx)))
-            )))
-        ).draw_path(menu::DrawPath::Backdrop)
-            .style(|theme:&iced::Theme, status: iced_aw::style::Status| menu::Style{
-            path_border: Border{
-                radius: Radius::new(6.0),
-                ..Default::default()
-            },
-            ..primary(theme, status)
+        let mb = container(
+            menu_bar!((
+                debug_button_s("File"),
+                menu_tpl_1(menu_items!((menu_button(
+                    "Open",
+                    AppMessage::OpenNewFileFinder
+                ))(menu_button(
+                    "Close",
+                    AppMessage::CloseTab(self.pdf_idx)
+                ))))
+            ))
+            .draw_path(menu::DrawPath::Backdrop)
+            .style(
+                |theme: &iced::Theme, status: iced_aw::style::Status| menu::Style {
+                    menu_background_expand: 0.0.into(),
+                    bar_background_expand: 0.0.into(),
+                    bar_background: Background::Color(
+                        theme.extended_palette().secondary.base.color,
+                    ),
+                    menu_border: Border {
+                        radius: Radius::new(0.0),
+                        ..Default::default()
+                    },
+                    ..primary(theme, status)
+                },
+            ),
+        )
+        .width(Length::Fill)
+        .style(|theme| container::Style {
+            background: Some(Background::Color(
+                theme.extended_palette().secondary.base.color,
+            )),
+            ..Default::default()
         });
 
         let image: Element<'_, AppMessage> = if !self.pdfs.is_empty() {
@@ -213,14 +233,45 @@ fn debug_button(label: &str) -> button::Button<AppMessage, iced::Theme, iced::Re
 }
 
 fn debug_button_s(label: &str) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
-    labeled_button(label, AppMessage::Debug(label.into())).width(Length::Shrink)
+    labeled_button(label, AppMessage::Debug(label.into()))
+        .width(Length::Shrink)
+        .style(move |theme, status| {
+            let palette = theme.extended_palette();
+            let pair = match status {
+                button::Status::Active => palette.secondary.base,
+                button::Status::Hovered => palette.secondary.weak,
+                button::Status::Pressed => palette.secondary.strong,
+                button::Status::Disabled => palette.secondary.weak,
+            };
+            button::Style {
+                text_color: pair.text,
+                background: Some(Background::Color(pair.color)),
+                ..Default::default()
+            }
+        })
 }
 
 fn menu_button(
     label: &str,
     msg: AppMessage,
 ) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
-    base_button(text(label), msg).width(Length::Fill)
+    base_button(text(label), msg)
+        .width(Length::Fill)
+        .style(move |theme, status| {
+            let palette = theme.extended_palette();
+            let pair = match status {
+                button::Status::Active => palette.background.base,
+                button::Status::Hovered => palette.background.weak,
+                button::Status::Pressed => palette.background.strong,
+                button::Status::Disabled => palette.secondary.weak,
+            };
+            button::Style {
+                text_color: pair.text,
+                background: Some(Background::Color(pair.color)),
+                ..Default::default()
+            }
+        })
+        .into()
 }
 
 fn file_tab(
