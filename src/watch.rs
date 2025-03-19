@@ -25,10 +25,12 @@ pub fn file_watcher() -> impl Stream<Item = WatchNotification> {
         let (sender, mut receiver) = mpsc::channel(100);
         let _ = output.send(WatchNotification::Ready(sender)).await;
 
-        let (mut debouncer, mut file_events) =
-            AsyncDebouncer::new_with_channel(Duration::from_secs(1), Some(Duration::from_secs(1)))
-                .await
-                .unwrap();
+        let (mut debouncer, mut file_events) = AsyncDebouncer::new_with_channel(
+            Duration::from_millis(200),
+            Some(Duration::from_secs(200)),
+        )
+        .await
+        .unwrap();
 
         loop {
             tokio::select! {
@@ -36,12 +38,10 @@ pub fn file_watcher() -> impl Stream<Item = WatchNotification> {
                     match msg {
                         WatchMessage::StartWatch(path_buf) => {
                             let canonical = fs::canonicalize(path_buf).unwrap();
-                            debug!("Starting watch on {:?}", canonical);
                             debouncer.watcher().watch(&canonical, RecursiveMode::Recursive).unwrap()
                         }
                         WatchMessage::StopWatch(path_buf) => {
                             let canonical = fs::canonicalize(path_buf).unwrap();
-                            debug!("Stopping watch on {:?}", canonical);
                             debouncer.watcher().unwatch(&canonical).unwrap()
                         }
                     }
@@ -52,7 +52,6 @@ pub fn file_watcher() -> impl Stream<Item = WatchNotification> {
                             for e in &events {
                                 match e.event.kind {
                                     async_watcher::notify::EventKind::Modify(_) => {
-                                        debug!("File modified");
                                         let _ = output.send(WatchNotification::Changed(e.event.paths[0].clone())).await;
                                     }
                                     _ => {

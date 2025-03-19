@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
     Background, Border, Element, Length, Padding, Shadow, Subscription, Theme, alignment,
@@ -58,6 +58,7 @@ impl App {
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         match message {
             AppMessage::OpenFile(path_buf) => {
+                let path_buf = canonicalize(path_buf).unwrap();
                 if self.pdfs.is_empty() {
                     self.pdfs.push(PdfViewer::new());
                     self.pdf_idx = 0;
@@ -65,7 +66,6 @@ impl App {
                 if let Some(sender) = &self.file_watcher {
                     // We should never fill this up from here
                     let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
-                    println!("Sent the start message");
                 }
                 let out = self.pdfs[self.pdf_idx]
                     .update(PdfMessage::OpenFile(path_buf))
@@ -114,12 +114,17 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::FileWatcher(watch_notification) => {
-                debug!("Watch Notification: {:?}", watch_notification);
                 match watch_notification {
                     WatchNotification::Ready(sender) => {
                         self.file_watcher = Some(sender);
                     }
-                    WatchNotification::Changed(path_buf) => todo!(),
+                    WatchNotification::Changed(path_buf) => {
+                        for pdf in &mut self.pdfs {
+                            if pdf.path == path_buf {
+                                let _ = pdf.update(PdfMessage::RefreshFile);
+                            }
+                        }
+                    }
                 }
                 iced::Task::none()
             }

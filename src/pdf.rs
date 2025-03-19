@@ -13,6 +13,7 @@ use iced::{
 };
 use mupdf::{Colorspace, Document, Matrix};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -286,6 +287,7 @@ pub struct PdfViewer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PdfMessage {
     OpenFile(PathBuf),
+    RefreshFile,
     NextPage,
     PreviousPage,
     ZoomIn,
@@ -360,6 +362,9 @@ impl PdfViewer {
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.bounds = rectangle;
             }
+            PdfMessage::RefreshFile => {
+                self.refresh_file();
+            }
         }
         iced::Task::none()
     }
@@ -397,6 +402,25 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         self.path = path.to_path_buf();
+    }
+
+    fn refresh_file(&mut self) {
+        let doc = Document::open(self.path.to_str().unwrap()).unwrap();
+        self.doc = Some(doc);
+        let scale = self.scale;
+        self.scale = 1.0;
+        self.show_current_page();
+        if let Some(image::Handle::Rgba {
+            id: _,
+            width,
+            height,
+            pixels: _,
+        }) = self.img_handle
+        {
+            self.initial_page_size = Size::new(width as f32, height as f32);
+        }
+        self.scale = scale;
+        self.show_current_page();
     }
 
     fn show_current_page(&mut self) {
