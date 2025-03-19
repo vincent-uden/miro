@@ -273,6 +273,7 @@ where
 #[derive(Debug, Default)]
 pub struct PdfViewer {
     pub name: String,
+    pub path: PathBuf,
     doc: Option<Document>,
     page: i32,
     img_handle: Option<image::Handle>,
@@ -395,6 +396,7 @@ impl PdfViewer {
             .expect("The pdf must have a file name")
             .to_string_lossy()
             .to_string();
+        self.path = path.to_path_buf();
     }
 
     fn show_current_page(&mut self) {

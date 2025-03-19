@@ -2,19 +2,22 @@
 // - Menu (File -> Open/Save and so on)
 
 use std::{
+    io,
     path::PathBuf,
     sync::{LazyLock, RwLock},
 };
 
 use app::{App, AppMessage};
 use clap::Parser;
-use iced::Theme;
+use iced::{Subscription, Theme};
 use keymap::KeyMap;
+use tracing_subscriber::EnvFilter;
 
 mod app;
 mod custom_serde_functions;
 mod keymap;
 mod pdf;
+mod watch;
 
 static APP_KEYMAP: LazyLock<RwLock<KeyMap<AppMessage>>> =
     LazyLock::new(|| KeyMap::<AppMessage>::default().into());
@@ -27,6 +30,11 @@ struct Args {
 }
 
 fn main() -> iced::Result {
+    tracing_subscriber::fmt()
+        .with_writer(io::stdout)
+        .with_env_filter(EnvFilter::new("miro"))
+        .init();
+
     let args = Args::parse();
 
     iced::application("App", App::update, App::view)
@@ -35,17 +43,14 @@ fn main() -> iced::Result {
         .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
         .run_with(|| {
-            let mut state = App::new();
-            match args.path {
-                Some(p) => {
-                    let _ = state.update(app::AppMessage::OpenFile(p));
-                }
-                None => {}
-            }
-            (state, iced::Task::none())
+            let state = App::new();
+            (state, match args.path {
+                Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
+                None => iced::Task::none(),
+            })
         })
 }
 
 pub fn theme(_: &App) -> Theme {
-    Theme::TokyoNight
+    Theme::Light
 }

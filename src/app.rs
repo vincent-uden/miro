@@ -18,7 +18,10 @@ use iced_aw::{
 use iced_fonts::required::{RequiredIcons, icon_to_string};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tracing::debug;
 
+use crate::watch::{WatchMessage, WatchNotification, file_watcher};
 use crate::{
     APP_KEYMAP,
     pdf::{PdfMessage, PdfViewer},
@@ -28,18 +31,21 @@ use crate::{
 pub struct App {
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
+    pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AppMessage {
     OpenFile(PathBuf),
-    OpenNewFile,
+    OpenNewFileFinder,
     Debug(String),
     PdfMessage(PdfMessage),
     OpenTab(usize),
     CloseTab(usize),
     PreviousTab,
     NextTab,
+    #[serde(skip)]
+    FileWatcher(WatchNotification),
 }
 
 impl App {
@@ -55,6 +61,11 @@ impl App {
                 if self.pdfs.is_empty() {
                     self.pdfs.push(PdfViewer::new());
                     self.pdf_idx = 0;
+                }
+                if let Some(sender) = &self.file_watcher {
+                    // We should never fill this up from here
+                    let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
+                    println!("Sent the start message");
                 }
                 let out = self.pdfs[self.pdf_idx]
                     .update(PdfMessage::OpenFile(path_buf))
@@ -72,7 +83,7 @@ impl App {
                 self.pdf_idx = i;
                 iced::Task::none()
             }
-            AppMessage::OpenNewFile => {
+            AppMessage::OpenNewFileFinder => {
                 if let Some(path_buf) = FileDialog::new().add_filter("Pdf", &["pdf"]).pick_file() {
                     self.pdfs.push(PdfViewer::new());
                     self.pdf_idx = self.pdfs.len() - 1;
@@ -82,6 +93,12 @@ impl App {
                 }
             }
             AppMessage::CloseTab(i) => {
+                if let Some(sender) = &self.file_watcher {
+                    // We should never fill this up from here
+                    let _ = sender.blocking_send(WatchMessage::StopWatch(
+                        self.pdfs[self.pdf_idx].path.clone(),
+                    ));
+                }
                 self.pdfs.remove(i);
                 if self.pdf_idx >= self.pdfs.len() {
                     self.pdf_idx = self.pdfs.len() - 1;
@@ -96,6 +113,16 @@ impl App {
                 self.pdf_idx = (self.pdf_idx + 1).min(self.pdfs.len() - 1);
                 iced::Task::none()
             }
+            AppMessage::FileWatcher(watch_notification) => {
+                debug!("Watch Notification: {:?}", watch_notification);
+                match watch_notification {
+                    WatchNotification::Ready(sender) => {
+                        self.file_watcher = Some(sender);
+                    }
+                    WatchNotification::Changed(path_buf) => todo!(),
+                }
+                iced::Task::none()
+            }
         }
     }
 
@@ -105,7 +132,7 @@ impl App {
         #[rustfmt::skip]
         let mb = menu_bar!(
             (debug_button_s("File"), menu_tpl_1(menu_items!(
-                (menu_button("Open", AppMessage::OpenNewFile))
+                (menu_button("Open", AppMessage::OpenNewFileFinder))
                 (menu_button("Close", AppMessage::CloseTab(self.pdf_idx)))
             )))
         ).draw_path(menu::DrawPath::Backdrop)
@@ -147,10 +174,15 @@ impl App {
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
         use iced::keyboard::{self};
-        keyboard::on_key_press(|key, modifiers| {
+        let keys = keyboard::on_key_press(|key, modifiers| {
             let key_map = APP_KEYMAP.read().unwrap();
             key_map.event(key, modifiers)
-        })
+        });
+
+        Subscription::batch(vec![
+            keys,
+            Subscription::run(file_watcher).map(AppMessage::FileWatcher),
+        ])
     }
 }
 

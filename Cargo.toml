@@ -5,11 +5,16 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.97"
+async-watcher = "0.3.0"
 clap = {version = "4.5.32", features = ["derive"] }
-iced = {version = "0.13.1", features = ["advanced", "image"] }
+iced = {version = "0.13.1", features = ["advanced", "image", "tokio"] }
 iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
 mupdf = "0.4.4"
 rfd = "0.15.3"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
+tokio = { version = "1.44.1", features = ["full"] }
+tracing = "0.1.41"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
