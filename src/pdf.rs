@@ -433,4 +433,3 @@ impl PdfViewer {
         }
     }
 }
-

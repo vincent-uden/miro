@@ -18,3 +18,5 @@ tokio = { version = "1.44.1", features = ["full"] }
 tracing = "0.1.41"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+vello = "0.4.1"
+vello_svg = "0.6.0"

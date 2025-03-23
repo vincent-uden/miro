@@ -4,6 +4,8 @@ A pdf viewer
 
 ## TODO:
 - Experiment with rendering pdf as svg
+    - Can we use vello to render the SVG? Iced perf is really bad for high levels of zoom
+Additionally it's not only zooming which is slow, but also moving around which isnt slow on the image variant
 
 ## Dependencies
 - [Raylib](https://www.raylib.com/), graphics library. Included as a vendored library in Odin.
