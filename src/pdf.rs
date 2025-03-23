@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::custom_serde_functions::*;
 use iced::{
@@ -6,7 +9,7 @@ use iced::{
     advanced::{
         Layout, Widget,
         image::{self, FilterMethod},
-        layout, mouse, renderer,
+        layout, mouse, renderer, svg,
         widget::Tree,
     },
     widget::vertical_space,
@@ -21,8 +24,8 @@ pub struct State {
 }
 
 #[derive(Debug)]
-pub struct InnerPdfViewer<'a, Handle = image::Handle> {
-    handle: Handle,
+pub struct InnerPdfViewer<'a> {
+    handle: svg::Handle,
     width: Length,
     height: Length,
     content_fit: ContentFit,
@@ -33,9 +36,9 @@ pub struct InnerPdfViewer<'a, Handle = image::Handle> {
     state: &'a State,
 }
 
-impl<'a, Handle> InnerPdfViewer<'a, Handle> {
+impl<'a> InnerPdfViewer<'a> {
     /// Creates a new [`Image`] with the given path.
-    pub fn new(handle: impl Into<Handle>, state: &'a State) -> Self {
+    pub fn new(handle: impl Into<svg::Handle>, state: &'a State) -> Self {
         InnerPdfViewer {
             handle: handle.into(),
             width: Length::Shrink,
@@ -97,21 +100,23 @@ impl<'a, Handle> InnerPdfViewer<'a, Handle> {
 }
 
 /// Computes the layout of an [`Image`].
-pub fn layout<Renderer, Handle>(
+pub fn layout<Renderer>(
     renderer: &Renderer,
     limits: &layout::Limits,
-    handle: &Handle,
+    handle: &svg::Handle,
     width: Length,
     height: Length,
     content_fit: ContentFit,
     rotation: Rotation,
 ) -> layout::Node
 where
-    Renderer: image::Renderer<Handle = Handle>,
+    Renderer: svg::Renderer,
 {
     // The raw w/h of the underlying image
-    let image_size = renderer.measure_image(handle);
-    let image_size = Size::new(image_size.width as f32, image_size.height as f32);
+    //let image_size = renderer.measure_image(handle);
+    //let image_size = Size::new(image_size.width as f32, image_size.height as f32);
+    // TODO :Fix
+    let image_size = Size::new(100.0, 100.0);
 
     // The rotated size of the image
     let rotated_size = rotation.apply(image_size);
@@ -138,40 +143,26 @@ where
 }
 
 /// Draws an [`Image`]
-pub fn draw<Renderer, Handle>(
+pub fn draw<Renderer>(
     renderer: &mut Renderer,
     layout: Layout<'_>,
-    handle: &Handle,
+    handle: &svg::Handle,
     filter_method: FilterMethod,
     opacity: f32,
     translation: Vector,
 ) where
-    Renderer: image::Renderer<Handle = Handle>,
-    Handle: Clone,
+    Renderer: svg::Renderer,
 {
-    let Size { width, height } = renderer.measure_image(handle);
-    let image_size = Size::new(width as f32, height as f32);
-
     let bounds = layout.bounds();
-    let final_size = image_size;
-
-    let mut position = Point::new(
-        bounds.x + (bounds.width - image_size.width) / 2.0,
-        bounds.y + (bounds.height - image_size.height) / 2.0,
-    );
-    position.x -= translation.x;
-    position.y -= translation.y;
-
-    let drawing_bounds = Rectangle::new(position, final_size);
+    let drawing_bounds = bounds;
 
     let render = |renderer: &mut Renderer| {
-        renderer.draw_image(
-            image::Image {
+        renderer.draw_svg(
+            svg::Svg {
                 handle: handle.clone(),
-                filter_method,
-                rotation: iced::Radians::from(0.0),
+                color: None,
+                rotation: iced::Radians(0.0),
                 opacity,
-                snap: true,
             },
             drawing_bounds,
         );
@@ -180,10 +171,9 @@ pub fn draw<Renderer, Handle>(
     renderer.with_layer(bounds, render);
 }
 
-impl<'a, Theme, Renderer, Handle> Widget<PdfMessage, Theme, Renderer> for InnerPdfViewer<'a, Handle>
+impl<'a, Theme, Renderer> Widget<PdfMessage, Theme, Renderer> for InnerPdfViewer<'a>
 where
-    Renderer: image::Renderer<Handle = Handle>,
-    Handle: Clone,
+    Renderer: svg::Renderer,
 {
     fn size(&self) -> Size<Length> {
         Size {
@@ -260,13 +250,11 @@ where
     }
 }
 
-impl<'a, Theme, Renderer, Handle> From<InnerPdfViewer<'a, Handle>>
-    for Element<'a, PdfMessage, Theme, Renderer>
+impl<'a, Theme, Renderer> From<InnerPdfViewer<'a>> for Element<'a, PdfMessage, Theme, Renderer>
 where
-    Renderer: image::Renderer<Handle = Handle>,
-    Handle: Clone + 'a,
+    Renderer: svg::Renderer,
 {
-    fn from(image: InnerPdfViewer<'a, Handle>) -> Element<'a, PdfMessage, Theme, Renderer> {
+    fn from(image: InnerPdfViewer<'a>) -> Element<'a, PdfMessage, Theme, Renderer> {
         Element::new(image)
     }
 }
@@ -277,7 +265,7 @@ pub struct PdfViewer {
     pub path: PathBuf,
     doc: Option<Document>,
     page: i32,
-    img_handle: Option<image::Handle>,
+    img_handle: Option<svg::Handle>,
     scale: f32,
     translation: Vector,
     inner_state: State,
@@ -371,7 +359,7 @@ impl PdfViewer {
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         let image: Element<'_, PdfMessage> = if let Some(h) = &self.img_handle {
-            InnerPdfViewer::<image::Handle>::new(h, &self.inner_state)
+            InnerPdfViewer::new(h.clone(), &self.inner_state)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .translation(self.translation)
@@ -387,14 +375,9 @@ impl PdfViewer {
         self.doc = Some(doc);
         self.page = 0;
         self.show_current_page();
-        if let Some(image::Handle::Rgba {
-            id: _,
-            width,
-            height,
-            pixels: _,
-        }) = self.img_handle
-        {
-            self.initial_page_size = Size::new(width as f32, height as f32);
+        if let Some(handle) = &self.img_handle {
+            // TODO: Think about scaling
+            //self.initial_page_size = Size::new(width as f32, height as f32);
         }
         self.name = path
             .file_name()
@@ -410,14 +393,9 @@ impl PdfViewer {
         let scale = self.scale;
         self.scale = 1.0;
         self.show_current_page();
-        if let Some(image::Handle::Rgba {
-            id: _,
-            width,
-            height,
-            pixels: _,
-        }) = self.img_handle
-        {
-            self.initial_page_size = Size::new(width as f32, height as f32);
+        if let Some(handle) = &self.img_handle {
+            // TODO: Think about scaling
+            //self.initial_page_size = Size::new(width as f32, height as f32);
         }
         self.scale = scale;
         self.show_current_page();
@@ -428,16 +406,8 @@ impl PdfViewer {
             let page = doc.load_page(self.page).unwrap();
             let mut matrix = Matrix::default();
             matrix.scale(self.scale, self.scale);
-            let pixmap = page
-                .to_pixmap(&matrix, &Colorspace::device_rgb(), 1.0, false)
-                .unwrap();
-            let mut image_data = pixmap.samples().to_vec();
-            image_data.clone_from_slice(pixmap.samples());
-            self.img_handle = Some(image::Handle::from_rgba(
-                pixmap.width(),
-                pixmap.height(),
-                image_data,
-            ));
+            let svg = page.to_svg(&matrix).unwrap();
+            self.img_handle = Some(svg::Handle::from_memory(svg.bytes().collect::<Vec<u8>>()));
         }
     }
 }
