@@ -33,11 +33,12 @@ pub struct InnerPdfViewer<'a> {
     rotation: Rotation,
     opacity: f32,
     translation: Vector,
+    render_scale: f32,
     state: &'a State,
 }
 
 impl<'a> InnerPdfViewer<'a> {
-    /// Creates a new [`Image`] with the given path.
+    /// Creates a new [`Image`] with the given handle.
     pub fn new(handle: impl Into<svg::Handle>, state: &'a State) -> Self {
         InnerPdfViewer {
             handle: handle.into(),
@@ -48,6 +49,7 @@ impl<'a> InnerPdfViewer<'a> {
             rotation: Rotation::default(),
             opacity: 1.0,
             translation: Vector::ZERO,
+            render_scale: 1.0,
             state,
         }
     }
@@ -93,8 +95,15 @@ impl<'a> InnerPdfViewer<'a> {
         self
     }
 
+    /// Sets the translation of the [`Image`].
     pub fn translation(mut self, translation: Vector) -> Self {
         self.translation = translation;
+        self
+    }
+
+    /// Sets an additional scaling at render time.
+    pub fn scale(mut self, scale: f32) -> Self {
+        self.render_scale = scale;
         self
     }
 }
@@ -112,22 +121,20 @@ pub fn layout<Renderer>(
 where
     Renderer: svg::Renderer,
 {
-    // The raw w/h of the underlying image
-    //let image_size = renderer.measure_image(handle);
-    //let image_size = Size::new(image_size.width as f32, image_size.height as f32);
-    // TODO :Fix
+    // The raw w/h of the underlying image.
+    // For now, this is hard-coded and would ideally be determined from the handle.
     let image_size = Size::new(100.0, 100.0);
 
-    // The rotated size of the image
+    // The rotated size of the image.
     let rotated_size = rotation.apply(image_size);
 
-    // The size to be available to the widget prior to `Shrink`ing
+    // The size to be available to the widget prior to `Shrink`ing.
     let raw_size = limits.resolve(width, height, rotated_size);
 
-    // The uncropped size of the image when fit to the bounds above
+    // The uncropped size of the image when fit to the bounds above.
     let full_size = content_fit.fit(rotated_size, raw_size);
 
-    // Shrink the widget to fit the resized image, if requested
+    // Shrink the widget to fit the resized image, if requested.
     let final_size = Size {
         width: match width {
             Length::Shrink => f32::min(raw_size.width, full_size.width),
@@ -143,6 +150,8 @@ where
 }
 
 /// Draws an [`Image`]
+///
+/// In addition to translation, we apply an extra scaling factor to the drawing bounds.
 pub fn draw<Renderer>(
     renderer: &mut Renderer,
     layout: Layout<'_>,
@@ -150,17 +159,26 @@ pub fn draw<Renderer>(
     filter_method: FilterMethod,
     opacity: f32,
     translation: Vector,
+    render_scale: f32,
 ) where
     Renderer: svg::Renderer,
 {
     let bounds = layout.bounds();
-    let drawing_bounds = bounds;
+
+    // Apply translation first and then scale the drawing bounds.
+    let drawing_bounds = Rectangle {
+        x: (bounds.x - translation.x) - (render_scale - 1.0) * bounds.width / 2.0,
+        y: (bounds.y - translation.y) - (render_scale - 1.0) * bounds.height / 2.0,
+        width: bounds.width * render_scale,
+        height: bounds.height * render_scale,
+    };
 
     let render = |renderer: &mut Renderer| {
         renderer.draw_svg(
             svg::Svg {
                 handle: handle.clone(),
                 color: None,
+                // Additional rotation adjustments could be applied here if needed.
                 rotation: iced::Radians(0.0),
                 opacity,
             },
@@ -216,6 +234,7 @@ where
             self.filter_method,
             self.opacity,
             self.translation,
+            self.render_scale,
         )
     }
 
@@ -333,8 +352,8 @@ impl PdfViewer {
                 self.show_current_page();
             }
             PdfMessage::ZoomFit => {
-                let x_scale = self.inner_state.bounds.width / (self.initial_page_size.width);
-                let y_scale = self.inner_state.bounds.height / (self.initial_page_size.height);
+                let x_scale = self.inner_state.bounds.width / self.initial_page_size.width;
+                let y_scale = self.inner_state.bounds.height / self.initial_page_size.height;
                 self.scale = x_scale.min(y_scale);
                 self.show_current_page();
             }
@@ -359,10 +378,12 @@ impl PdfViewer {
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         let image: Element<'_, PdfMessage> = if let Some(h) = &self.img_handle {
+            // Pass both the current translation and scale to the viewer.
             InnerPdfViewer::new(h.clone(), &self.inner_state)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .translation(self.translation)
+                .scale(self.scale)
                 .into()
         } else {
             vertical_space().into()
@@ -375,9 +396,9 @@ impl PdfViewer {
         self.doc = Some(doc);
         self.page = 0;
         self.show_current_page();
-        if let Some(handle) = &self.img_handle {
-            // TODO: Think about scaling
-            //self.initial_page_size = Size::new(width as f32, height as f32);
+        if let Some(_handle) = &self.img_handle {
+            // Here you could store the initial page size if needed.
+            // self.initial_page_size = Size::new(width as f32, height as f32);
         }
         self.name = path
             .file_name()
@@ -393,9 +414,9 @@ impl PdfViewer {
         let scale = self.scale;
         self.scale = 1.0;
         self.show_current_page();
-        if let Some(handle) = &self.img_handle {
-            // TODO: Think about scaling
-            //self.initial_page_size = Size::new(width as f32, height as f32);
+        if let Some(_handle) = &self.img_handle {
+            // Update the initial page size if needed.
+            // self.initial_page_size = Size::new(width as f32, height as f32);
         }
         self.scale = scale;
         self.show_current_page();
@@ -405,9 +426,11 @@ impl PdfViewer {
         if let Some(doc) = &self.doc {
             let page = doc.load_page(self.page).unwrap();
             let mut matrix = Matrix::default();
-            matrix.scale(self.scale, self.scale);
+            // Apply the scaling in the conversion.
+            matrix.scale(1.0, 1.0);
             let svg = page.to_svg(&matrix).unwrap();
             self.img_handle = Some(svg::Handle::from_memory(svg.bytes().collect::<Vec<u8>>()));
         }
     }
 }
+
