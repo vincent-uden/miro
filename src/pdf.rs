@@ -41,7 +41,7 @@ impl<'a, Handle> InnerPdfViewer<'a, Handle> {
             width: Length::Shrink,
             height: Length::Shrink,
             content_fit: ContentFit::None,
-            filter_method: FilterMethod::default(),
+            filter_method: FilterMethod::Nearest,
             rotation: Rotation::default(),
             opacity: 1.0,
             translation: Vector::ZERO,
