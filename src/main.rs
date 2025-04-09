@@ -15,7 +15,9 @@ use tracing_subscriber::EnvFilter;
 
 mod app;
 mod custom_serde_functions;
+mod geometry;
 mod keymap;
+mod old_pdf;
 mod pdf;
 mod watch;
 

@@ -12,6 +12,9 @@ impl<T> Vector<T>
 where
     T: Num + Copy,
 {
+    pub fn new(x: T, y: T) -> Self {
+        Self { x, y }
+    }
     pub fn scale(&mut self, scale: T) {
         self.x = self.x * scale;
         self.y = self.y * scale;
@@ -134,6 +137,20 @@ impl<T> Rect<T>
 where
     T: Num + Copy,
 {
+    pub fn from_points(top_left: Vector<T>, bottom_right: Vector<T>) -> Self {
+        Self {
+            x0: top_left,
+            x1: bottom_right,
+        }
+    }
+
+    pub fn from_pos_size(pos: Vector<T>, size: Vector<T>) -> Self {
+        Self {
+            x0: pos,
+            x1: pos + size,
+        }
+    }
+
     pub fn center(&self) -> Vector<T> {
         (self.x0 + self.x1).scaled(T::one() + T::one())
     }
@@ -144,6 +161,10 @@ where
 
     pub fn height(&self) -> T {
         self.x1.y - self.x0.y
+    }
+
+    pub fn size(&self) -> Vector<T> {
+        Vector::new(self.width(), self.height())
     }
 
     pub fn translate(&mut self, offset: Vector<T>) {
@@ -174,6 +195,13 @@ impl Into<mupdf::Rect> for Rect<f32> {
 impl Into<mupdf::IRect> for Rect<i32> {
     fn into(self) -> mupdf::IRect {
         mupdf::IRect::new(self.x0.x, self.x0.y, self.x1.x, self.x1.y)
+    }
+}
+
+impl Into<mupdf::IRect> for Rect<f32> {
+    fn into(self) -> mupdf::IRect {
+        let irect: Rect<i32> = self.into();
+        irect.into()
     }
 }
 
@@ -222,6 +250,21 @@ impl From<mupdf::IRect> for Rect<i32> {
             x1: Vector {
                 x: value.x1,
                 y: value.y1,
+            },
+        }
+    }
+}
+
+impl From<mupdf::Rect> for Rect<i32> {
+    fn from(value: mupdf::Rect) -> Self {
+        Self {
+            x0: Vector {
+                x: value.x0 as i32,
+                y: value.y0 as i32,
+            },
+            x1: Vector {
+                x: value.x1 as i32,
+                y: value.y1 as i32,
             },
         }
     }
