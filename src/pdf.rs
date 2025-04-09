@@ -9,9 +9,9 @@ use iced::{
         layout, mouse, renderer,
         widget::Tree,
     },
-    widget::vertical_space,
+    widget::{shader::wgpu::core::device, vertical_space},
 };
-use mupdf::{Colorspace, Document, Matrix};
+use mupdf::{Colorspace, Document, Matrix, Page, Pixmap};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -151,16 +151,15 @@ pub fn draw<Renderer, Handle>(
 {
     let Size { width, height } = renderer.measure_image(handle);
     let image_size = Size::new(width as f32, height as f32);
+    println!("image size: {:?}", image_size);
 
     let bounds = layout.bounds();
     let final_size = image_size;
 
-    let mut position = Point::new(
+    let position = Point::new(
         bounds.x + (bounds.width - image_size.width) / 2.0,
         bounds.y + (bounds.height - image_size.height) / 2.0,
     );
-    position.x -= translation.x;
-    position.y -= translation.y;
 
     let drawing_bounds = Rectangle::new(position, final_size);
 
@@ -276,10 +275,11 @@ pub struct PdfViewer {
     pub name: String,
     pub path: PathBuf,
     doc: Option<Document>,
-    page: i32,
+    page_idx: i32,
+    page: Option<Page>,
     img_handle: Option<image::Handle>,
     scale: f32,
-    translation: Vector,
+    translation: Vector, // In screen space
     inner_state: State,
     initial_page_size: Size,
 }
@@ -314,7 +314,7 @@ impl PdfViewer {
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
         match message {
             PdfMessage::NextPage => {
-                if self.page
+                if self.page_idx
                     < self
                         .doc
                         .as_ref()
@@ -322,13 +322,13 @@ impl PdfViewer {
                         .unwrap_or(0)
                         - 1
                 {
-                    self.page += 1;
+                    self.page_idx += 1;
                     self.show_current_page();
                 }
             }
             PdfMessage::PreviousPage => {
-                if self.page > 0 {
-                    self.page -= 1;
+                if self.page_idx > 0 {
+                    self.page_idx -= 1;
                     self.show_current_page();
                 }
             }
@@ -374,7 +374,6 @@ impl PdfViewer {
             InnerPdfViewer::<image::Handle>::new(h, &self.inner_state)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .translation(self.translation)
                 .into()
         } else {
             vertical_space().into()
@@ -385,7 +384,7 @@ impl PdfViewer {
     fn load_file(&mut self, path: &Path) {
         let doc = Document::open(path.to_str().unwrap()).unwrap();
         self.doc = Some(doc);
-        self.page = 0;
+        self.page_idx = 0;
         self.show_current_page();
         if let Some(image::Handle::Rgba {
             id: _,
@@ -425,19 +424,43 @@ impl PdfViewer {
 
     fn show_current_page(&mut self) {
         if let Some(doc) = &self.doc {
-            let page = doc.load_page(self.page).unwrap();
+            self.page = Some(doc.load_page(self.page_idx).unwrap());
             let mut matrix = Matrix::default();
             matrix.scale(self.scale, self.scale);
-            let pixmap = page
-                .to_pixmap(&matrix, &Colorspace::device_rgb(), 1.0, false)
-                .unwrap();
+            let pixmap =
+                Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true)
+                    .unwrap();
+            let device = mupdf::Device::from_pixmap(&pixmap).unwrap();
+            self.page.as_ref().unwrap().run(&device, &matrix).unwrap();
             let mut image_data = pixmap.samples().to_vec();
+            println!("pixmap {} {}", pixmap.width(), pixmap.height());
             image_data.clone_from_slice(pixmap.samples());
             self.img_handle = Some(image::Handle::from_rgba(
                 pixmap.width(),
                 pixmap.height(),
                 image_data,
             ));
+        }
+    }
+
+    fn visible_bbox(&self) -> mupdf::IRect {
+        let mut bounds = self
+            .page
+            .as_ref()
+            .unwrap()
+            .bounds()
+            .expect("Bounds calculation shouldn't fail");
+        // TODO: Figure these out
+        bounds.x0 -= self.translation.x;
+        bounds.x1 -= self.translation.x;
+        bounds.y0 -= self.translation.y;
+        bounds.y1 -= self.translation.y;
+        println!("bounds {:?}", bounds);
+        mupdf::IRect {
+            x0: bounds.x0 as i32,
+            y0: bounds.y0 as i32,
+            x1: bounds.x1 as i32,
+            y1: bounds.y1 as i32,
         }
     }
 }
