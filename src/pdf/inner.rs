@@ -1,7 +1,6 @@
 use iced::{
     ContentFit, Element, Length, Size,
     advanced::{Widget, image, layout},
-    overlay::menu::default,
     widget::image::FilterMethod,
 };
 use mupdf::Page;
@@ -170,7 +169,7 @@ mod tests {
         let doc = Document::from_bytes(LANDSCAPE_PDF, "pdf").unwrap();
         let page = doc.load_page(0).unwrap();
         let state = State::default();
-        let viewer = PageViewer::new(&page, &state);
+        let viewer = PageViewer::new(&page, &state).scale(1.0);
         let bbox: Rect<i32> = viewer.visible_bbox().into();
         let expected = Rect::from_points(Vector::new(0, 0), Vector::new(1296, 432));
         assert_eq!(bbox, expected)

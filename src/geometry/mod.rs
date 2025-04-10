@@ -2,6 +2,7 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use num::Num;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct Vector<T> {
@@ -143,7 +144,7 @@ pub struct Rect<T> {
 
 impl<T> Rect<T>
 where
-    T: Num + Copy,
+    T: Num + Copy + std::fmt::Debug,
 {
     pub fn from_points(top_left: Vector<T>, bottom_right: Vector<T>) -> Self {
         Self {
@@ -183,9 +184,12 @@ where
     pub fn scale(&mut self, s: T) {
         let x0 = self.x0;
         let x1 = self.x1;
-        // TODO (next) : Something is wrong here. Double check the math until tests pass
-        self.x0 = (x0.scaled(T::one() + s) + x1.scaled(T::one() - s)).scaled(T::one() + T::one());
-        self.x1 = (x0.scaled(T::one() - s) + x1.scaled(T::one() + s)).scaled(T::one() + T::one());
+        // TODO: Something is wrong here. Double check the math until tests pass
+        println!("{:?} {:?}", x0.scaled(T::one() + s), T::one());
+        self.x0 = (x0.scaled(T::one() + s) + x1.scaled(T::one() - s))
+            .scaled(T::one() / (T::one() + T::one()));
+        self.x1 = (x0.scaled(T::one() - s) + x1.scaled(T::one() + s))
+            .scaled(T::one() / (T::one() + T::one()));
     }
 }
 
