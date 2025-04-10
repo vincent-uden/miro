@@ -40,10 +40,10 @@ impl PdfViewer {
             PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
             PdfMessage::ZoomIn => {
-                self.scale *= 2.0;
+                self.scale *= 1.2;
             }
             PdfMessage::ZoomOut => {
-                self.scale /= 2.0;
+                self.scale /= 1.2;
             }
             PdfMessage::ZoomHome => {
                 self.scale = 1.0;
