@@ -40,20 +40,20 @@ impl PdfViewer {
             PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
             PdfMessage::ZoomIn => {
-                self.scale *= 1.1;
+                self.scale *= 2.0;
             }
             PdfMessage::ZoomOut => {
-                self.scale /= 1.1;
+                self.scale /= 2.0;
             }
             PdfMessage::ZoomHome => {
                 self.scale = 1.0;
             }
             PdfMessage::ZoomFit => todo!(),
             PdfMessage::MoveHorizontal(delta) => {
-                self.translation.x += delta;
+                self.translation.x += delta / self.scale;
             }
             PdfMessage::MoveVertical(delta) => {
-                self.translation.y += delta;
+                self.translation.y += delta / self.scale;
             }
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.bounds = rectangle;

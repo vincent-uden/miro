@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{app::AppMessage, pdf::PdfMessage};
 
-const MOVE_STEP: f32 = 20.0;
+const MOVE_STEP: f32 = 40.0;
 
 pub struct KeyMap<Message>
 where

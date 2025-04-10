@@ -82,8 +82,12 @@ impl<'a> PageViewer<'a> {
     fn visible_bbox(&self) -> mupdf::IRect {
         let page_bounds = self.page.bounds().unwrap();
         let mut out_box = Rect::<f32>::from(page_bounds);
-        out_box.translate(self.translation);
-        out_box.scale(1.0 / self.scale);
+        out_box.translate(self.translation.scaled(self.scale));
+        out_box.translate(Vector::new(
+            -page_bounds.width() / 2.0,
+            -page_bounds.height() / 2.0,
+        ));
+        //out_box.translate(self.translation);
         out_box.into()
     }
 }
@@ -116,21 +120,28 @@ where
         _cursor: iced::advanced::mouse::Cursor,
         _viewport: &iced::Rectangle,
     ) {
+        // TODO: This might be leaking memory. Could be related to wl_registry still attached
+        let mut bounds = layout.bounds();
         let image = {
             use mupdf::{Colorspace, Device, Matrix, Pixmap};
             // Generate image of pdf
             let mut matrix = Matrix::default();
+            matrix.pre_translate(
+                -self.page.bounds().unwrap().width() / 2.0 * self.scale,
+                -self.page.bounds().unwrap().height() / 2.0 * self.scale,
+            );
             matrix.scale(self.scale, self.scale);
             let pixmap =
                 Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true)
                     .unwrap();
             let device = Device::from_pixmap(&pixmap).unwrap();
             self.page.run(&device, &matrix).unwrap();
+            bounds.width = pixmap.width() as f32;
+            bounds.height = pixmap.height() as f32;
             image::Handle::from_rgba(pixmap.width(), pixmap.height(), pixmap.samples().to_vec())
         };
 
         // Render said image onto the screen
-        let bounds = layout.bounds();
         let render = |renderer: &mut Renderer| {
             renderer.draw_image(
                 image::Image {
