@@ -1,6 +1,6 @@
 use iced::{
-    ContentFit, Element, Length, Size,
-    advanced::{Widget, image, layout},
+    Border, Color, ContentFit, Element, Length, Size,
+    advanced::{Widget, image, layout, renderer::Quad},
     widget::image::FilterMethod,
 };
 use mupdf::Page;
@@ -92,7 +92,7 @@ impl<'a> PageViewer<'a> {
     }
 }
 
-impl<'a, Theme, Renderer> Widget<PdfMessage, Theme, Renderer> for PageViewer<'a>
+impl<'a, Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PageViewer<'a>
 where
     Renderer: image::Renderer<Handle = image::Handle>,
 {
@@ -114,14 +114,14 @@ where
         &self,
         _tree: &iced::advanced::widget::Tree,
         renderer: &mut Renderer,
-        _theme: &Theme,
+        theme: &iced::Theme,
         _style: &iced::advanced::renderer::Style,
         layout: iced::advanced::Layout<'_>,
         _cursor: iced::advanced::mouse::Cursor,
         _viewport: &iced::Rectangle,
     ) {
         // TODO: This might be leaking memory. Could be related to wl_registry still attached
-        let mut bounds = layout.bounds();
+        let mut img_bounds = layout.bounds();
         let image = {
             use mupdf::{Colorspace, Device, Matrix, Pixmap};
             // Generate image of pdf
@@ -131,18 +131,38 @@ where
                 -self.page.bounds().unwrap().height() / 2.0 * self.scale,
             );
             matrix.scale(self.scale, self.scale);
-            let pixmap =
+            let mut pixmap =
                 Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true)
                     .unwrap();
+            let bg_color = theme.extended_palette().background.base.color.into_rgba8();
+            for (i, p) in pixmap.samples_mut().iter_mut().enumerate() {
+                if i % 4 == 0 {
+                    *p = bg_color[0];
+                } else if i % 4 == 1 {
+                    *p = bg_color[1];
+                } else if i % 4 == 2 {
+                    *p = bg_color[2];
+                } else if i % 4 == 3 {
+                    *p = 255;
+                }
+            }
             let device = Device::from_pixmap(&pixmap).unwrap();
             self.page.run(&device, &matrix).unwrap();
-            bounds.width = pixmap.width() as f32;
-            bounds.height = pixmap.height() as f32;
+            img_bounds.width = pixmap.width() as f32;
+            img_bounds.height = pixmap.height() as f32;
             image::Handle::from_rgba(pixmap.width(), pixmap.height(), pixmap.samples().to_vec())
         };
+        let bounds = layout.bounds();
 
         // Render said image onto the screen
         let render = |renderer: &mut Renderer| {
+            renderer.fill_quad(
+                Quad {
+                    bounds,
+                    ..Default::default()
+                },
+                Color::BLACK,
+            );
             renderer.draw_image(
                 image::Image {
                     handle: image,
@@ -151,14 +171,14 @@ where
                     opacity: 1.0,
                     snap: true,
                 },
-                bounds,
+                img_bounds,
             );
         };
-        renderer.with_layer(bounds, render);
+        renderer.with_layer(img_bounds, render);
     }
 }
 
-impl<'a, Theme, Renderer> From<PageViewer<'a>> for Element<'a, PdfMessage, Theme, Renderer>
+impl<'a, Renderer> From<PageViewer<'a>> for Element<'a, PdfMessage, iced::Theme, Renderer>
 where
     Renderer: image::Renderer<Handle = image::Handle>,
 {
