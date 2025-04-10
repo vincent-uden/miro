@@ -1,11 +1,12 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use num::Num;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Vector<T> {
-    x: T,
-    y: T,
+    pub x: T,
+    pub y: T,
 }
 
 impl<T> Vector<T>
@@ -24,6 +25,13 @@ where
         let mut out = self;
         out.scale(scale);
         out
+    }
+
+    pub fn zero() -> Vector<T> {
+        Self {
+            x: T::zero(),
+            y: T::zero(),
+        }
     }
 }
 
@@ -127,10 +135,10 @@ impl From<iced::Size> for Vector<f32> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Rect<T> {
-    x0: Vector<T>,
-    x1: Vector<T>,
+    pub x0: Vector<T>,
+    pub x1: Vector<T>,
 }
 
 impl<T> Rect<T>

@@ -17,7 +17,6 @@ mod app;
 mod custom_serde_functions;
 mod geometry;
 mod keymap;
-mod old_pdf;
 mod pdf;
 mod watch;
 
@@ -46,10 +45,13 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .run_with(|| {
             let state = App::new();
-            (state, match args.path {
-                Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
-                None => iced::Task::none(),
-            })
+            (
+                state,
+                match args.path {
+                    Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
+                    None => iced::Task::none(),
+                },
+            )
         })
 }
 

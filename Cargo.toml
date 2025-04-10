@@ -10,7 +10,7 @@ clap = {version = "4.5.32", features = ["derive"] }
 iced = {version = "0.13.1", features = ["advanced", "image", "tokio", "web-colors"] }
 iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
-mupdf = "0.4.4"
+mupdf = { git = "https://github.com/messense/mupdf-rs.git", rev = "ee58c1ea" }
 num = "0.4.3"
 rfd = "0.15.3"
 serde = { version = "1.0.219", features = ["derive"] }

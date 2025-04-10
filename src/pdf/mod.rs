@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use crate::custom_serde_functions::*;
-use iced::Rectangle;
+use crate::{custom_serde_functions::*, geometry::Rect};
 use serde::{Deserialize, Serialize};
 
 mod inner;
@@ -19,9 +18,5 @@ pub enum PdfMessage {
     ZoomFit,
     MoveHorizontal(f32),
     MoveVertical(f32),
-    #[serde(
-        serialize_with = "serialize_rectangle",
-        deserialize_with = "deserialize_rectangle"
-    )]
-    UpdateBounds(Rectangle),
+    UpdateBounds(Rect<f32>),
 }

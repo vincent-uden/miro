@@ -1,10 +1,11 @@
 use iced::{
-    ContentFit, Length, Size,
+    ContentFit, Element, Length, Size,
     advanced::{Widget, image, layout},
     overlay::menu::default,
     widget::image::FilterMethod,
 };
 use mupdf::Page;
+use tracing::debug;
 
 use crate::geometry::{Rect, Vector};
 
@@ -19,15 +20,29 @@ pub struct State {
 pub struct PageViewer<'a> {
     page: &'a Page,
     state: &'a State,
+    // TODO: Maybe remove these?
     width: Length,
     height: Length,
     content_fit: ContentFit,
+    // ---
     filter_method: FilterMethod,
     translation: Vector<f32>,
     scale: f32,
 }
 
 impl<'a> PageViewer<'a> {
+    pub fn new(page: &'a Page, state: &'a State) -> Self {
+        Self {
+            page,
+            state,
+            width: Length::Shrink,
+            height: Length::Shrink,
+            content_fit: ContentFit::None,
+            filter_method: FilterMethod::Nearest,
+            translation: Vector::zero(),
+            scale: 1.0,
+        }
+    }
     /// Sets the width of the [`Image`] boundaries.
     pub fn width(mut self, width: impl Into<Length>) -> Self {
         self.width = width.into();
@@ -63,7 +78,6 @@ impl<'a> PageViewer<'a> {
     fn visible_bbox(&self) -> mupdf::IRect {
         let page_bounds = self.page.bounds().unwrap();
         let mut out_box = Rect::<f32>::from(page_bounds);
-        out_box.translate(out_box.size().scaled(0.5));
         out_box.translate(self.translation);
         out_box.scale(self.scale);
         out_box.into()
@@ -90,19 +104,19 @@ where
 
     fn draw(
         &self,
-        tree: &iced::advanced::widget::Tree,
+        _tree: &iced::advanced::widget::Tree,
         renderer: &mut Renderer,
-        theme: &Theme,
-        style: &iced::advanced::renderer::Style,
+        _theme: &Theme,
+        _style: &iced::advanced::renderer::Style,
         layout: iced::advanced::Layout<'_>,
-        cursor: iced::advanced::mouse::Cursor,
-        viewport: &iced::Rectangle,
+        _cursor: iced::advanced::mouse::Cursor,
+        _viewport: &iced::Rectangle,
     ) {
         let image = {
             use mupdf::{Colorspace, Device, Matrix, Pixmap};
             // Generate image of pdf
             let mut matrix = Matrix::default();
-            matrix.scale(self.scale.x, self.scale.y);
+            matrix.scale(self.scale, self.scale);
             let pixmap =
                 Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true)
                     .unwrap();
@@ -126,5 +140,14 @@ where
             );
         };
         renderer.with_layer(bounds, render);
+    }
+}
+
+impl<'a, Theme, Renderer> From<PageViewer<'a>> for Element<'a, PdfMessage, Theme, Renderer>
+where
+    Renderer: image::Renderer<Handle = image::Handle>,
+{
+    fn from(value: PageViewer<'a>) -> Self {
+        Element::new(value)
     }
 }

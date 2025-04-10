@@ -21,10 +21,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::watch::{WatchMessage, WatchNotification, file_watcher};
+use crate::{APP_KEYMAP, pdf::PdfMessage};
 use crate::{
-    APP_KEYMAP,
-    pdf::{PdfMessage, PdfViewer},
+    pdf::widget::PdfViewer,
+    watch::{WatchMessage, WatchNotification, file_watcher},
 };
 
 #[derive(Debug, Default)]
