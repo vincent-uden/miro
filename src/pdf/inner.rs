@@ -1,6 +1,6 @@
 use iced::{
     Border, Color, ContentFit, Element, Length, Size,
-    advanced::{Widget, image, layout, renderer::Quad},
+    advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
     widget::image::FilterMethod,
 };
 use mupdf::Page;
@@ -34,8 +34,8 @@ impl<'a> PageViewer<'a> {
         Self {
             page,
             state,
-            width: Length::Shrink,
-            height: Length::Shrink,
+            width: Length::Fill,
+            height: Length::Fill,
             content_fit: ContentFit::None,
             filter_method: FilterMethod::Nearest,
             translation: Vector::zero(),
@@ -81,13 +81,12 @@ impl<'a> PageViewer<'a> {
 
     fn visible_bbox(&self) -> mupdf::IRect {
         let page_bounds = self.page.bounds().unwrap();
-        let mut out_box = Rect::<f32>::from(page_bounds);
+        let mut out_box = Rect::<f32>::from(self.state.bounds);
         out_box.translate(self.translation.scaled(self.scale));
         out_box.translate(Vector::new(
-            -page_bounds.width() / 2.0,
-            -page_bounds.height() / 2.0,
+            -(self.state.bounds.width() - page_bounds.width() * self.scale) / 2.0,
+            -(self.state.bounds.height() - page_bounds.height() * self.scale) / 2.0,
         ));
-        //out_box.translate(self.translation);
         out_box.into()
     }
 }
@@ -97,17 +96,26 @@ where
     Renderer: image::Renderer<Handle = image::Handle>,
 {
     fn size(&self) -> iced::Size<Length> {
-        Size::new(self.width, self.height)
+        Size::new(
+            match self.width {
+                Length::Fill => Length::Fill,
+                _ => self.width,
+            },
+            match self.height {
+                Length::Fill => Length::Fill,
+                _ => self.height,
+            },
+        )
     }
 
     fn layout(
         &self,
         _tree: &mut iced::advanced::widget::Tree,
         _renderer: &Renderer,
-        _limits: &iced::advanced::layout::Limits,
+        limits: &iced::advanced::layout::Limits,
     ) -> iced::advanced::layout::Node {
-        let page_bounds = self.page.bounds().unwrap();
-        layout::Node::new(Size::new(page_bounds.width(), page_bounds.height()))
+        let size = limits.resolve(self.width, self.height, Size::default());
+        layout::Node::new(size)
     }
 
     fn draw(
@@ -126,10 +134,6 @@ where
             use mupdf::{Colorspace, Device, Matrix, Pixmap};
             // Generate image of pdf
             let mut matrix = Matrix::default();
-            matrix.pre_translate(
-                -self.page.bounds().unwrap().width() / 2.0 * self.scale,
-                -self.page.bounds().unwrap().height() / 2.0 * self.scale,
-            );
             matrix.scale(self.scale, self.scale);
             let mut pixmap =
                 Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true)
@@ -175,6 +179,36 @@ where
             );
         };
         renderer.with_layer(img_bounds, render);
+    }
+
+    fn on_event(
+        &mut self,
+        _state: &mut Tree,
+        event: iced::Event,
+        layout: Layout<'_>,
+        _cursor: iced::mouse::Cursor,
+        _renderer: &Renderer,
+        _clipboard: &mut dyn iced::advanced::Clipboard,
+        shell: &mut iced::advanced::Shell<'_, PdfMessage>,
+        _viewport: &iced::Rectangle,
+    ) -> iced::advanced::graphics::core::event::Status {
+        let bounds = layout.bounds();
+        let out = match event {
+            iced::Event::Window(event) => match event {
+                iced::window::Event::Opened {
+                    position: _,
+                    size: _,
+                } => Some(PdfMessage::UpdateBounds(bounds.into())),
+                iced::window::Event::Moved(_) => Some(PdfMessage::UpdateBounds(bounds.into())),
+                iced::window::Event::Resized(_) => Some(PdfMessage::UpdateBounds(bounds.into())),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(msg) = out {
+            shell.publish(msg);
+        }
+        iced::event::Status::Ignored
     }
 }
 
