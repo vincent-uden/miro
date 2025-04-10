@@ -75,6 +75,11 @@ impl<'a> PageViewer<'a> {
         self
     }
 
+    pub fn scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
+
     fn visible_bbox(&self) -> mupdf::IRect {
         let page_bounds = self.page.bounds().unwrap();
         let mut out_box = Rect::<f32>::from(page_bounds);
@@ -149,5 +154,36 @@ where
 {
     fn from(value: PageViewer<'a>) -> Self {
         Element::new(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mupdf::Document;
+
+    use super::*;
+
+    const LANDSCAPE_PDF: &[u8] = include_bytes!("../../assets/tribo_storlek.pdf");
+
+    #[test]
+    pub fn non_transformed_bbox() {
+        let doc = Document::from_bytes(LANDSCAPE_PDF, "pdf").unwrap();
+        let page = doc.load_page(0).unwrap();
+        let state = State::default();
+        let viewer = PageViewer::new(&page, &state);
+        let bbox: Rect<i32> = viewer.visible_bbox().into();
+        let expected = Rect::from_points(Vector::new(0, 0), Vector::new(1296, 432));
+        assert_eq!(bbox, expected)
+    }
+
+    #[test]
+    pub fn zoomed_in_bbox() {
+        let doc = Document::from_bytes(LANDSCAPE_PDF, "pdf").unwrap();
+        let page = doc.load_page(0).unwrap();
+        let state = State::default();
+        let viewer = PageViewer::new(&page, &state).scale(1.0 / 2.0);
+        let bbox: Rect<i32> = viewer.visible_bbox().into();
+        let expected = Rect::from_points(Vector::new(324, 108), Vector::new(972, 324));
+        assert_eq!(bbox, expected)
     }
 }

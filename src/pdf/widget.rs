@@ -65,7 +65,10 @@ impl PdfViewer {
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         // TODO: Next and previous pages
         if let Some(p) = &self.cur_page {
-            PageViewer::new(p, &self.inner_state).into()
+            PageViewer::new(p, &self.inner_state)
+                .translation(self.translation)
+                .scale(self.scale)
+                .into()
         } else {
             vertical_space().into()
         }
@@ -90,14 +93,14 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         self.path = path.to_path_buf();
-        self.set_page(0);
+        self.set_page(0)?;
         Ok(())
     }
 
     fn refresh_file(&mut self) -> Result<()> {
         let doc = Document::open(self.path.to_str().unwrap())?;
         self.doc = Some(doc);
-        self.set_page(self.cur_page_idx);
+        self.set_page(self.cur_page_idx)?;
         Ok(())
     }
 }

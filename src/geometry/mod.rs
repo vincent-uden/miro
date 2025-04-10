@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 use num::Num;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct Vector<T> {
     pub x: T,
     pub y: T,
@@ -135,7 +135,7 @@ impl From<iced::Size> for Vector<f32> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct Rect<T> {
     pub x0: Vector<T>,
     pub x1: Vector<T>,
@@ -183,8 +183,9 @@ where
     pub fn scale(&mut self, s: T) {
         let x0 = self.x0;
         let x1 = self.x1;
+        // TODO (next) : Something is wrong here. Double check the math until tests pass
         self.x0 = (x0.scaled(T::one() + s) + x1.scaled(T::one() - s)).scaled(T::one() + T::one());
-        self.x0 = (x0.scaled(T::one() + s) + x1.scaled(T::one() - s)).scaled(T::one() + T::one());
+        self.x1 = (x0.scaled(T::one() - s) + x1.scaled(T::one() + s)).scaled(T::one() + T::one());
     }
 }
 
