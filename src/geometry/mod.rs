@@ -184,8 +184,6 @@ where
     pub fn scale(&mut self, s: T) {
         let x0 = self.x0;
         let x1 = self.x1;
-        // TODO: Something is wrong here. Double check the math until tests pass
-        println!("{:?} {:?}", x0.scaled(T::one() + s), T::one());
         self.x0 = (x0.scaled(T::one() + s) + x1.scaled(T::one() - s))
             .scaled(T::one() / (T::one() + T::one()));
         self.x1 = (x0.scaled(T::one() - s) + x1.scaled(T::one() + s))

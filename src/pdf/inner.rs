@@ -83,7 +83,7 @@ impl<'a> PageViewer<'a> {
         let page_bounds = self.page.bounds().unwrap();
         let mut out_box = Rect::<f32>::from(page_bounds);
         out_box.translate(self.translation);
-        out_box.scale(self.scale);
+        out_box.scale(1.0 / self.scale);
         out_box.into()
     }
 }
@@ -158,7 +158,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use mupdf::Document;
+    use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
 
     use super::*;
 
@@ -177,12 +177,13 @@ mod tests {
 
     #[test]
     pub fn zoomed_in_bbox() {
+        let scale = 2.0;
         let doc = Document::from_bytes(LANDSCAPE_PDF, "pdf").unwrap();
         let page = doc.load_page(0).unwrap();
         let state = State::default();
-        let viewer = PageViewer::new(&page, &state).scale(1.0 / 2.0);
+        let viewer = PageViewer::new(&page, &state).scale(scale);
         let bbox: Rect<i32> = viewer.visible_bbox().into();
         let expected = Rect::from_points(Vector::new(324, 108), Vector::new(972, 324));
-        assert_eq!(bbox, expected)
+        assert_eq!(bbox, expected);
     }
 }
