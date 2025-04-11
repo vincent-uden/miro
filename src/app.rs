@@ -32,6 +32,7 @@ pub struct App {
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
+    pub dark_mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +47,7 @@ pub enum AppMessage {
     NextTab,
     #[serde(skip)]
     FileWatcher(WatchNotification),
+    ToggleDarkMode,
 }
 
 impl App {
@@ -128,6 +130,10 @@ impl App {
                 }
                 iced::Task::none()
             }
+            AppMessage::ToggleDarkMode => {
+                self.dark_mode = !self.dark_mode;
+                iced::Task::none()
+            }
         }
     }
 
@@ -144,6 +150,18 @@ impl App {
                     "Close",
                     AppMessage::CloseTab(self.pdf_idx)
                 ))))
+            )(
+                debug_button_s("View"),
+                menu_tpl_1(menu_items!(
+                    (menu_button(
+                        if self.dark_mode {
+                            "Dark Mode"
+                        } else {
+                            "Light Mode"
+                        },
+                        AppMessage::ToggleDarkMode
+                    ))
+                ))
             ))
             .draw_path(menu::DrawPath::Backdrop)
             .style(

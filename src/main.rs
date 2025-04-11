@@ -45,16 +45,16 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .run_with(|| {
             let state = App::new();
-            (
-                state,
-                match args.path {
-                    Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
-                    None => iced::Task::none(),
-                },
-            )
+            (state, match args.path {
+                Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
+                None => iced::Task::none(),
+            })
         })
 }
 
-pub fn theme(_: &App) -> Theme {
-    Theme::Light
+pub fn theme(app: &App) -> Theme {
+    match app.dark_mode {
+        true => Theme::TokyoNight,
+        false => Theme::Light,
+    }
 }
