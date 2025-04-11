@@ -33,6 +33,7 @@ pub struct App {
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
     pub dark_mode: bool,
+    pub invert_pdf: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +49,7 @@ pub enum AppMessage {
     #[serde(skip)]
     FileWatcher(WatchNotification),
     ToggleDarkMode,
+    InvertPdf,
 }
 
 impl App {
@@ -134,6 +136,13 @@ impl App {
                 self.dark_mode = !self.dark_mode;
                 iced::Task::none()
             }
+            AppMessage::InvertPdf => {
+                self.invert_pdf = !self.invert_pdf;
+                for pdf in &mut self.pdfs {
+                    pdf.invert_colors = self.invert_pdf;
+                }
+                iced::Task::none()
+            }
         }
     }
 
@@ -152,16 +161,21 @@ impl App {
                 ))))
             )(
                 debug_button_s("View"),
-                menu_tpl_1(menu_items!(
-                    (menu_button(
-                        if self.dark_mode {
-                            "Dark Mode"
-                        } else {
-                            "Light Mode"
-                        },
-                        AppMessage::ToggleDarkMode
-                    ))
-                ))
+                menu_tpl_1(menu_items!((menu_button(
+                    if self.dark_mode {
+                        "Light Interface"
+                    } else {
+                        "Dark Interface"
+                    },
+                    AppMessage::ToggleDarkMode
+                ))(menu_button(
+                    if self.invert_pdf {
+                        "Light Pdf"
+                    } else {
+                        "Dark Pdf"
+                    },
+                    AppMessage::InvertPdf
+                ))))
             ))
             .draw_path(menu::DrawPath::Backdrop)
             .style(

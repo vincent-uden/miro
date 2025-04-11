@@ -20,6 +20,9 @@ mod keymap;
 mod pdf;
 mod watch;
 
+const DARK_THEME: Theme = Theme::TokyoNight;
+const LIGHT_THEME: Theme = Theme::Light;
+
 static APP_KEYMAP: LazyLock<RwLock<KeyMap<AppMessage>>> =
     LazyLock::new(|| KeyMap::<AppMessage>::default().into());
 
@@ -54,7 +57,7 @@ fn main() -> iced::Result {
 
 pub fn theme(app: &App) -> Theme {
     match app.dark_mode {
-        true => Theme::TokyoNight,
-        false => Theme::Light,
+        true => DARK_THEME,
+        false => LIGHT_THEME,
     }
 }

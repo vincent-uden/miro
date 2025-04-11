@@ -22,6 +22,7 @@ pub struct PdfViewer {
     prv_page: Option<Page>,
     scale: f32,
     translation: Vector<f32>, // In document space
+    pub invert_colors: bool,
     inner_state: inner::State,
 }
 
@@ -68,6 +69,7 @@ impl PdfViewer {
             PageViewer::new(p, &self.inner_state)
                 .translation(self.translation)
                 .scale(self.scale)
+                .invert_colors(self.invert_colors)
                 .into()
         } else {
             vertical_space().into()

@@ -1,12 +1,16 @@
+use colorgrad::{Gradient, GradientBuilder, GradientBuilderError, LinearGradient};
 use iced::{
     Border, Color, ContentFit, Element, Length, Size,
     advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
-    widget::image::FilterMethod,
+    widget::{image::FilterMethod, shader::wgpu::core::device},
 };
-use mupdf::Page;
+use mupdf::{Page, Pixmap};
 use tracing::debug;
 
-use crate::geometry::{Rect, Vector};
+use crate::{
+    DARK_THEME, LIGHT_THEME,
+    geometry::{Rect, Vector},
+};
 
 use super::PdfMessage;
 
@@ -27,6 +31,7 @@ pub struct PageViewer<'a> {
     filter_method: FilterMethod,
     translation: Vector<f32>,
     scale: f32,
+    invert_colors: bool,
 }
 
 impl<'a> PageViewer<'a> {
@@ -40,6 +45,7 @@ impl<'a> PageViewer<'a> {
             filter_method: FilterMethod::Nearest,
             translation: Vector::zero(),
             scale: 1.0,
+            invert_colors: false,
         }
     }
     /// Sets the width of the [`Image`] boundaries.
@@ -76,6 +82,11 @@ impl<'a> PageViewer<'a> {
 
     pub fn scale(mut self, scale: f32) -> Self {
         self.scale = scale;
+        self
+    }
+
+    pub fn invert_colors(mut self, invert: bool) -> Self {
+        self.invert_colors = invert;
         self
     }
 
@@ -138,20 +149,27 @@ where
             let mut pixmap =
                 Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true)
                     .unwrap();
-            let bg_color = theme.extended_palette().background.base.color.into_rgba8();
-            for (i, p) in pixmap.samples_mut().iter_mut().enumerate() {
-                if i % 4 == 0 {
-                    *p = bg_color[0];
-                } else if i % 4 == 1 {
-                    *p = bg_color[1];
-                } else if i % 4 == 2 {
-                    *p = bg_color[2];
-                } else if i % 4 == 3 {
-                    *p = 255;
-                }
-            }
+            let bg_color = if self.invert_colors {
+                DARK_THEME
+                    .extended_palette()
+                    .background
+                    .base
+                    .color
+                    .into_rgba8()
+            } else {
+                LIGHT_THEME
+                    .extended_palette()
+                    .background
+                    .base
+                    .color
+                    .into_rgba8()
+            };
+            pixmap.clear_with(255).unwrap();
             let device = Device::from_pixmap(&pixmap).unwrap();
             self.page.run(&device, &matrix).unwrap();
+            if self.invert_colors {
+                cpu_pdf_dark_mode_shader(&mut pixmap, &bg_color);
+            }
             img_bounds.width = pixmap.width() as f32;
             img_bounds.height = pixmap.height() as f32;
             image::Handle::from_rgba(pixmap.width(), pixmap.height(), pixmap.samples().to_vec())
@@ -218,6 +236,41 @@ where
 {
     fn from(value: PageViewer<'a>) -> Self {
         Element::new(value)
+    }
+}
+
+pub fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, bg_color: &[u8; 4]) {
+    // TODO: Fill in the transparent BG of latex-generated pdfs
+    let samples = pixmap.samples_mut();
+    for i in 0..(samples.len() / 4) {
+        let a = samples[i * 4 + 3];
+        // If the background is transparent, assume it's suppused to be white
+        if a < 255 {
+            samples[i * 4] = 255;
+            samples[i * 4 + 1] = 255;
+            samples[i * 4 + 2] = 255;
+            samples[i * 4 + 3] = 255;
+        }
+    }
+    let gradient = GradientBuilder::new()
+        .colors(&[
+            colorgrad::Color::from_rgba8(255, 255, 255, 255),
+            colorgrad::Color::from_rgba8(bg_color[0], bg_color[1], bg_color[2], 255),
+        ])
+        .build::<LinearGradient>()
+        .unwrap();
+    for i in 0..(samples.len() / 4) {
+        let r: u16 = samples[i * 4] as u16;
+        let g: u16 = samples[i * 4 + 1] as u16;
+        let b: u16 = samples[i * 4 + 2] as u16;
+        if samples[i * 4..i * 4 + 3] == bg_color[0..3] {
+            continue;
+        }
+        let brightness = ((r + g + b) as f32) / (255.0 * 3.0);
+        let [r_out, g_out, b_out, _] = gradient.at(brightness).to_rgba8();
+        samples[i * 4] = r_out;
+        samples[i * 4 + 1] = g_out;
+        samples[i * 4 + 2] = b_out;
     }
 }
 
