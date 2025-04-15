@@ -51,8 +51,8 @@ pub enum AppMessage {
     #[strum(disabled)]
     #[serde(skip)]
     FileWatcher(WatchNotification),
-    ToggleDarkMode,
-    InvertPdf,
+    ToggleDarkModeUi,
+    ToggleDarkModePdf,
     #[default]
     None,
 }
@@ -137,11 +137,11 @@ impl App {
                 }
                 iced::Task::none()
             }
-            AppMessage::ToggleDarkMode => {
+            AppMessage::ToggleDarkModeUi => {
                 self.dark_mode = !self.dark_mode;
                 iced::Task::none()
             }
-            AppMessage::InvertPdf => {
+            AppMessage::ToggleDarkModePdf => {
                 self.invert_pdf = !self.invert_pdf;
                 for pdf in &mut self.pdfs {
                     pdf.invert_colors = self.invert_pdf;
@@ -173,14 +173,14 @@ impl App {
                     } else {
                         "Dark Interface"
                     },
-                    AppMessage::ToggleDarkMode
+                    AppMessage::ToggleDarkModeUi
                 ))(menu_button(
                     if self.invert_pdf {
                         "Light Pdf"
                     } else {
                         "Dark Pdf"
                     },
-                    AppMessage::InvertPdf
+                    AppMessage::ToggleDarkModePdf
                 ))))
             ))
             .draw_path(menu::DrawPath::Backdrop)

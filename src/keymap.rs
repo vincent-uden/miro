@@ -22,6 +22,7 @@ pub enum BindableMessage {
     ZoomOut,
     NextTab,
     PreviousTab,
+    ToggleDarkModePdf,
 }
 
 impl Into<AppMessage> for BindableMessage {
@@ -45,6 +46,7 @@ impl Into<AppMessage> for BindableMessage {
             BindableMessage::ZoomOut => AppMessage::PdfMessage(PdfMessage::ZoomOut),
             BindableMessage::NextTab => AppMessage::NextTab,
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
+            BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
         }
     }
 }
@@ -84,6 +86,10 @@ impl Default for Config {
                 Keybind::new(KeyInput::from_str("_").unwrap(), BindableMessage::ZoomFit),
                 Keybind::new(KeyInput::from_str("-").unwrap(), BindableMessage::ZoomOut),
                 Keybind::new(KeyInput::from_str("Plus").unwrap(), BindableMessage::ZoomIn),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+r").unwrap(),
+                    BindableMessage::ToggleDarkModePdf,
+                ),
             ]),
         }
     }
