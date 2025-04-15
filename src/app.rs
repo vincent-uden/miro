@@ -23,7 +23,7 @@ use strum::{Display, EnumString};
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::{CONFIG, pdf::PdfMessage};
+use crate::{CONFIG, geometry::Vector, pdf::PdfMessage};
 use crate::{
     pdf::widget::PdfViewer,
     watch::{WatchMessage, WatchNotification, file_watcher},
@@ -53,6 +53,11 @@ pub enum AppMessage {
     FileWatcher(WatchNotification),
     ToggleDarkModeUi,
     ToggleDarkModePdf,
+    MouseMoved(Vector<f32>),
+    MouseLeftDown(Vector<f32>),
+    MouseRightDown(Vector<f32>),
+    MouseLeftUp(Vector<f32>),
+    MouseRightUp(Vector<f32>),
     #[default]
     None,
 }
@@ -149,6 +154,11 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::None => iced::Task::none(),
+            AppMessage::MouseMoved(vector) => todo!(),
+            AppMessage::MouseLeftDown(vector) => todo!(),
+            AppMessage::MouseRightDown(vector) => todo!(),
+            AppMessage::MouseLeftUp(vector) => todo!(),
+            AppMessage::MouseRightUp(vector) => todo!(),
         }
     }
 

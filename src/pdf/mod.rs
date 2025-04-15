@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{custom_serde_functions::*, geometry::Rect};
+use crate::geometry::{Rect, Vector};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
@@ -20,6 +20,11 @@ pub enum PdfMessage {
     MoveHorizontal(f32),
     MoveVertical(f32),
     UpdateBounds(Rect<f32>),
+    MouseMoved(Vector<f32>),
+    MouseLeftDown(Vector<f32>),
+    MouseRightDown(Vector<f32>),
+    MouseLeftUp(Vector<f32>),
+    MouseRightUp(Vector<f32>),
     #[default]
     None,
 }

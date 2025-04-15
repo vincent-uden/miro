@@ -24,6 +24,8 @@ pub struct PdfViewer {
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     inner_state: inner::State,
+    last_mouse_pos: Option<Vector<f32>>,
+    panning: bool,
 }
 
 impl PdfViewer {
@@ -60,6 +62,21 @@ impl PdfViewer {
                 self.inner_state.bounds = rectangle;
             }
             PdfMessage::None => {}
+            PdfMessage::MouseMoved(vector) => {
+                if self.inner_state.bounds.contains(vector) {
+                    if self.panning && self.last_mouse_pos.is_some() {
+                        self.translation += vector.scaled(self.scale);
+                    } else {
+                    }
+                    self.last_mouse_pos = Some(vector);
+                } else {
+                    self.last_mouse_pos = None;
+                }
+            }
+            PdfMessage::MouseLeftDown(vector) => todo!(),
+            PdfMessage::MouseRightDown(vector) => todo!(),
+            PdfMessage::MouseLeftUp(vector) => todo!(),
+            PdfMessage::MouseRightUp(vector) => todo!(),
         }
         iced::Task::none()
     }

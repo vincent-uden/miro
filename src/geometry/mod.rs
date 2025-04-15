@@ -144,7 +144,7 @@ pub struct Rect<T> {
 
 impl<T> Rect<T>
 where
-    T: Num + Copy + std::fmt::Debug,
+    T: Num + Copy + std::fmt::Debug + PartialOrd,
 {
     pub fn from_points(top_left: Vector<T>, bottom_right: Vector<T>) -> Self {
         Self {
@@ -188,6 +188,10 @@ where
             .scaled(T::one() / (T::one() + T::one()));
         self.x1 = (x0.scaled(T::one() - s) + x1.scaled(T::one() + s))
             .scaled(T::one() / (T::one() + T::one()));
+    }
+
+    pub fn contains(&self, v: Vector<T>) -> bool {
+        self.x0.x < v.x && self.x1.x > v.x && self.x0.y < v.y && self.x1.y > v.y
     }
 }
 
