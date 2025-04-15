@@ -1,103 +1,88 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
-use iced::{
-    advanced::graphics::core::SmolStr,
-    keyboard::{self, Key, Modifiers},
-};
-use serde::{Deserialize, Serialize};
+use keybinds::{KeyInput, Keybind, Keybinds};
 
 use crate::{app::AppMessage, pdf::PdfMessage};
 
 const MOVE_STEP: f32 = 40.0;
 
-pub struct KeyMap<Message>
-where
-    for<'de> Message: Clone + Serialize + Deserialize<'de>,
-{
-    bindings: HashMap<(Key, Modifiers), Message>,
+#[derive(Debug)]
+pub struct Config {
+    pub keyboard: Keybinds<AppMessage>,
 }
 
-impl<Message> KeyMap<Message>
-where
-    for<'de> Message: Clone + Serialize + Deserialize<'de>,
-{
-    pub fn event(&self, key: Key, modifiers: Modifiers) -> Option<Message> {
-        for (x, msg) in self.bindings.iter() {
-            let (k, m) = x;
-            if *k == key && *m == modifiers {
-                return Some(msg.clone());
-            }
-        }
-        None
-    }
-
-    pub fn add_char_binding(&mut self, key: &str, modifiers: Modifiers, message: Message) {
-        self.bindings.insert(
-            (Key::Character(SmolStr::from_str(key).unwrap()), modifiers),
-            message,
-        );
-    }
-}
-
-impl Default for KeyMap<AppMessage> {
+impl Default for Config {
     fn default() -> Self {
-        let mut out = Self {
-            bindings: HashMap::new(),
+        Config {
+            keyboard: Keybinds::new(vec![
+                Keybind::new(
+                    KeyInput::from_str("j").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::MoveVertical(MOVE_STEP)),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("k").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::MoveVertical(-MOVE_STEP)),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("h").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::MoveHorizontal(-MOVE_STEP)),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("l").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::MoveHorizontal(MOVE_STEP)),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("J").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::NextPage),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("K").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::PreviousPage),
+                ),
+                Keybind::new(KeyInput::from_str("H").unwrap(), AppMessage::PreviousTab),
+                Keybind::new(KeyInput::from_str("L").unwrap(), AppMessage::NextTab),
+                Keybind::new(
+                    KeyInput::from_str("0").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::ZoomHome),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("_").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::ZoomFit),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("-").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::ZoomOut),
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Plus").unwrap(),
+                    AppMessage::PdfMessage(PdfMessage::ZoomIn),
+                ),
+            ]),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use keybinds::{KeyInput, KeySeq, Keybind, serde};
+
+    use super::*;
+
+    #[test]
+    pub fn can_parse_vim_bindings() {
+        let _config = Config {
+            keyboard: Keybinds::new(vec![
+                Keybind::new('K', AppMessage::PdfMessage(PdfMessage::PreviousPage)),
+                Keybind::new('L', AppMessage::NextTab),
+                Keybind::new(
+                    [
+                        KeyInput::from_str("Ctrl+n").unwrap(),
+                        KeyInput::from_str("Ctrl+w").unwrap(),
+                        KeyInput::from_str("Ctrl+Plus").unwrap(),
+                    ],
+                    AppMessage::NextTab,
+                ),
+            ]),
         };
-
-        out.add_char_binding(
-            "k",
-            Modifiers::SHIFT,
-            AppMessage::PdfMessage(PdfMessage::PreviousPage),
-        );
-        out.add_char_binding(
-            "k",
-            Modifiers::empty(),
-            AppMessage::PdfMessage(PdfMessage::MoveVertical(-MOVE_STEP)),
-        );
-        out.add_char_binding(
-            "j",
-            Modifiers::SHIFT,
-            AppMessage::PdfMessage(PdfMessage::NextPage),
-        );
-        out.add_char_binding(
-            "j",
-            Modifiers::empty(),
-            AppMessage::PdfMessage(PdfMessage::MoveVertical(MOVE_STEP)),
-        );
-        out.add_char_binding(
-            "+",
-            Modifiers::empty(),
-            AppMessage::PdfMessage(PdfMessage::ZoomIn),
-        );
-        out.add_char_binding(
-            "-",
-            Modifiers::empty(),
-            AppMessage::PdfMessage(PdfMessage::ZoomOut),
-        );
-        out.add_char_binding(
-            "0",
-            Modifiers::empty(),
-            AppMessage::PdfMessage(PdfMessage::ZoomHome),
-        );
-        out.add_char_binding(
-            "-",
-            Modifiers::SHIFT,
-            AppMessage::PdfMessage(PdfMessage::ZoomFit),
-        );
-        out.add_char_binding(
-            "h",
-            Modifiers::empty(),
-            AppMessage::PdfMessage(PdfMessage::MoveHorizontal(-MOVE_STEP)),
-        );
-        out.add_char_binding("h", Modifiers::SHIFT, AppMessage::PreviousTab);
-        out.add_char_binding(
-            "l",
-            Modifiers::empty(),
-            AppMessage::PdfMessage(PdfMessage::MoveHorizontal(MOVE_STEP)),
-        );
-        out.add_char_binding("l", Modifiers::SHIFT, AppMessage::NextTab);
-
-        out
     }
 }

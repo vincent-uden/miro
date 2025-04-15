@@ -7,10 +7,10 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use app::{App, AppMessage};
+use app::App;
 use clap::Parser;
-use iced::{Subscription, Theme};
-use keymap::KeyMap;
+use iced::Theme;
+use keymap::Config;
 use tracing_subscriber::EnvFilter;
 
 mod app;
@@ -23,8 +23,8 @@ mod watch;
 const DARK_THEME: Theme = Theme::TokyoNight;
 const LIGHT_THEME: Theme = Theme::Light;
 
-static APP_KEYMAP: LazyLock<RwLock<KeyMap<AppMessage>>> =
-    LazyLock::new(|| KeyMap::<AppMessage>::default().into());
+// TODO: Read from file
+static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]

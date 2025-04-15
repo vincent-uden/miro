@@ -1,8 +1,9 @@
 use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
-    Background, Border, Element, Length, Padding, Shadow, Subscription, Theme, alignment,
+    Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme, alignment,
     border::{self, Radius},
+    event::listen_with,
     theme::palette,
     widget::{
         self, button, container, scrollable,
@@ -18,10 +19,11 @@ use iced_aw::{
 use iced_fonts::required::{RequiredIcons, icon_to_string};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::{APP_KEYMAP, pdf::PdfMessage};
+use crate::{CONFIG, pdf::PdfMessage};
 use crate::{
     pdf::widget::PdfViewer,
     watch::{WatchMessage, WatchNotification, file_watcher},
@@ -36,7 +38,7 @@ pub struct App {
     pub invert_pdf: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum AppMessage {
     OpenFile(PathBuf),
     OpenNewFileFinder,
@@ -46,10 +48,13 @@ pub enum AppMessage {
     CloseTab(usize),
     PreviousTab,
     NextTab,
+    #[strum(disabled)]
     #[serde(skip)]
     FileWatcher(WatchNotification),
     ToggleDarkMode,
     InvertPdf,
+    #[default]
+    None,
 }
 
 impl App {
@@ -143,6 +148,7 @@ impl App {
                 }
                 iced::Task::none()
             }
+            AppMessage::None => iced::Task::none(),
         }
     }
 
@@ -230,10 +236,12 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
-        use iced::keyboard::{self};
-        let keys = keyboard::on_key_press(|key, modifiers| {
-            let key_map = APP_KEYMAP.read().unwrap();
-            key_map.event(key, modifiers)
+        let keys = listen_with(|event, _, _| match event {
+            Event::Keyboard(e) => {
+                let mut config = CONFIG.write().unwrap();
+                config.keyboard.dispatch(e).cloned()
+            }
+            _ => None,
         });
 
         Subscription::batch(vec![

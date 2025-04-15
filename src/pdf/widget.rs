@@ -59,6 +59,7 @@ impl PdfViewer {
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.bounds = rectangle;
             }
+            PdfMessage::None => {}
         }
         iced::Task::none()
     }
