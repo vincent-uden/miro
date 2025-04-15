@@ -239,7 +239,7 @@ impl App {
         let keys = listen_with(|event, _, _| match event {
             Event::Keyboard(e) => {
                 let mut config = CONFIG.write().unwrap();
-                config.keyboard.dispatch(e).cloned()
+                config.keyboard.dispatch(e).map(|x| (*x).into())
             }
             _ => None,
         });

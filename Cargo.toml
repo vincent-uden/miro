@@ -12,6 +12,7 @@ iced = {version = "0.13.1", features = ["advanced", "image", "tokio", "web-color
 iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
 keybinds = { version = "0.1.1", features = ["iced", "serde"] }
+logos = "0.15.0"
 mupdf = { git = "https://github.com/messense/mupdf-rs.git", rev = "ee58c1ea" }
 num = "0.4.3"
 rfd = "0.15.3"
