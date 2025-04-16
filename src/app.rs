@@ -17,6 +17,7 @@ use iced_aw::{
     menu_bar,
 };
 use iced_fonts::required::{RequiredIcons, icon_to_string};
+use num::Signed;
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
@@ -54,10 +55,10 @@ pub enum AppMessage {
     ToggleDarkModeUi,
     ToggleDarkModePdf,
     MouseMoved(Vector<f32>),
-    MouseLeftDown(Vector<f32>),
-    MouseRightDown(Vector<f32>),
-    MouseLeftUp(Vector<f32>),
-    MouseRightUp(Vector<f32>),
+    MouseLeftDown,
+    MouseRightDown,
+    MouseLeftUp,
+    MouseRightUp,
     #[default]
     None,
 }
@@ -154,11 +155,36 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::None => iced::Task::none(),
-            AppMessage::MouseMoved(vector) => todo!(),
-            AppMessage::MouseLeftDown(vector) => todo!(),
-            AppMessage::MouseRightDown(vector) => todo!(),
-            AppMessage::MouseLeftUp(vector) => todo!(),
-            AppMessage::MouseRightUp(vector) => todo!(),
+            AppMessage::MouseMoved(vector) => {
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseMoved(vector));
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseLeftDown => {
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftDown);
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseRightDown => {
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightDown);
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseLeftUp => {
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp);
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseRightUp => {
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
+                }
+                iced::Task::none()
+            }
         }
     }
 
@@ -247,6 +273,50 @@ impl App {
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
         let keys = listen_with(|event, _, _| match event {
+            Event::Mouse(e) => match e {
+                iced::mouse::Event::CursorMoved { position } => {
+                    Some(AppMessage::MouseMoved(position.into()))
+                }
+                iced::mouse::Event::ButtonPressed(button) => match button {
+                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown),
+                    iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
+                    iced::mouse::Button::Middle => None,
+                    iced::mouse::Button::Back => {
+                        Some(AppMessage::PdfMessage(PdfMessage::PreviousPage))
+                    }
+                    iced::mouse::Button::Forward => {
+                        Some(AppMessage::PdfMessage(PdfMessage::NextPage))
+                    }
+                    iced::mouse::Button::Other(_) => None,
+                },
+                iced::mouse::Event::ButtonReleased(button) => match button {
+                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp),
+                    iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
+                    iced::mouse::Button::Middle => None,
+                    _ => None,
+                },
+                iced::mouse::Event::WheelScrolled { delta } => match delta {
+                    iced::mouse::ScrollDelta::Lines { x: _, y } => {
+                        if y > 0.0 {
+                            Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
+                        } else if y < 0.0 {
+                            Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
+                        } else {
+                            None
+                        }
+                    }
+                    iced::mouse::ScrollDelta::Pixels { x: _, y } => {
+                        if y > 0.0 {
+                            Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
+                        } else if y < 0.0 {
+                            Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
+                        } else {
+                            None
+                        }
+                    }
+                },
+                _ => None,
+            },
             Event::Keyboard(e) => {
                 let mut config = CONFIG.write().unwrap();
                 config.keyboard.dispatch(e).map(|x| (*x).into())

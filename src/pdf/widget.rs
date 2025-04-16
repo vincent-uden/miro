@@ -65,7 +65,8 @@ impl PdfViewer {
             PdfMessage::MouseMoved(vector) => {
                 if self.inner_state.bounds.contains(vector) {
                     if self.panning && self.last_mouse_pos.is_some() {
-                        self.translation += vector.scaled(self.scale);
+                        self.translation +=
+                            (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
                     } else {
                     }
                     self.last_mouse_pos = Some(vector);
@@ -73,10 +74,14 @@ impl PdfViewer {
                     self.last_mouse_pos = None;
                 }
             }
-            PdfMessage::MouseLeftDown(vector) => todo!(),
-            PdfMessage::MouseRightDown(vector) => todo!(),
-            PdfMessage::MouseLeftUp(vector) => todo!(),
-            PdfMessage::MouseRightUp(vector) => todo!(),
+            PdfMessage::MouseLeftDown => {
+                self.panning = true;
+            }
+            PdfMessage::MouseRightDown => {}
+            PdfMessage::MouseLeftUp => {
+                self.panning = false;
+            }
+            PdfMessage::MouseRightUp => {}
         }
         iced::Task::none()
     }
