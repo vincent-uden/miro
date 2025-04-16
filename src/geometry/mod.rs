@@ -90,21 +90,21 @@ impl From<Vector<f32>> for Vector<i32> {
     }
 }
 
-impl Into<iced::Point> for Vector<f32> {
-    fn into(self) -> iced::Point {
-        iced::Point::new(self.x, self.y)
+impl From<Vector<f32>> for iced::Point {
+    fn from(val: Vector<f32>) -> Self {
+        iced::Point::new(val.x, val.y)
     }
 }
 
-impl Into<iced::Vector> for Vector<f32> {
-    fn into(self) -> iced::Vector {
-        iced::Vector::new(self.x, self.y)
+impl From<Vector<f32>> for iced::Vector {
+    fn from(val: Vector<f32>) -> Self {
+        iced::Vector::new(val.x, val.y)
     }
 }
 
-impl Into<iced::Size> for Vector<f32> {
-    fn into(self) -> iced::Size {
-        iced::Size::new(self.x, self.y)
+impl From<Vector<f32>> for iced::Size {
+    fn from(val: Vector<f32>) -> Self {
+        iced::Size::new(val.x, val.y)
     }
 }
 
@@ -194,36 +194,36 @@ where
     }
 }
 
-impl Into<iced::Rectangle> for Rect<f32> {
-    fn into(self) -> iced::Rectangle {
-        iced::Rectangle::new(self.x0.into(), (self.x1 - self.x0).into())
+impl From<Rect<f32>> for iced::Rectangle {
+    fn from(val: Rect<f32>) -> Self {
+        iced::Rectangle::new(val.x0.into(), (val.x1 - val.x0).into())
     }
 }
 
-impl Into<mupdf::Rect> for Rect<f32> {
-    fn into(self) -> mupdf::Rect {
-        mupdf::Rect::new(self.x0.x, self.x0.y, self.x1.x, self.x1.y)
+impl From<Rect<f32>> for mupdf::Rect {
+    fn from(val: Rect<f32>) -> Self {
+        mupdf::Rect::new(val.x0.x, val.x0.y, val.x1.x, val.x1.y)
     }
 }
 
-impl Into<mupdf::IRect> for Rect<i32> {
-    fn into(self) -> mupdf::IRect {
-        mupdf::IRect::new(self.x0.x, self.x0.y, self.x1.x, self.x1.y)
+impl From<Rect<i32>> for mupdf::IRect {
+    fn from(val: Rect<i32>) -> Self {
+        mupdf::IRect::new(val.x0.x, val.x0.y, val.x1.x, val.x1.y)
     }
 }
 
-impl Into<mupdf::IRect> for Rect<f32> {
-    fn into(self) -> mupdf::IRect {
-        let irect: Rect<i32> = self.into();
+impl From<Rect<f32>> for mupdf::IRect {
+    fn from(val: Rect<f32>) -> Self {
+        let irect: Rect<i32> = val.into();
         irect.into()
     }
 }
 
-impl Into<Rect<i32>> for Rect<f32> {
-    fn into(self) -> Rect<i32> {
+impl From<Rect<f32>> for Rect<i32> {
+    fn from(val: Rect<f32>) -> Self {
         Rect {
-            x0: self.x0.into(),
-            x1: self.x1.into(),
+            x0: val.x0.into(),
+            x1: val.x1.into(),
         }
     }
 }

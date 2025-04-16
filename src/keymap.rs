@@ -25,9 +25,9 @@ pub enum BindableMessage {
     ToggleDarkModePdf,
 }
 
-impl Into<AppMessage> for BindableMessage {
-    fn into(self) -> AppMessage {
-        match self {
+impl From<BindableMessage> for AppMessage {
+    fn from(val: BindableMessage) -> Self {
+        match val {
             BindableMessage::MoveUp => AppMessage::PdfMessage(PdfMessage::MoveVertical(-MOVE_STEP)),
             BindableMessage::MoveDown => {
                 AppMessage::PdfMessage(PdfMessage::MoveVertical(MOVE_STEP))
@@ -99,7 +99,7 @@ impl FromStr for Config {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut lexer = Token::lexer(s);
+        let lexer = Token::lexer(s);
 
         let mut expecting_statement = true;
 
@@ -109,7 +109,7 @@ impl FromStr for Config {
         let mut out = Config::new();
 
         // TODO: Count the line number to give error messages for each invalid line
-        while let Some(token) = lexer.next() {
+        for token in lexer {
             match token {
                 Ok(Token::String(s)) => {
                     if expecting_statement {

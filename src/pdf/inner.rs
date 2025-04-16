@@ -91,7 +91,7 @@ impl<'a> PageViewer<'a> {
 
     fn visible_bbox(&self) -> mupdf::IRect {
         let page_bounds = self.page.bounds().unwrap();
-        let mut out_box = Rect::<f32>::from(self.state.bounds);
+        let mut out_box = self.state.bounds;
         out_box.translate(self.translation.scaled(self.scale));
         out_box.translate(Vector::new(
             -(self.state.bounds.width() - page_bounds.width() * self.scale) / 2.0,
@@ -101,7 +101,7 @@ impl<'a> PageViewer<'a> {
     }
 }
 
-impl<'a, Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PageViewer<'a>
+impl<Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PageViewer<'_>
 where
     Renderer: image::Renderer<Handle = image::Handle>,
 {

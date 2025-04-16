@@ -49,12 +49,8 @@ pub fn file_watcher() -> impl Stream<Item = WatchNotification> {
                     match file_event {
                         Ok(events) => {
                             for e in &events {
-                                match e.event.kind {
-                                    async_watcher::notify::EventKind::Modify(_) => {
-                                        let _ = output.send(WatchNotification::Changed(e.event.paths[0].clone())).await;
-                                    }
-                                    _ => {
-                                    }
+                                if let async_watcher::notify::EventKind::Modify(_) = e.event.kind {
+                                    let _ = output.send(WatchNotification::Changed(e.event.paths[0].clone())).await;
                                 }
                             }
                         }
