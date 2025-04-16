@@ -14,7 +14,6 @@ use keymap::Config;
 use tracing_subscriber::EnvFilter;
 
 mod app;
-mod custom_serde_functions;
 mod geometry;
 mod keymap;
 mod pdf;

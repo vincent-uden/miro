@@ -1,7 +1,7 @@
 use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
-    Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme, alignment,
+    Background, Border, Element, Event, Length, Shadow, Subscription, Theme, alignment,
     border::{self, Radius},
     event::listen_with,
     theme::palette,
@@ -17,12 +17,10 @@ use iced_aw::{
     menu_bar,
 };
 use iced_fonts::required::{RequiredIcons, icon_to_string};
-use num::Signed;
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use strum::EnumString;
 use tokio::sync::mpsc;
-use tracing::debug;
 
 use crate::{CONFIG, geometry::Vector, pdf::PdfMessage};
 use crate::{
@@ -82,10 +80,9 @@ impl App {
                     // We should never fill this up from here
                     let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
                 }
-                let out = self.pdfs[self.pdf_idx]
+                self.pdfs[self.pdf_idx]
                     .update(PdfMessage::OpenFile(path_buf))
-                    .map(AppMessage::PdfMessage);
-                out
+                    .map(AppMessage::PdfMessage)
             }
             AppMessage::Debug(s) => {
                 println!("[DEBUG] {s}");
@@ -157,31 +154,31 @@ impl App {
             AppMessage::None => iced::Task::none(),
             AppMessage::MouseMoved(vector) => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseMoved(vector));
+                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseMoved(vector));
                 }
                 iced::Task::none()
             }
             AppMessage::MouseLeftDown => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftDown);
+                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftDown);
                 }
                 iced::Task::none()
             }
             AppMessage::MouseRightDown => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightDown);
+                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightDown);
                 }
                 iced::Task::none()
             }
             AppMessage::MouseLeftUp => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp);
+                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp);
                 }
                 iced::Task::none()
             }
             AppMessage::MouseRightUp => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
+                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
                 }
                 iced::Task::none()
             }
@@ -244,10 +241,7 @@ impl App {
         });
 
         let image: Element<'_, AppMessage> = if !self.pdfs.is_empty() {
-            self.pdfs[self.pdf_idx]
-                .view()
-                .map(AppMessage::PdfMessage)
-                .into()
+            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
         } else {
             vertical_space().into()
         };
@@ -348,6 +342,7 @@ fn labeled_button(
     base_button(text(label).align_y(alignment::Vertical::Center), msg)
 }
 
+#[allow(dead_code)]
 fn debug_button(label: &str) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
     labeled_button(label, AppMessage::Debug(label.into())).width(Length::Fill)
 }
@@ -391,7 +386,6 @@ fn menu_button(
                 ..Default::default()
             }
         })
-        .into()
 }
 
 fn file_tab(

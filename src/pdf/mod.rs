@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::geometry::{Rect, Vector};
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use strum::EnumString;
 
 mod inner;
 pub mod widget;

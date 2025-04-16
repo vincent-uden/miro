@@ -2,7 +2,6 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use num::Num;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct Vector<T> {
@@ -82,11 +81,11 @@ where
     }
 }
 
-impl Into<Vector<i32>> for Vector<f32> {
-    fn into(self) -> Vector<i32> {
+impl From<Vector<f32>> for Vector<i32> {
+    fn from(value: Vector<f32>) -> Self {
         Vector {
-            x: self.x as i32,
-            y: self.y as i32,
+            x: value.x as i32,
+            y: value.y as i32,
         }
     }
 }

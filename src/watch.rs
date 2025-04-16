@@ -6,7 +6,6 @@ use iced::{
     stream,
 };
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
 
 #[derive(Debug)]
 pub enum WatchMessage {

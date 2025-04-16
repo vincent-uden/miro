@@ -1,11 +1,10 @@
-use colorgrad::{Gradient, GradientBuilder, GradientBuilderError, LinearGradient};
+use colorgrad::{Gradient, GradientBuilder, LinearGradient};
 use iced::{
-    Border, Color, ContentFit, Element, Length, Size,
+    Color, ContentFit, Element, Length, Size,
     advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
-    widget::{image::FilterMethod, shader::wgpu::core::device},
+    widget::image::FilterMethod,
 };
 use mupdf::{Page, Pixmap};
-use tracing::debug;
 
 use crate::{
     DARK_THEME, LIGHT_THEME,
@@ -133,7 +132,7 @@ where
         &self,
         _tree: &iced::advanced::widget::Tree,
         renderer: &mut Renderer,
-        theme: &iced::Theme,
+        _theme: &iced::Theme,
         _style: &iced::advanced::renderer::Style,
         layout: iced::advanced::Layout<'_>,
         _cursor: iced::advanced::mouse::Cursor,

@@ -1,6 +1,6 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use iced::widget::vertical_space;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use mupdf::{Document, Page};
 
@@ -67,7 +67,6 @@ impl PdfViewer {
                     if self.panning && self.last_mouse_pos.is_some() {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
-                    } else {
                     }
                     self.last_mouse_pos = Some(vector);
                 } else {
