@@ -1,3 +1,3 @@
 # miro
 
-A pdf viewer
+A pdf viewer in Rust
