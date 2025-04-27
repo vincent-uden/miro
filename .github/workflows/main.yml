@@ -1,48 +1,55 @@
 name: CI
 
-permissions:
-  actions: read        # <— allow runner to download public actions
-  contents: read       # <— already here for checkout, caching, etc.
-
 on:
   push:
     tags:
       - 'v*'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
-  build-windows-msvc:
-    runs-on: windows-latest
-
+  check:
+    name: Check
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Cache Rust crates
-        uses: actions/cache@v3
+      - uses: actions/checkout@v3
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          submodules: "recursive"
+          fetch-depth: 500
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get -y install libfontconfig1-dev
+      - run: cargo clippy --tests --features serde -- -D warnings
 
-      - name: Install Rust toolchain (MSVC)
-        uses: actions-rs/toolchain@v1
+  test:
+    name: Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-2019]
+    steps:
+      - uses: actions/checkout@v3
         with:
-          toolchain: stable
-          target: x86_64-pc-windows-msvc
-          default: true
-
-      - name: Build (release)
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: windows-msvc-release
-          path: target/x86_64-pc-windows-msvc/release/
+          submodules: "recursive"
+          fetch-depth: 500
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get -y install libfontconfig1-dev
+        if: matrix.os == 'ubuntu-latest'
+      - name: Install LLVM
+        if: matrix.os == 'windows-2019'
+        run: choco install -y llvm
+      - name: Setup msbuild
+        if: matrix.os == 'windows-2019'
+        uses: microsoft/setup-msbuild@v1.3.1
+      - run: cargo test --features serde
+        timeout-minutes: 20
+        if: matrix.os == 'windows-2019'
+        env:
+          LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
+      - run: cargo test --features serde
+        if: matrix.os != 'windows-2019'
+      - name: Test package mupdf-sys
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo package --manifest-path mupdf-sys/Cargo.toml
