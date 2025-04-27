@@ -1,9 +1,14 @@
 name: CI
 
+# (optional) explicitly allow read access to public actions
+permissions:
+  contents: read
+
 on:
   push:
-    branches: [ main ]
-  pull_request:
+    # match tags like "v1.0.0", "v2.3.4-beta", etc.
+    tags:
+      - 'v*'
 
 jobs:
   build-windows-msvc:
@@ -38,7 +43,8 @@ jobs:
           args: --release
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        # pin to v2 until v3 is fully available on your runners
+        uses: actions/upload-artifact@v2
         with:
           name: windows-msvc-release
           path: target/x86_64-pc-windows-msvc/release/
