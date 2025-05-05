@@ -57,6 +57,7 @@ pub enum AppMessage {
     MouseRightDown,
     MouseLeftUp,
     MouseRightUp,
+    DebugPrintImage,
     #[default]
     None,
 }
@@ -180,6 +181,10 @@ impl App {
                 if !self.pdfs.is_empty() {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
                 }
+                iced::Task::none()
+            }
+            AppMessage::DebugPrintImage => {
+                self.pdfs[self.pdf_idx].update(PdfMessage::DebugPrintImage);
                 iced::Task::none()
             }
         }

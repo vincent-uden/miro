@@ -1,3 +1,9 @@
+use std::{
+    fs::{self, File},
+    io::{BufWriter, Write},
+};
+
+use anyhow::{Result, anyhow};
 use colorgrad::{Gradient, GradientBuilder, LinearGradient};
 use iced::{
     Color, ContentFit, Element, Length, Size,
@@ -98,6 +104,42 @@ impl<'a> PageViewer<'a> {
             -(self.state.bounds.height() - page_bounds.height() * self.scale) / 2.0,
         ));
         out_box.into()
+    }
+
+    pub(crate) fn debug_write(&self, path: &str) -> Result<()> {
+        use mupdf::{Colorspace, Device, Matrix, Pixmap};
+        // Generate image of pdf
+        let mut matrix = Matrix::default();
+        matrix.scale(self.scale, self.scale);
+        let mut pixmap =
+            Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true).unwrap();
+        let bg_color = if self.invert_colors {
+            DARK_THEME
+                .extended_palette()
+                .background
+                .base
+                .color
+                .into_rgba8()
+        } else {
+            LIGHT_THEME
+                .extended_palette()
+                .background
+                .base
+                .color
+                .into_rgba8()
+        };
+        pixmap.clear_with(255).unwrap();
+        let device = Device::from_pixmap(&pixmap).unwrap();
+        self.page.run(&device, &matrix).unwrap();
+        if self.invert_colors {
+            cpu_pdf_dark_mode_shader(&mut pixmap, &bg_color);
+        }
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+        pixmap.write_to(&mut writer, mupdf::ImageFormat::PNG)?;
+        writer.flush()?;
+
+        Ok(())
     }
 }
 

@@ -51,13 +51,10 @@ fn main() -> iced::Result {
         .window(settings())
         .run_with(|| {
             let state = App::new();
-            (
-                state,
-                match args.path {
-                    Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
-                    None => iced::Task::none(),
-                },
-            )
+            (state, match args.path {
+                Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
+                None => iced::Task::none(),
+            })
         })
 }
 
@@ -68,7 +65,7 @@ pub fn theme(app: &App) -> Theme {
     }
 }
 
-#[cfg(target_os = "windows")]
+//#[cfg(target_os = "windows")]
 pub fn settings() -> iced::window::Settings {
     use iced::window::{self, Settings};
 

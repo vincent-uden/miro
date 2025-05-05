@@ -86,6 +86,15 @@ impl PdfViewer {
                 self.panning = false;
             }
             PdfMessage::MouseRightUp => {}
+            PdfMessage::DebugPrintImage => {
+                if let Some(page) = &self.cur_page {
+                    let mut viewer = PageViewer::new(page, &self.inner_state)
+                        .translation(self.translation)
+                        .scale(self.scale)
+                        .invert_colors(self.invert_colors);
+                    viewer.debug_write("./debug.png");
+                }
+            }
         }
         iced::Task::none()
     }
