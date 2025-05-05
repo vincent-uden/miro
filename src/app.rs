@@ -188,6 +188,7 @@ impl App {
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
         let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
 
+        #[rustfmt::skip]
         let mb = container(
             menu_bar!((
                 debug_button_s("File"),
@@ -200,21 +201,40 @@ impl App {
                 ))))
             )(
                 debug_button_s("View"),
-                menu_tpl_1(menu_items!((menu_button(
+                menu_tpl_1(menu_items!(
+                    (menu_button(
                     if self.dark_mode {
                         "Light Interface"
                     } else {
                         "Dark Interface"
                     },
                     AppMessage::ToggleDarkModeUi
-                ))(menu_button(
+                    ))
+                    (menu_button(
                     if self.invert_pdf {
                         "Light Pdf"
                     } else {
                         "Dark Pdf"
                     },
                     AppMessage::ToggleDarkModePdf
-                ))))
+                    ))
+                    (menu_button(
+                        "Zoom In",
+                    AppMessage::PdfMessage(PdfMessage::ZoomIn)
+                    ))
+                    (menu_button(
+                        "Zoom Out",
+                    AppMessage::PdfMessage(PdfMessage::ZoomOut)
+                    ))
+                    (menu_button(
+                        "Zoom 100%",
+                    AppMessage::PdfMessage(PdfMessage::ZoomHome)
+                    ))
+                    (menu_button(
+                        "Fit To Screen",
+                    AppMessage::PdfMessage(PdfMessage::ZoomFit)
+                    ))
+                ))
             ))
             .draw_path(menu::DrawPath::Backdrop)
             .style(

@@ -54,7 +54,9 @@ impl PdfViewer {
             PdfMessage::ZoomHome => {
                 self.scale = 1.0;
             }
-            PdfMessage::ZoomFit => todo!(),
+            PdfMessage::ZoomFit => {
+                self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
+            }
             PdfMessage::MoveHorizontal(delta) => {
                 self.translation.x += delta / self.scale;
             }
@@ -131,5 +133,16 @@ impl PdfViewer {
         self.doc = Some(doc);
         self.set_page(self.cur_page_idx)?;
         Ok(())
+    }
+
+    fn zoom_fit_ratio(&mut self) -> Result<f32> {
+        if let Some(page) = &self.cur_page {
+            let page_size = page.bounds()?;
+            let vertical_scale = self.inner_state.bounds.height() / page_size.height();
+            let horizontal_scale = self.inner_state.bounds.width() / page_size.width();
+            Ok(vertical_scale.min(horizontal_scale))
+        } else {
+            Ok(1.0)
+        }
     }
 }
