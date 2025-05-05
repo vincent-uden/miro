@@ -11,6 +11,7 @@ use iced::{
     widget::image::FilterMethod,
 };
 use mupdf::{Page, Pixmap};
+use tracing::error;
 
 use crate::{
     DARK_THEME, LIGHT_THEME,
@@ -106,7 +107,7 @@ impl<'a> PageViewer<'a> {
         out_box.into()
     }
 
-    pub(crate) fn debug_write(&self, path: &str) -> Result<()> {
+    fn render_page(&self) -> Result<Pixmap> {
         use mupdf::{Colorspace, Device, Matrix, Pixmap};
         // Generate image of pdf
         let mut matrix = Matrix::default();
@@ -128,14 +129,27 @@ impl<'a> PageViewer<'a> {
                 .color
                 .into_rgba8()
         };
-        pixmap.clear_with(255).unwrap();
+        // TODO: Fix this rendering error related to dark mode
+        // In the typst report, the aliasing problem occurs on every single page
+        // In the latex report, it only happens on pages with images that has backgrounds? (page 23
+        // at least)
+        // page.run doesnt seem to respect the pre-filling of the pixmap, so we must add the
+        // background in some other manner. Probably into the actual pdf-structure itself
+        for samp in pixmap.samples_mut() {
+            *samp = 255;
+        }
         let device = Device::from_pixmap(&pixmap).unwrap();
         self.page.run(&device, &matrix).unwrap();
         if self.invert_colors {
             cpu_pdf_dark_mode_shader(&mut pixmap, &bg_color);
         }
+        Ok(pixmap)
+    }
+
+    pub fn debug_write(&self, path: &str) -> Result<()> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
+        let pixmap = self.render_page()?;
         pixmap.write_to(&mut writer, mupdf::ImageFormat::PNG)?;
         writer.flush()?;
 
@@ -183,34 +197,7 @@ where
         // TODO: This might be leaking memory. Could be related to wl_registry still attached
         let mut img_bounds = layout.bounds();
         let image = {
-            use mupdf::{Colorspace, Device, Matrix, Pixmap};
-            // Generate image of pdf
-            let mut matrix = Matrix::default();
-            matrix.scale(self.scale, self.scale);
-            let mut pixmap =
-                Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true)
-                    .unwrap();
-            let bg_color = if self.invert_colors {
-                DARK_THEME
-                    .extended_palette()
-                    .background
-                    .base
-                    .color
-                    .into_rgba8()
-            } else {
-                LIGHT_THEME
-                    .extended_palette()
-                    .background
-                    .base
-                    .color
-                    .into_rgba8()
-            };
-            pixmap.clear_with(255).unwrap();
-            let device = Device::from_pixmap(&pixmap).unwrap();
-            self.page.run(&device, &matrix).unwrap();
-            if self.invert_colors {
-                cpu_pdf_dark_mode_shader(&mut pixmap, &bg_color);
-            }
+            let pixmap = self.render_page().unwrap();
             img_bounds.width = pixmap.width() as f32;
             img_bounds.height = pixmap.height() as f32;
             image::Handle::from_rgba(pixmap.width(), pixmap.height(), pixmap.samples().to_vec())
@@ -281,12 +268,12 @@ where
 }
 
 pub fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, bg_color: &[u8; 4]) {
-    // TODO: Fill in the transparent BG of latex-generated pdfs
     let samples = pixmap.samples_mut();
     for i in 0..(samples.len() / 4) {
         let a = samples[i * 4 + 3];
         // If the background is transparent, assume it's suppused to be white
         if a < 255 {
+            error!("This shouldnt happen");
             samples[i * 4] = 255;
             samples[i * 4 + 1] = 255;
             samples[i * 4 + 2] = 255;
