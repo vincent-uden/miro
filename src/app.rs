@@ -249,7 +249,7 @@ impl App {
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
             command_bar = command_bar.push(file_tab(
-                &pdf.name,
+                &pdf.label,
                 AppMessage::OpenTab(i),
                 AppMessage::CloseTab(i),
                 i == self.pdf_idx,
@@ -396,7 +396,7 @@ fn file_tab(
 ) -> Element<'_, AppMessage> {
     container(
         widget::row![
-            labeled_button(label, on_press).style(file_tab_style),
+            labeled_button(&label, on_press).style(file_tab_style),
             // TODO: Fix alignment on the x, it doesnt look great next to the text
             base_button(
                 text(icon_to_string(RequiredIcons::X))

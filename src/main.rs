@@ -22,7 +22,6 @@ mod watch;
 const DARK_THEME: Theme = Theme::TokyoNight;
 const LIGHT_THEME: Theme = Theme::Light;
 
-// TODO: Read from file
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 
 #[derive(Parser, Debug)]
@@ -47,10 +46,13 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .run_with(|| {
             let state = App::new();
-            (state, match args.path {
-                Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
-                None => iced::Task::none(),
-            })
+            (
+                state,
+                match args.path {
+                    Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
+                    None => iced::Task::none(),
+                },
+            )
         })
 }
 

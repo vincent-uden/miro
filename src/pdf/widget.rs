@@ -15,8 +15,10 @@ use super::{
 pub struct PdfViewer {
     pub name: String,
     pub path: PathBuf,
+    pub label: String,
     doc: Option<Document>,
-    cur_page_idx: i32,
+    pub cur_page_idx: i32,
+    pub n_pages: i32,
     nxt_page: Option<Page>,
     cur_page: Option<Page>,
     prv_page: Option<Page>,
@@ -37,6 +39,7 @@ impl PdfViewer {
     }
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
+        self.label = format!("{} {}/{}", self.name, self.cur_page_idx + 1, self.n_pages);
         match message {
             PdfMessage::OpenFile(path_buf) => self.load_file(path_buf).unwrap(),
             PdfMessage::RefreshFile => self.refresh_file().unwrap(),
@@ -110,6 +113,7 @@ impl PdfViewer {
 
     fn load_file(&mut self, path: PathBuf) -> Result<()> {
         let doc = Document::open(path.to_str().unwrap())?;
+        self.n_pages = doc.page_count()?;
         self.doc = Some(doc);
         self.name = path
             .file_name()
@@ -123,6 +127,7 @@ impl PdfViewer {
 
     fn refresh_file(&mut self) -> Result<()> {
         let doc = Document::open(self.path.to_str().unwrap())?;
+        self.n_pages = doc.page_count()?;
         self.doc = Some(doc);
         self.set_page(self.cur_page_idx)?;
         Ok(())
