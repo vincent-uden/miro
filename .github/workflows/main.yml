@@ -55,10 +55,10 @@ jobs:
         if: |
           startsWith(github.ref, 'refs/tags/') &&
           matrix.os == 'ubuntu-latest' &&
-          success() # Only run if previous steps in this job were successful
+          success()
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/miro # *** Verify this path is correct for your binary ***
+            target/release/miro
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
