@@ -30,6 +30,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-2019]
     steps:
+      - name: Compile miro
       - uses: actions/checkout@v3
         with:
           submodules: "recursive"
@@ -50,3 +51,13 @@ jobs:
           LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
       - run: cargo build --release
         if: matrix.os != 'windows-2019'
+
+      - name: Create new release
+        if: matrix.os == 'windows-2019'
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            miro.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
