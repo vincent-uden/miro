@@ -57,6 +57,7 @@ pub enum AppMessage {
     MouseRightDown,
     MouseLeftUp,
     MouseRightUp,
+    DebugPrintImage,
     #[default]
     None,
 }
@@ -182,12 +183,17 @@ impl App {
                 }
                 iced::Task::none()
             }
+            AppMessage::DebugPrintImage => {
+                self.pdfs[self.pdf_idx].update(PdfMessage::DebugPrintImage);
+                iced::Task::none()
+            }
         }
     }
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
         let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
 
+        #[rustfmt::skip]
         let mb = container(
             menu_bar!((
                 debug_button_s("File"),
@@ -200,21 +206,40 @@ impl App {
                 ))))
             )(
                 debug_button_s("View"),
-                menu_tpl_1(menu_items!((menu_button(
+                menu_tpl_1(menu_items!(
+                    (menu_button(
                     if self.dark_mode {
                         "Light Interface"
                     } else {
                         "Dark Interface"
                     },
                     AppMessage::ToggleDarkModeUi
-                ))(menu_button(
+                    ))
+                    (menu_button(
                     if self.invert_pdf {
                         "Light Pdf"
                     } else {
                         "Dark Pdf"
                     },
                     AppMessage::ToggleDarkModePdf
-                ))))
+                    ))
+                    (menu_button(
+                        "Zoom In",
+                    AppMessage::PdfMessage(PdfMessage::ZoomIn)
+                    ))
+                    (menu_button(
+                        "Zoom Out",
+                    AppMessage::PdfMessage(PdfMessage::ZoomOut)
+                    ))
+                    (menu_button(
+                        "Zoom 100%",
+                    AppMessage::PdfMessage(PdfMessage::ZoomHome)
+                    ))
+                    (menu_button(
+                        "Fit To Screen",
+                    AppMessage::PdfMessage(PdfMessage::ZoomFit)
+                    ))
+                ))
             ))
             .draw_path(menu::DrawPath::Backdrop)
             .style(
@@ -249,7 +274,7 @@ impl App {
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
             command_bar = command_bar.push(file_tab(
-                &pdf.name,
+                &pdf.label,
                 AppMessage::OpenTab(i),
                 AppMessage::CloseTab(i),
                 i == self.pdf_idx,
@@ -396,7 +421,7 @@ fn file_tab(
 ) -> Element<'_, AppMessage> {
     container(
         widget::row![
-            labeled_button(label, on_press).style(file_tab_style),
+            labeled_button(&label, on_press).style(file_tab_style),
             // TODO: Fix alignment on the x, it doesnt look great next to the text
             base_button(
                 text(icon_to_string(RequiredIcons::X))

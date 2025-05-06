@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use keybinds::{KeyInput, Keybind, Keybinds};
+use keybinds::{Key, KeyInput, Keybind, Keybinds};
 use logos::Logos;
 use strum::EnumString;
 
@@ -23,6 +23,7 @@ pub enum BindableMessage {
     NextTab,
     PreviousTab,
     ToggleDarkModePdf,
+    DebugPrintImage,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -47,6 +48,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::NextTab => AppMessage::NextTab,
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
             BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
+            BindableMessage::DebugPrintImage => AppMessage::DebugPrintImage,
         }
     }
 }
@@ -90,6 +92,7 @@ impl Default for Config {
                     KeyInput::from_str("Ctrl+r").unwrap(),
                     BindableMessage::ToggleDarkModePdf,
                 ),
+                Keybind::new(KeyInput::from(Key::F12), BindableMessage::DebugPrintImage),
             ]),
         }
     }
@@ -194,6 +197,7 @@ mod tests {
         let binds = config.keyboard.into_vec();
         let default_cfg = Config::default();
         let default_binds = default_cfg.keyboard.into_vec();
+        assert_eq!(binds.len(), default_binds.len());
         for (b1, b2) in binds.iter().zip(default_binds) {
             assert_eq!(b1.seq, b2.seq);
             assert_eq!(b1.action, b2.action);

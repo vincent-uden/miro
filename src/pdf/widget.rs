@@ -15,8 +15,10 @@ use super::{
 pub struct PdfViewer {
     pub name: String,
     pub path: PathBuf,
+    pub label: String,
     doc: Option<Document>,
-    cur_page_idx: i32,
+    pub cur_page_idx: i32,
+    pub n_pages: i32,
     nxt_page: Option<Page>,
     cur_page: Option<Page>,
     prv_page: Option<Page>,
@@ -37,6 +39,7 @@ impl PdfViewer {
     }
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
+        self.label = format!("{} {}/{}", self.name, self.cur_page_idx + 1, self.n_pages);
         match message {
             PdfMessage::OpenFile(path_buf) => self.load_file(path_buf).unwrap(),
             PdfMessage::RefreshFile => self.refresh_file().unwrap(),
@@ -51,7 +54,9 @@ impl PdfViewer {
             PdfMessage::ZoomHome => {
                 self.scale = 1.0;
             }
-            PdfMessage::ZoomFit => todo!(),
+            PdfMessage::ZoomFit => {
+                self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
+            }
             PdfMessage::MoveHorizontal(delta) => {
                 self.translation.x += delta / self.scale;
             }
@@ -81,6 +86,15 @@ impl PdfViewer {
                 self.panning = false;
             }
             PdfMessage::MouseRightUp => {}
+            PdfMessage::DebugPrintImage => {
+                if let Some(page) = &self.cur_page {
+                    let mut viewer = PageViewer::new(page, &self.inner_state)
+                        .translation(self.translation)
+                        .scale(self.scale)
+                        .invert_colors(self.invert_colors);
+                    viewer.debug_write("./debug.png");
+                }
+            }
         }
         iced::Task::none()
     }
@@ -110,6 +124,7 @@ impl PdfViewer {
 
     fn load_file(&mut self, path: PathBuf) -> Result<()> {
         let doc = Document::open(path.to_str().unwrap())?;
+        self.n_pages = doc.page_count()?;
         self.doc = Some(doc);
         self.name = path
             .file_name()
@@ -123,8 +138,20 @@ impl PdfViewer {
 
     fn refresh_file(&mut self) -> Result<()> {
         let doc = Document::open(self.path.to_str().unwrap())?;
+        self.n_pages = doc.page_count()?;
         self.doc = Some(doc);
         self.set_page(self.cur_page_idx)?;
         Ok(())
+    }
+
+    fn zoom_fit_ratio(&mut self) -> Result<f32> {
+        if let Some(page) = &self.cur_page {
+            let page_size = page.bounds()?;
+            let vertical_scale = self.inner_state.bounds.height() / page_size.height();
+            let horizontal_scale = self.inner_state.bounds.width() / page_size.width();
+            Ok(vertical_scale.min(horizontal_scale))
+        } else {
+            Ok(1.0)
+        }
     }
 }

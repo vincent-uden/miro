@@ -7,9 +7,13 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
+use anyhow::anyhow;
 use app::App;
 use clap::Parser;
-use iced::Theme;
+use iced::{
+    Theme,
+    window::{Icon, icon::from_file_data},
+};
 use keymap::Config;
 use tracing_subscriber::EnvFilter;
 
@@ -22,7 +26,6 @@ mod watch;
 const DARK_THEME: Theme = Theme::TokyoNight;
 const LIGHT_THEME: Theme = Theme::Light;
 
-// TODO: Read from file
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 
 #[derive(Parser, Debug)]
@@ -45,6 +48,7 @@ fn main() -> iced::Result {
         .theme(theme)
         .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
+        .window(settings())
         .run_with(|| {
             let state = App::new();
             (state, match args.path {
@@ -58,5 +62,18 @@ pub fn theme(app: &App) -> Theme {
     match app.dark_mode {
         true => DARK_THEME,
         false => LIGHT_THEME,
+    }
+}
+
+//#[cfg(target_os = "windows")]
+pub fn settings() -> iced::window::Settings {
+    use iced::window::{self, Settings};
+
+    let icon_img = include_bytes!("../assets/logo.png");
+    let icon = from_file_data(icon_img, None).ok();
+
+    Settings {
+        icon,
+        ..Default::default()
     }
 }
