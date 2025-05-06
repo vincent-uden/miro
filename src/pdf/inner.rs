@@ -129,12 +129,6 @@ impl<'a> PageViewer<'a> {
                 .color
                 .into_rgba8()
         };
-        // TODO: Fix this rendering error related to dark mode
-        // In the typst report, the aliasing problem occurs on every single page
-        // In the latex report, it only happens on pages with images that has backgrounds? (page 23
-        // at least)
-        // page.run doesnt seem to respect the pre-filling of the pixmap, so we must add the
-        // background in some other manner. Probably into the actual pdf-structure itself
         for samp in pixmap.samples_mut() {
             *samp = 255;
         }
@@ -273,10 +267,6 @@ pub fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, bg_color: &[u8; 4]) {
         let a = samples[i * 4 + 3];
         // If the background is transparent, assume it's suppused to be white
         if a < 255 {
-            error!("This shouldnt happen");
-            samples[i * 4] = 255;
-            samples[i * 4 + 1] = 255;
-            samples[i * 4 + 2] = 255;
             samples[i * 4 + 3] = 255;
         }
     }
