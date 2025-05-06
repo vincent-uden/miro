@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2019]
+        os: [ubuntu-latest, windows-2019]
     permissions:
       contents: write
     steps:
@@ -53,7 +53,7 @@ jobs:
       - run: cargo build --release
         if: matrix.os != 'windows-2019'
 
-      - name: Create Release
+      - name: Create Linux Release
         if: |
           startsWith(github.ref, 'refs/tags/') &&
           matrix.os == 'ubuntu-latest' &&
@@ -62,6 +62,19 @@ jobs:
         with:
           files: |
             target/release/miro
+          name: Miro ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Windows Release
+        if: |
+          startsWith(github.ref, 'refs/tags/') &&
+          matrix.os == 'windows-2019' &&
+          success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/release/miro.exe
           name: Miro ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
