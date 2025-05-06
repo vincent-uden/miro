@@ -30,7 +30,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-2019]
     permissions:
-      releases: write
+      contents: write
     steps:
       - uses: actions/checkout@v3
         with:
