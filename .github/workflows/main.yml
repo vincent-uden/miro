@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 500
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get -y install libfontconfig1-dev
-      - run: cargo clippy --tests --features serde -- -D warnings
+      - run: cargo clippy --tests -- -D warnings
 
   test:
     name: Test Suite
@@ -29,6 +29,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-2019]
+    permissions:
+      releases: write
     steps:
       - uses: actions/checkout@v3
         with:
@@ -60,5 +62,6 @@ jobs:
         with:
           files: |
             target/release/miro
+          name: Miro ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
