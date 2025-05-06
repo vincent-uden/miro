@@ -52,12 +52,21 @@ jobs:
       - run: cargo build --release
         if: matrix.os != 'windows-2019'
 
-      - name: Create new release
-        if: matrix.os == 'windows-2019'
+        # --- START: Step to create release and upload binary ---
+      - name: Create Release
+        # This step runs only for the ubuntu-latest matrix entry
+        if: |
+          startsWith(github.ref, 'refs/tags/') &&
+          matrix.os == 'ubuntu-latest' &&
+          success() # Only run if previous steps in this job were successful
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            miro.exe
+            target/release/miro # *** Verify this path is correct for your binary ***
+          # Optional: Add a release name and body
+          # name: YourAppName ${{ github.ref_name }}
+          # body: |
+          #   Release notes for version ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # --- END: Step to create release and upload binary ---
