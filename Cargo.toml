@@ -2,6 +2,11 @@
 name = "miro"
 version = "0.1.0"
 edition = "2024"
+license-file = "LICENSE"
+description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings."
+homepage = "https://vincentuden.xyz"
+repository = "https://github.com/vincent-uden/miro"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.97"
@@ -13,7 +18,7 @@ iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
 keybinds = { version = "0.1.1", features = ["iced", "serde"] }
 logos = "0.15.0"
-mupdf = { git = "https://github.com/messense/mupdf-rs.git", rev = "ee58c1ea" }
+mupdf = { version = "0.4.4", git = "https://github.com/messense/mupdf-rs.git", rev = "ee58c1ea" }
 num = "0.4.3"
 rfd = "0.15.3"
 serde = { version = "1.0.219", features = ["derive"] }
