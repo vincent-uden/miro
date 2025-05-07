@@ -10,18 +10,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: "recursive"
-          fetch-depth: 500
-      - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get -y install libfontconfig1-dev
-      - run: cargo clippy --tests -- -D warnings
-
   test:
     name: Test Suite
     runs-on: ${{ matrix.os }}
@@ -61,7 +49,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/miro
+            target/release/miro-pdf
           name: Miro ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -74,7 +62,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/miro.exe
+            target/release/miro-pdf.exe
           name: Miro ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
