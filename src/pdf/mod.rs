@@ -28,5 +28,4 @@ pub enum PdfMessage {
     MouseRightUp,
     #[default]
     None,
-    DebugPrintImage,
 }

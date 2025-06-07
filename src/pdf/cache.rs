@@ -45,13 +45,13 @@ pub enum WorkerResponse {
 
 #[derive(Debug, Clone, Copy)]
 pub struct DocumentInfo {
-    page_count: i32,
+    pub page_count: i32,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PageInfo {
-    idx: i32,
-    size: Vector<f32>,
+    pub idx: i32,
+    pub size: Vector<f32>,
 }
 
 /// Responses from the worker thread to the ui thread

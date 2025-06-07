@@ -4,7 +4,7 @@
 use std::{
     io,
     path::PathBuf,
-    sync::{LazyLock, RwLock},
+    sync::{LazyLock, RwLock, mpsc},
 };
 
 use anyhow::anyhow;
@@ -15,6 +15,7 @@ use iced::{
     window::{Icon, icon::from_file_data},
 };
 use keymap::Config;
+use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
 use tracing_subscriber::EnvFilter;
 
 mod app;
@@ -43,14 +44,21 @@ fn main() -> iced::Result {
 
     let args = Args::parse();
 
+    let (command_tx, command_rx) = mpsc::channel::<WorkerCommand>();
+    let (result_tx, mut result_rx) = mpsc::channel::<WorkerResponse>();
+
+    let _worker_handle = std::thread::spawn(move || {
+        worker_main(command_rx, result_tx);
+    });
+
     iced::application("App", App::update, App::view)
         .antialiasing(true)
         .theme(theme)
         .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
         .window(settings())
-        .run_with(|| {
-            let state = App::new();
+        .run_with(move || {
+            let state = App::new(command_tx, result_rx);
             (state, match args.path {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),

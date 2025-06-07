@@ -22,19 +22,28 @@ use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::mpsc;
 
-use crate::{CONFIG, geometry::Vector, pdf::PdfMessage};
+use crate::{
+    CONFIG,
+    geometry::Vector,
+    pdf::{
+        PdfMessage,
+        cache::{WorkerCommand, WorkerResponse},
+    },
+};
 use crate::{
     pdf::widget::PdfViewer,
     watch::{WatchMessage, WatchNotification, file_watcher},
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct App {
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
     pub dark_mode: bool,
     pub invert_pdf: bool,
+    command_tx: std::sync::mpsc::Sender<WorkerCommand>,
+    result_rx: std::sync::mpsc::Receiver<WorkerResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -57,16 +66,23 @@ pub enum AppMessage {
     MouseRightDown,
     MouseLeftUp,
     MouseRightUp,
-    DebugPrintImage,
     #[default]
     None,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(
+        command_tx: std::sync::mpsc::Sender<WorkerCommand>,
+        result_rx: std::sync::mpsc::Receiver<WorkerResponse>,
+    ) -> Self {
         Self {
             pdfs: vec![],
-            ..Default::default()
+            pdf_idx: 0,
+            file_watcher: None,
+            dark_mode: false,
+            invert_pdf: false,
+            command_tx,
+            result_rx,
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
@@ -74,7 +90,7 @@ impl App {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 if self.pdfs.is_empty() {
-                    self.pdfs.push(PdfViewer::new());
+                    self.pdfs.push(PdfViewer::new(self.command_tx.clone()));
                     self.pdf_idx = 0;
                 }
                 if let Some(sender) = &self.file_watcher {
@@ -98,7 +114,7 @@ impl App {
             }
             AppMessage::OpenNewFileFinder => {
                 if let Some(path_buf) = FileDialog::new().add_filter("Pdf", &["pdf"]).pick_file() {
-                    self.pdfs.push(PdfViewer::new());
+                    self.pdfs.push(PdfViewer::new(self.command_tx.clone()));
                     self.pdf_idx = self.pdfs.len() - 1;
                     iced::Task::done(AppMessage::OpenFile(path_buf))
                 } else {
@@ -181,10 +197,6 @@ impl App {
                 if !self.pdfs.is_empty() {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
                 }
-                iced::Task::none()
-            }
-            AppMessage::DebugPrintImage => {
-                self.pdfs[self.pdf_idx].update(PdfMessage::DebugPrintImage);
                 iced::Task::none()
             }
         }
