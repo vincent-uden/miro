@@ -4,6 +4,7 @@ use crate::geometry::{Rect, Vector};
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
+pub mod cache;
 mod inner;
 pub mod widget;
 
