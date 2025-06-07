@@ -1,5 +1,6 @@
-use std::sync::mpsc;
+use std::{path::Path, sync::mpsc};
 
+use anyhow::Result;
 use iced::advanced::image;
 use tracing::info;
 
@@ -40,9 +41,61 @@ pub struct CachedTile {
     pub bounds: mupdf::IRect,
 }
 
+/// Manages worker state
+#[derive(Debug, Clone)]
+pub struct PdfWorker {
+    document: Option<mupdf::Document>,
+    current_page: Option<mupdf::Page>,
+    current_page_idx: i32,
+}
+
+impl PdfWorker {
+    pub fn new() -> Self {
+        Self {
+            document: None,
+            current_page: None,
+            current_page_idx: -1,
+        }
+    }
+
+    pub fn load_document(&mut self, path: &Path) -> Result<()> {
+        todo!()
+    }
+
+    pub fn refresh_document(&mut self, path: &Path) -> Result<()> {
+        todo!()
+    }
+
+    pub fn render_tile(&mut self, req: RenderRequest) -> Result<CachedTile> {
+        todo!()
+    }
+}
+
 pub fn worker_main(
     mut command_rx: mpsc::Receiver<WorkerCommand>,
     result_tx: mpsc::Sender<CachedTile>,
 ) {
     info!("Worker thread started");
+
+    let mut worker = PdfWorker::new();
+
+    while let Ok(cmd) = command_rx.recv() {
+        match cmd {
+            WorkerCommand::RenderTile(req) => match worker.render_tile(req) {
+                Ok(_) => {}
+                Err(_) => todo!(),
+            },
+            WorkerCommand::LoadDocument(path_buf) => match worker.load_document(&path_buf) {
+                Ok(_) => {}
+                Err(_) => todo!(),
+            },
+            WorkerCommand::RefreshDocument(path_buf) => match worker.refresh_document(&path_buf) {
+                Ok(_) => {}
+                Err(_) => todo!(),
+            },
+            WorkerCommand::Shutdown => break,
+        }
+    }
+
+    info!("Worker thread shut down");
 }
