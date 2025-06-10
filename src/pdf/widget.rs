@@ -1,6 +1,6 @@
 use anyhow::Result;
 use iced::widget::vertical_space;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 use tracing::debug;
 
 use mupdf::{Document, Page};
@@ -9,7 +9,9 @@ use crate::geometry::Vector;
 
 use super::{
     PdfMessage,
-    cache::{DocumentInfo, PageInfo, WorkerCommand, WorkerResponse},
+    cache::{
+        CachedTile, DocumentInfo, PageInfo, RenderRequest, RequestId, WorkerCommand, WorkerResponse,
+    },
     inner::{self, PageViewer},
 };
 
@@ -28,6 +30,7 @@ pub struct PdfViewer {
     command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
     document_info: Option<DocumentInfo>,
     page_info: Option<PageInfo>,
+    tile_cache: HashMap<RequestId, CachedTile>,
 }
 
 impl PdfViewer {
@@ -46,6 +49,7 @@ impl PdfViewer {
             command_tx,
             document_info: None,
             page_info: None,
+            tile_cache: HashMap::new(),
         }
     }
 
@@ -81,6 +85,16 @@ impl PdfViewer {
             }
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.bounds = rectangle;
+                self.tile_cache.clear();
+                self.command_tx
+                    .send(WorkerCommand::RenderTile(RenderRequest {
+                        id: 0,
+                        page_number: self.cur_page_idx,
+                        bounds: self.visible_page_rect().unwrap(),
+                        invert_colors: self.invert_colors,
+                        scale: self.scale,
+                    }))
+                    .unwrap();
             }
             PdfMessage::None => {}
             PdfMessage::MouseMoved(vector) => {
@@ -103,7 +117,9 @@ impl PdfViewer {
             }
             PdfMessage::MouseRightUp => {}
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
-                WorkerResponse::RenderedTile(cached_tile) => todo!(),
+                WorkerResponse::RenderedTile(cached_tile) => {
+                    self.tile_cache.insert(cached_tile.id, cached_tile);
+                }
                 WorkerResponse::Loaded(document_info) => {
                     debug!("LOADED");
                     self.document_info = Some(document_info);
@@ -112,6 +128,15 @@ impl PdfViewer {
                 WorkerResponse::SetPage(page_info) => {
                     self.page_info = Some(page_info);
                     // TODO: Render tiles
+                    self.command_tx
+                        .send(WorkerCommand::RenderTile(RenderRequest {
+                            id: 0,
+                            page_number: self.cur_page_idx,
+                            bounds: self.visible_page_rect().unwrap(),
+                            invert_colors: self.invert_colors,
+                            scale: self.scale,
+                        }))
+                        .unwrap();
                 }
             },
         }
@@ -120,7 +145,15 @@ impl PdfViewer {
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         // TODO: Show rendered tiles
-        vertical_space().into()
+        if self.tile_cache.is_empty() {
+            vertical_space().into()
+        } else {
+            PageViewer::new(&self.tile_cache, &self.inner_state)
+                .translation(self.translation)
+                .scale(self.scale)
+                .invert_colors(self.invert_colors)
+                .into()
+        }
     }
 
     fn set_page(&mut self, idx: i32) -> Result<()> {
@@ -156,6 +189,21 @@ impl PdfViewer {
             Ok(vertical_scale.min(horizontal_scale))
         } else {
             Ok(1.0)
+        }
+    }
+
+    fn visible_page_rect(&self) -> Option<mupdf::IRect> {
+        // TODO: This is returning a rect with no size
+        if let Some(page) = self.page_info {
+            let mut out_box = self.inner_state.bounds;
+            out_box.translate(self.translation.scaled(self.scale));
+            out_box.translate(Vector::new(
+                -(self.inner_state.bounds.width() - page.size.x * self.scale) / 2.0,
+                -(self.inner_state.bounds.height() - page.size.y * self.scale) / 2.0,
+            ));
+            Some(out_box.into())
+        } else {
+            None
         }
     }
 }

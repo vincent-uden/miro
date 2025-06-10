@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use anyhow::{Result, anyhow};
 use iced::advanced::image;
 use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
 
@@ -95,6 +95,8 @@ impl PdfWorker {
         if let Some(ref doc) = self.document {
             let page = doc.load_page(idx)?;
             let page_bounds = page.bounds()?;
+            self.current_page = Some(page);
+            self.current_page_idx = idx;
             Ok(PageInfo {
                 idx,
                 size: Vector {
@@ -172,7 +174,9 @@ pub async fn worker_main(
         match cmd {
             WorkerCommand::RenderTile(req) => match worker.render_tile(req) {
                 Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),
-                Err(_) => todo!(),
+                Err(e) => {
+                    error!("{}", e);
+                }
             },
             WorkerCommand::LoadDocument(path_buf) => match worker.load_document(&path_buf) {
                 Ok(doc) => result_tx.send(WorkerResponse::Loaded(doc)).unwrap(),

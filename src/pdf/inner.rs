@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::{self, File},
     io::{BufWriter, Write},
 };
@@ -18,7 +19,10 @@ use crate::{
     geometry::{Rect, Vector},
 };
 
-use super::PdfMessage;
+use super::{
+    PdfMessage,
+    cache::{CachedTile, RequestId},
+};
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -27,7 +31,7 @@ pub struct State {
 
 #[derive(Debug)]
 pub struct PageViewer<'a> {
-    page: &'a Page,
+    cache: &'a HashMap<RequestId, CachedTile>,
     state: &'a State,
     // TODO: Maybe remove these?
     width: Length,
@@ -41,9 +45,9 @@ pub struct PageViewer<'a> {
 }
 
 impl<'a> PageViewer<'a> {
-    pub fn new(page: &'a Page, state: &'a State) -> Self {
+    pub fn new(cache: &'a HashMap<RequestId, CachedTile>, state: &'a State) -> Self {
         Self {
-            page,
+            cache,
             state,
             width: Length::Fill,
             height: Length::Fill,
@@ -95,60 +99,6 @@ impl<'a> PageViewer<'a> {
         self.invert_colors = invert;
         self
     }
-
-    fn visible_bbox(&self) -> mupdf::IRect {
-        let page_bounds = self.page.bounds().unwrap();
-        let mut out_box = self.state.bounds;
-        out_box.translate(self.translation.scaled(self.scale));
-        out_box.translate(Vector::new(
-            -(self.state.bounds.width() - page_bounds.width() * self.scale) / 2.0,
-            -(self.state.bounds.height() - page_bounds.height() * self.scale) / 2.0,
-        ));
-        out_box.into()
-    }
-
-    fn render_page(&self) -> Result<Pixmap> {
-        use mupdf::{Colorspace, Device, Matrix, Pixmap};
-        // Generate image of pdf
-        let mut matrix = Matrix::default();
-        matrix.scale(self.scale, self.scale);
-        let mut pixmap =
-            Pixmap::new_with_rect(&Colorspace::device_rgb(), self.visible_bbox(), true).unwrap();
-        let bg_color = if self.invert_colors {
-            DARK_THEME
-                .extended_palette()
-                .background
-                .base
-                .color
-                .into_rgba8()
-        } else {
-            LIGHT_THEME
-                .extended_palette()
-                .background
-                .base
-                .color
-                .into_rgba8()
-        };
-        for samp in pixmap.samples_mut() {
-            *samp = 255;
-        }
-        let device = Device::from_pixmap(&pixmap).unwrap();
-        self.page.run(&device, &matrix).unwrap();
-        if self.invert_colors {
-            cpu_pdf_dark_mode_shader(&mut pixmap, &bg_color);
-        }
-        Ok(pixmap)
-    }
-
-    pub fn debug_write(&self, path: &str) -> Result<()> {
-        let file = File::create(path)?;
-        let mut writer = BufWriter::new(file);
-        let pixmap = self.render_page()?;
-        pixmap.write_to(&mut writer, mupdf::ImageFormat::PNG)?;
-        writer.flush()?;
-
-        Ok(())
-    }
 }
 
 impl<Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PageViewer<'_>
@@ -189,36 +139,32 @@ where
         _viewport: &iced::Rectangle,
     ) {
         // TODO: This might be leaking memory. Could be related to wl_registry still attached
-        let mut img_bounds = layout.bounds();
-        let image = {
-            let pixmap = self.render_page().unwrap();
-            img_bounds.width = pixmap.width() as f32;
-            img_bounds.height = pixmap.height() as f32;
-            image::Handle::from_rgba(pixmap.width(), pixmap.height(), pixmap.samples().to_vec())
-        };
-        let bounds = layout.bounds();
+        let img_bounds = layout.bounds();
+        for (k, v) in self.cache.iter() {
+            let bounds = layout.bounds();
 
-        // Render said image onto the screen
-        let render = |renderer: &mut Renderer| {
-            renderer.fill_quad(
-                Quad {
-                    bounds,
-                    ..Default::default()
-                },
-                Color::BLACK,
-            );
-            renderer.draw_image(
-                image::Image {
-                    handle: image,
-                    filter_method: self.filter_method,
-                    rotation: iced::Radians::from(0.0),
-                    opacity: 1.0,
-                    snap: true,
-                },
-                img_bounds,
-            );
-        };
-        renderer.with_layer(img_bounds, render);
+            // Render said image onto the screen
+            let render = |renderer: &mut Renderer| {
+                renderer.fill_quad(
+                    Quad {
+                        bounds,
+                        ..Default::default()
+                    },
+                    Color::BLACK,
+                );
+                renderer.draw_image(
+                    image::Image {
+                        handle: v.image_handle.clone(),
+                        filter_method: self.filter_method,
+                        rotation: iced::Radians::from(0.0),
+                        opacity: 1.0,
+                        snap: true,
+                    },
+                    img_bounds,
+                );
+            };
+            renderer.with_layer(img_bounds, render);
+        }
     }
 
     fn on_event(
