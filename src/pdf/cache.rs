@@ -1,9 +1,10 @@
-use std::{path::Path, sync::mpsc};
+use std::path::Path;
+use tokio::sync::mpsc;
 
 use anyhow::{Result, anyhow};
 use iced::advanced::image;
 use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
 
@@ -36,7 +37,7 @@ pub struct RenderRequest {
     pub scale: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WorkerResponse {
     RenderedTile(CachedTile),
     Loaded(DocumentInfo),
@@ -158,15 +159,16 @@ impl PdfWorker {
     }
 }
 
-pub fn worker_main(
-    command_rx: mpsc::Receiver<WorkerCommand>,
-    result_tx: mpsc::Sender<WorkerResponse>,
+pub async fn worker_main(
+    mut command_rx: mpsc::UnboundedReceiver<WorkerCommand>,
+    result_tx: mpsc::UnboundedSender<WorkerResponse>,
 ) {
     info!("Worker thread started");
 
     let mut worker = PdfWorker::new();
 
-    while let Ok(cmd) = command_rx.recv() {
+    while let Some(cmd) = command_rx.recv().await {
+        debug!("{:?}", cmd);
         match cmd {
             WorkerCommand::RenderTile(req) => match worker.render_tile(req) {
                 Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),

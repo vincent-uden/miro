@@ -4,7 +4,7 @@
 use std::{
     io,
     path::PathBuf,
-    sync::{LazyLock, RwLock, mpsc},
+    sync::{LazyLock, RwLock},
 };
 
 use anyhow::anyhow;
@@ -15,7 +15,10 @@ use iced::{
     window::{Icon, icon::from_file_data},
 };
 use keymap::Config;
+use once_cell::sync::OnceCell;
+use tokio::sync::{mpsc, Mutex};
 use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
+use tracing::instrument::WithSubscriber;
 use tracing_subscriber::EnvFilter;
 
 mod app;
@@ -28,6 +31,7 @@ const DARK_THEME: Theme = Theme::TokyoNight;
 const LIGHT_THEME: Theme = Theme::Light;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
+static WORKER_RX: OnceCell<Mutex<tokio::sync::mpsc::UnboundedReceiver<WorkerResponse>>> = OnceCell::new();
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]
@@ -44,12 +48,15 @@ fn main() -> iced::Result {
 
     let args = Args::parse();
 
-    let (command_tx, command_rx) = mpsc::channel::<WorkerCommand>();
-    let (result_tx, mut result_rx) = mpsc::channel::<WorkerResponse>();
+    let (command_tx, command_rx) = mpsc::unbounded_channel::<WorkerCommand>();
+    let (result_tx, result_rx) = mpsc::unbounded_channel::<WorkerResponse>();
 
     let _worker_handle = std::thread::spawn(move || {
-        worker_main(command_rx, result_tx);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(worker_main(command_rx, result_tx));
     });
+
+    WORKER_RX.get_or_init(move || Mutex::new(result_rx));
 
     iced::application("App", App::update, App::view)
         .antialiasing(true)
@@ -58,7 +65,7 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .window(settings())
         .run_with(move || {
-            let state = App::new(command_tx, result_rx);
+            let state = App::new(command_tx);
             (state, match args.path {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),

@@ -1,9 +1,11 @@
-use std::{fs::canonicalize, path::PathBuf};
+use std::{fs::canonicalize, path::PathBuf, time::Duration};
 
 use iced::{
     Background, Border, Element, Event, Length, Shadow, Subscription, Theme, alignment,
     border::{self, Radius},
     event::listen_with,
+    futures::{SinkExt, Stream},
+    stream,
     theme::palette,
     widget::{
         self, button, container, scrollable,
@@ -21,9 +23,10 @@ use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::mpsc;
+use tracing::{debug, error};
 
 use crate::{
-    CONFIG,
+    CONFIG, WORKER_RX,
     geometry::Vector,
     pdf::{
         PdfMessage,
@@ -42,8 +45,7 @@ pub struct App {
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
     pub dark_mode: bool,
     pub invert_pdf: bool,
-    command_tx: std::sync::mpsc::Sender<WorkerCommand>,
-    result_rx: std::sync::mpsc::Receiver<WorkerResponse>,
+    command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -66,15 +68,15 @@ pub enum AppMessage {
     MouseRightDown,
     MouseLeftUp,
     MouseRightUp,
+    #[strum(disabled)]
+    #[serde(skip)]
+    WorkerResponse(WorkerResponse),
     #[default]
     None,
 }
 
 impl App {
-    pub fn new(
-        command_tx: std::sync::mpsc::Sender<WorkerCommand>,
-        result_rx: std::sync::mpsc::Receiver<WorkerResponse>,
-    ) -> Self {
+    pub fn new(command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>) -> Self {
         Self {
             pdfs: vec![],
             pdf_idx: 0,
@@ -82,10 +84,10 @@ impl App {
             dark_mode: false,
             invert_pdf: false,
             command_tx,
-            result_rx,
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
+        debug!("{:?}", message);
         match message {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
@@ -198,6 +200,16 @@ impl App {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
                 }
                 iced::Task::none()
+            }
+            AppMessage::WorkerResponse(worker_response) => {
+                debug!("{:?}", worker_response);
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::WorkerResponse(worker_response))
+                        .map(AppMessage::PdfMessage)
+                } else {
+                    iced::Task::none()
+                }
             }
         }
     }
@@ -358,8 +370,27 @@ impl App {
         Subscription::batch(vec![
             keys,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
+            Subscription::run(worker_responder).map(AppMessage::WorkerResponse),
         ])
     }
+}
+
+fn worker_responder() -> impl Stream<Item = WorkerResponse> {
+    stream::channel(100, |mut output| async move {
+        let wrx = WORKER_RX.get().unwrap();
+        loop {
+            let msg = {
+                let mut worker_rx = wrx.lock().await;
+                worker_rx.recv().await
+            };
+            match msg {
+                Some(msg) => {
+                    output.send(msg).await.unwrap();
+                }
+                None => break, // Channel closed
+            }
+        }
+    })
 }
 
 fn base_button<'a>(

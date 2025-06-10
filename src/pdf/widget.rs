@@ -1,6 +1,7 @@
 use anyhow::Result;
 use iced::widget::vertical_space;
 use std::path::PathBuf;
+use tracing::debug;
 
 use mupdf::{Document, Page};
 
@@ -24,13 +25,13 @@ pub struct PdfViewer {
     inner_state: inner::State,
     last_mouse_pos: Option<Vector<f32>>,
     panning: bool,
-    command_tx: std::sync::mpsc::Sender<WorkerCommand>,
+    command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
     document_info: Option<DocumentInfo>,
     page_info: Option<PageInfo>,
 }
 
 impl PdfViewer {
-    pub fn new(command_tx: std::sync::mpsc::Sender<WorkerCommand>) -> Self {
+    pub fn new(command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>) -> Self {
         Self {
             scale: 1.0,
             name: String::new(),
@@ -101,6 +102,18 @@ impl PdfViewer {
                 self.panning = false;
             }
             PdfMessage::MouseRightUp => {}
+            PdfMessage::WorkerResponse(worker_response) => match worker_response {
+                WorkerResponse::RenderedTile(cached_tile) => todo!(),
+                WorkerResponse::Loaded(document_info) => {
+                    debug!("LOADED");
+                    self.document_info = Some(document_info);
+                    self.set_page(0).unwrap();
+                }
+                WorkerResponse::SetPage(page_info) => {
+                    self.page_info = Some(page_info);
+                    // TODO: Render tiles
+                }
+            },
         }
         iced::Task::none()
     }
@@ -127,13 +140,11 @@ impl PdfViewer {
             .to_string();
         self.path = path.to_path_buf();
         self.command_tx.send(WorkerCommand::LoadDocument(path))?;
-        self.set_page(0)?;
         Ok(())
     }
 
     fn refresh_file(&mut self) -> Result<()> {
-        self.load_file(self.path.clone())?;
-        self.set_page(self.cur_page_idx)?;
+        // TODO: Implement, maybe through a special command
         Ok(())
     }
 
