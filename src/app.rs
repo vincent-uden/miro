@@ -87,7 +87,6 @@ impl App {
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
-        debug!("{:?}", message);
         match message {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();

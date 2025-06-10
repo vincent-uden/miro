@@ -60,6 +60,9 @@ impl PdfViewer {
             self.cur_page_idx + 1,
             self.document_info.map(|x| x.page_count).unwrap_or_default(),
         );
+        if !matches!(message, PdfMessage::MouseMoved(_)) {
+            debug!("{:?}", message);
+        }
         match message {
             PdfMessage::OpenFile(path_buf) => self.load_file(path_buf).unwrap(),
             PdfMessage::RefreshFile => self.refresh_file().unwrap(),
@@ -84,17 +87,21 @@ impl PdfViewer {
                 self.translation.y += delta / self.scale;
             }
             PdfMessage::UpdateBounds(rectangle) => {
+                // TODO: The amount of wl_registrys that appear scale with the amount of resizing
+                // of the window that is done
                 self.inner_state.bounds = rectangle;
                 self.tile_cache.clear();
-                self.command_tx
-                    .send(WorkerCommand::RenderTile(RenderRequest {
-                        id: 0,
-                        page_number: self.cur_page_idx,
-                        bounds: self.visible_page_rect().unwrap(),
-                        invert_colors: self.invert_colors,
-                        scale: self.scale,
-                    }))
-                    .unwrap();
+                if self.document_info.is_some() && self.page_info.is_some() {
+                    self.command_tx
+                        .send(WorkerCommand::RenderTile(RenderRequest {
+                            id: 0,
+                            page_number: self.cur_page_idx,
+                            bounds: self.visible_page_rect().unwrap(),
+                            invert_colors: self.invert_colors,
+                            scale: self.scale,
+                        }))
+                        .unwrap();
+                }
             }
             PdfMessage::None => {}
             PdfMessage::MouseMoved(vector) => {
@@ -145,15 +152,11 @@ impl PdfViewer {
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         // TODO: Show rendered tiles
-        if self.tile_cache.is_empty() {
-            vertical_space().into()
-        } else {
-            PageViewer::new(&self.tile_cache, &self.inner_state)
-                .translation(self.translation)
-                .scale(self.scale)
-                .invert_colors(self.invert_colors)
-                .into()
-        }
+        PageViewer::new(&self.tile_cache, &self.inner_state)
+            .translation(self.translation)
+            .scale(self.scale)
+            .invert_colors(self.invert_colors)
+            .into()
     }
 
     fn set_page(&mut self, idx: i32) -> Result<()> {
