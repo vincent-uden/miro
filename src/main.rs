@@ -9,10 +9,7 @@ use std::{
 
 use app::App;
 use clap::Parser;
-use iced::{
-    Theme,
-    window::icon::from_file_data,
-};
+use iced::{Theme, window::icon::from_file_data};
 use keymap::Config;
 use once_cell::sync::OnceCell;
 use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
@@ -31,6 +28,7 @@ const LIGHT_THEME: Theme = Theme::Light;
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 static WORKER_RX: OnceCell<Mutex<tokio::sync::mpsc::UnboundedReceiver<WorkerResponse>>> =
     OnceCell::new();
+static RENDER_GENERATION: OnceCell<Mutex<usize>> = OnceCell::new();
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]
@@ -56,6 +54,7 @@ fn main() -> iced::Result {
     });
 
     WORKER_RX.get_or_init(move || Mutex::new(result_rx));
+    RENDER_GENERATION.get_or_init(|| Mutex::new(0));
 
     iced::application("App", App::update, App::view)
         .antialiasing(true)

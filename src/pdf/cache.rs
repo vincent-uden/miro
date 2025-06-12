@@ -6,7 +6,10 @@ use iced::advanced::image;
 use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
 use tracing::{debug, error, info};
 
-use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
+use crate::{
+    DARK_THEME, LIGHT_THEME, RENDER_GENERATION, geometry::Vector,
+    pdf::inner::cpu_pdf_dark_mode_shader,
+};
 
 /// A unique identifier for a complete render request (e.g., for a specific view).
 pub type RequestId = u64;
@@ -37,6 +40,7 @@ pub struct RenderRequest {
     pub scale: f32,
     pub x: i32,
     pub y: i32,
+    pub generation: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -113,7 +117,7 @@ impl PdfWorker {
         }
     }
 
-    pub fn render_tile(&mut self, req: RenderRequest) -> Result<CachedTile> {
+    pub fn render_tile(&mut self, req: &RenderRequest) -> Result<CachedTile> {
         if let Some(ref page) = self.current_page {
             if self.current_page_idx != req.page_number {
                 return Err(anyhow!(
@@ -181,14 +185,22 @@ pub async fn worker_main(
     let mut worker = PdfWorker::new();
 
     while let Some(cmd) = command_rx.recv().await {
+        let gen_mtx = RENDER_GENERATION.get().unwrap();
+        let generation = gen_mtx.lock().await;
         debug!("{:?}", cmd);
         match cmd {
-            WorkerCommand::RenderTile(req) => match worker.render_tile(req) {
-                Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),
-                Err(e) => {
-                    error!("{}", e);
+            WorkerCommand::RenderTile(req) => {
+                if *generation <= req.generation {
+                    match worker.render_tile(&req) {
+                        Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),
+                        Err(e) => {
+                            error!("{}", e);
+                        }
+                    }
+                } else {
+                    continue;
                 }
-            },
+            }
             WorkerCommand::LoadDocument(path_buf) => match worker.load_document(&path_buf) {
                 Ok(doc) => result_tx.send(WorkerResponse::Loaded(doc)).unwrap(),
                 Err(_) => todo!(),

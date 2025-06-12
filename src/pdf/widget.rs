@@ -3,7 +3,7 @@ use num::Integer;
 use std::{collections::HashMap, path::PathBuf};
 use tracing::debug;
 
-use crate::geometry::Vector;
+use crate::{RENDER_GENERATION, geometry::Vector};
 
 use super::{
     PdfMessage,
@@ -32,6 +32,7 @@ pub struct PdfViewer {
     pending_tile_cache: HashMap<(i32, i32), CachedTile>,
     shown_tile_cache: HashMap<(i32, i32), CachedTile>,
     current_center_tile: Vector<i32>,
+    generation: usize,
 }
 
 impl PdfViewer {
@@ -58,6 +59,7 @@ impl PdfViewer {
             pending_tile_cache: HashMap::new(),
             shown_tile_cache: HashMap::new(),
             current_center_tile: Vector::zero(),
+            generation: 0,
         }
     }
 
@@ -185,9 +187,17 @@ impl PdfViewer {
             y: (middle_of_screen.y / tile_size.height() as f32).round() as i32,
         };
 
+        self.increment_generation();
         self.pending_tile_cache.clear();
         self.current_center_tile = viewport_tile_coord;
         self.populate_cache();
+    }
+
+    fn increment_generation(&mut self) {
+        let gen_mtx = RENDER_GENERATION.get().unwrap();
+        let mut generation = gen_mtx.blocking_lock();
+        *generation += 1;
+        self.generation = *generation;
     }
 
     fn invalidate_cache(&mut self) {
@@ -202,6 +212,7 @@ impl PdfViewer {
         if viewport_tile_coord != self.current_center_tile || self.pending_scale != self.shown_scale
         {
             if self.pending_scale != self.shown_scale {
+                self.increment_generation();
                 self.pending_tile_cache.clear();
             } else {
                 self.pending_tile_cache = self.shown_tile_cache.clone();
@@ -234,6 +245,7 @@ impl PdfViewer {
                             scale: self.pending_scale,
                             x: self.current_center_tile.x + x,
                             y: self.current_center_tile.y + y,
+                            generation: self.generation,
                         }))
                         .unwrap();
                 }
