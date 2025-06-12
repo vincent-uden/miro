@@ -1,5 +1,6 @@
 use anyhow::Result;
 use iced::{Rectangle, widget::vertical_space};
+use num::Integer;
 use std::{collections::HashMap, path::PathBuf};
 use tracing::debug;
 
@@ -15,13 +16,15 @@ use super::{
     inner::{self, PageViewer},
 };
 
+const TILE_CACHE_GRID_SIZE: i32 = 5;
+
 #[derive(Debug)]
 pub struct PdfViewer {
     pub name: String,
     pub path: PathBuf,
     pub label: String,
     pub cur_page_idx: i32,
-    scale: f32,
+    shown_scale: f32,
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     inner_state: inner::State,
@@ -30,13 +33,20 @@ pub struct PdfViewer {
     command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
     document_info: Option<DocumentInfo>,
     page_info: Option<PageInfo>,
-    tile_cache: HashMap<RequestId, CachedTile>,
+    pending_tile_cache: HashMap<RequestId, CachedTile>,
+    shown_tile_cache: HashMap<RequestId, CachedTile>,
+    pending_scale: f32,
 }
 
 impl PdfViewer {
     pub fn new(command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>) -> Self {
+        assert!(
+            TILE_CACHE_GRID_SIZE.is_odd(),
+            "The tile cache grid must be of an odd size, is currently {TILE_CACHE_GRID_SIZE}"
+        );
         Self {
-            scale: 1.0,
+            shown_scale: 1.0,
+            pending_scale: 1.0,
             name: String::new(),
             path: PathBuf::new(),
             label: String::new(),
@@ -49,7 +59,8 @@ impl PdfViewer {
             command_tx,
             document_info: None,
             page_info: None,
-            tile_cache: HashMap::new(),
+            pending_tile_cache: HashMap::new(),
+            shown_tile_cache: HashMap::new(),
         }
     }
 
@@ -69,70 +80,38 @@ impl PdfViewer {
             PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
             PdfMessage::ZoomIn => {
-                self.scale *= 1.2;
+                self.pending_scale *= 1.2;
+                self.request_full_page_refresh();
             }
             PdfMessage::ZoomOut => {
-                self.scale /= 1.2;
+                self.pending_scale /= 1.2;
+                self.request_full_page_refresh();
             }
             PdfMessage::ZoomHome => {
-                self.scale = 1.0;
+                self.pending_scale = 1.0;
+                self.request_full_page_refresh();
             }
             PdfMessage::ZoomFit => {
-                self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
+                self.pending_scale = self.zoom_fit_ratio().unwrap_or(1.0);
+                self.request_full_page_refresh();
             }
             PdfMessage::MoveHorizontal(delta) => {
-                self.translation.x += delta / self.scale;
+                self.translation.x += delta / self.shown_scale;
             }
             PdfMessage::MoveVertical(delta) => {
-                self.translation.y += delta / self.scale;
+                self.translation.y += delta / self.shown_scale;
             }
             PdfMessage::UpdateBounds(rectangle) => {
                 // TODO: The amount of wl_registrys that appear scale with the amount of resizing
                 // of the window that is done
                 self.inner_state.bounds = rectangle;
-                self.tile_cache.clear();
-                if self.document_info.is_some() && self.page_info.is_some() {
-                    self.command_tx
-                        .send(WorkerCommand::RenderTile(RenderRequest {
-                            id: 1,
-                            page_number: self.cur_page_idx,
-                            bounds: self.tile_bounds(Vector { x: 0, y: 0 }).unwrap(),
-                            invert_colors: self.invert_colors,
-                            scale: self.scale,
-                            x: 0,
-                            y: 0,
-                        }))
-                        .unwrap();
-                    self.command_tx
-                        .send(WorkerCommand::RenderTile(RenderRequest {
-                            id: 2,
-                            page_number: self.cur_page_idx,
-                            bounds: self.tile_bounds(Vector { x: 0, y: -1 }).unwrap(),
-                            invert_colors: self.invert_colors,
-                            scale: self.scale,
-                            x: 0,
-                            y: -1,
-                        }))
-                        .unwrap();
-                    self.command_tx
-                        .send(WorkerCommand::RenderTile(RenderRequest {
-                            id: 3,
-                            page_number: self.cur_page_idx,
-                            bounds: self.tile_bounds(Vector { x: 0, y: 1 }).unwrap(),
-                            invert_colors: self.invert_colors,
-                            scale: self.scale,
-                            x: 0,
-                            y: 1,
-                        }))
-                        .unwrap();
-                }
             }
             PdfMessage::None => {}
             PdfMessage::MouseMoved(vector) => {
                 if self.inner_state.bounds.contains(vector) {
                     if self.panning && self.last_mouse_pos.is_some() {
                         self.translation +=
-                            (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
+                            (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
                     }
                     self.last_mouse_pos = Some(vector);
                 } else {
@@ -149,27 +128,23 @@ impl PdfViewer {
             PdfMessage::MouseRightUp => {}
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
-                    self.tile_cache.insert(cached_tile.id, cached_tile);
+                    self.pending_tile_cache.insert(cached_tile.id, cached_tile);
+                    if self.pending_tile_cache.len() == TILE_CACHE_GRID_SIZE.pow(2) as usize {
+                        std::mem::swap(&mut self.pending_tile_cache, &mut self.shown_tile_cache);
+                        self.pending_tile_cache.clear();
+                        self.shown_scale = self.pending_scale;
+                    }
                 }
                 WorkerResponse::Loaded(document_info) => {
                     debug!("LOADED");
+                    self.pending_tile_cache.clear();
+                    self.shown_tile_cache.clear();
                     self.document_info = Some(document_info);
                     self.set_page(0).unwrap();
                 }
                 WorkerResponse::SetPage(page_info) => {
                     self.page_info = Some(page_info);
-                    // TODO: Render tiles
-                    self.command_tx
-                        .send(WorkerCommand::RenderTile(RenderRequest {
-                            id: 0,
-                            page_number: self.cur_page_idx,
-                            bounds: self.tile_bounds(Vector { x: 0, y: 0 }).unwrap(),
-                            invert_colors: self.invert_colors,
-                            scale: self.scale,
-                            x: 0,
-                            y: 0,
-                        }))
-                        .unwrap();
+                    self.request_full_page_refresh();
                 }
             },
         }
@@ -178,9 +153,9 @@ impl PdfViewer {
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         // TODO: Show rendered tiles
-        PageViewer::new(&self.tile_cache, &self.inner_state)
+        PageViewer::new(&self.shown_tile_cache, &self.inner_state)
             .translation(self.translation)
-            .scale(self.scale)
+            .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
             .into()
     }
@@ -194,7 +169,6 @@ impl PdfViewer {
     }
 
     fn load_file(&mut self, path: PathBuf) -> Result<()> {
-        // TODO: Clear cache when it exists
         self.name = path
             .file_name()
             .expect("The pdf must have a file name")
@@ -203,6 +177,27 @@ impl PdfViewer {
         self.path = path.to_path_buf();
         self.command_tx.send(WorkerCommand::LoadDocument(path))?;
         Ok(())
+    }
+
+    fn request_full_page_refresh(&mut self) {
+        let half_size = TILE_CACHE_GRID_SIZE / 2;
+        let mut id = 0;
+        for x in -half_size..=half_size {
+            for y in -half_size..=half_size {
+                self.command_tx
+                    .send(WorkerCommand::RenderTile(RenderRequest {
+                        id,
+                        page_number: self.cur_page_idx,
+                        bounds: self.tile_bounds(Vector { x, y }).unwrap(),
+                        invert_colors: self.invert_colors,
+                        scale: self.pending_scale,
+                        x,
+                        y,
+                    }))
+                    .unwrap();
+                id += 1;
+            }
+        }
     }
 
     fn refresh_file(&mut self) -> Result<()> {
@@ -222,13 +217,11 @@ impl PdfViewer {
     }
 
     fn tile_bounds(&self, coord: Vector<i32>) -> Option<mupdf::IRect> {
-        // TODO: This is returning a rect with no size
         if let Some(page) = self.page_info {
             let mut out_box = self.inner_state.bounds;
-            out_box.translate(self.translation.scaled(self.scale));
             out_box.translate(Vector::new(
-                -(self.inner_state.bounds.width() - page.size.x * self.scale) / 2.0,
-                -(self.inner_state.bounds.height() - page.size.y * self.scale) / 2.0,
+                -(self.inner_state.bounds.width() - page.size.x * self.pending_scale) / 2.0,
+                -(self.inner_state.bounds.height() - page.size.y * self.pending_scale) / 2.0,
             ));
             out_box.scale(0.5);
             for _ in 0..coord.x.abs() {
