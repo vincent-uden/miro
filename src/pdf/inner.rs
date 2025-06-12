@@ -138,12 +138,7 @@ where
         _cursor: iced::advanced::mouse::Cursor,
         _viewport: &iced::Rectangle,
     ) {
-        // TODO: This might be leaking memory. Could be related to wl_registry still attached
         let img_bounds = layout.bounds();
-
-        // Calculate the position of a tile from it's in-document bounds
-
-        // Render said image onto the screen
         let render = |renderer: &mut Renderer| {
             for (_, v) in self.cache.iter() {
                 let tile_bounds: Rect<f32> = v.bounds.into();

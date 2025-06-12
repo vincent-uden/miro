@@ -16,9 +16,8 @@ use iced::{
 };
 use keymap::Config;
 use once_cell::sync::OnceCell;
-use tokio::sync::{mpsc, Mutex};
 use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
-use tracing::instrument::WithSubscriber;
+use tokio::sync::{Mutex, mpsc};
 use tracing_subscriber::EnvFilter;
 
 mod app;
@@ -31,7 +30,8 @@ const DARK_THEME: Theme = Theme::TokyoNight;
 const LIGHT_THEME: Theme = Theme::Light;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
-static WORKER_RX: OnceCell<Mutex<tokio::sync::mpsc::UnboundedReceiver<WorkerResponse>>> = OnceCell::new();
+static WORKER_RX: OnceCell<Mutex<tokio::sync::mpsc::UnboundedReceiver<WorkerResponse>>> =
+    OnceCell::new();
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]
