@@ -166,6 +166,7 @@ impl App {
                 self.invert_pdf = !self.invert_pdf;
                 for pdf in &mut self.pdfs {
                     pdf.invert_colors = self.invert_pdf;
+                    pdf.force_invalidate_cache();
                 }
                 iced::Task::none()
             }
@@ -201,7 +202,6 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::WorkerResponse(worker_response) => {
-                debug!("{:?}", worker_response);
                 if !self.pdfs.is_empty() {
                     self.pdfs[self.pdf_idx]
                         .update(PdfMessage::WorkerResponse(worker_response))

@@ -185,7 +185,6 @@ pub async fn worker_main(
     let mut worker = PdfWorker::new();
 
     while let Some(cmd) = command_rx.recv().await {
-        // debug!("{:?}", cmd);
         match cmd {
             WorkerCommand::RenderTile(req) => match worker.render_tile(req) {
                 Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),

@@ -73,9 +73,6 @@ impl PdfViewer {
             self.cur_page_idx + 1,
             self.document_info.map(|x| x.page_count).unwrap_or_default(),
         );
-        if !matches!(message, PdfMessage::MouseMoved(_)) {
-            debug!("{:?}", message);
-        }
         match message {
             PdfMessage::OpenFile(path_buf) => self.load_file(path_buf).unwrap(),
             PdfMessage::RefreshFile => self.refresh_file().unwrap(),
@@ -83,19 +80,19 @@ impl PdfViewer {
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
             PdfMessage::ZoomIn => {
                 self.pending_scale *= 1.2;
-                self.request_full_page_refresh();
+                self.invalidate_cache();
             }
             PdfMessage::ZoomOut => {
                 self.pending_scale /= 1.2;
-                self.request_full_page_refresh();
+                self.invalidate_cache();
             }
             PdfMessage::ZoomHome => {
                 self.pending_scale = 1.0;
-                self.request_full_page_refresh();
+                self.invalidate_cache();
             }
             PdfMessage::ZoomFit => {
                 self.pending_scale = self.zoom_fit_ratio().unwrap_or(1.0);
-                self.request_full_page_refresh();
+                self.invalidate_cache();
             }
             PdfMessage::MoveHorizontal(delta) => {
                 self.translation.x += delta / self.shown_scale;
@@ -148,7 +145,8 @@ impl PdfViewer {
                 }
                 WorkerResponse::SetPage(page_info) => {
                     self.page_info = Some(page_info);
-                    self.request_full_page_refresh();
+                    self.force_invalidate_cache();
+                    self.invalidate_cache();
                 }
             },
         }
@@ -183,30 +181,7 @@ impl PdfViewer {
         Ok(())
     }
 
-    fn request_full_page_refresh(&mut self) {
-        let half_size = TILE_CACHE_GRID_SIZE / 2;
-        let mut id = 0;
-        for x in -half_size..=half_size {
-            for y in -half_size..=half_size {
-                self.command_tx
-                    .send(WorkerCommand::RenderTile(RenderRequest {
-                        id,
-                        page_number: self.cur_page_idx,
-                        bounds: self.tile_bounds(Vector { x, y }).unwrap(),
-                        invert_colors: self.invert_colors,
-                        scale: self.pending_scale,
-                        x,
-                        y,
-                    }))
-                    .unwrap();
-                id += 1;
-            }
-        }
-    }
-
-    fn invalidate_cache(&mut self) {
-        let half_grid_size = TILE_CACHE_GRID_SIZE / 2;
-
+    pub fn force_invalidate_cache(&mut self) {
         let middle_of_screen = self.translation.scaled(self.pending_scale);
         let tile_size = self.tile_bounds(Vector::zero()).unwrap();
 
@@ -215,32 +190,57 @@ impl PdfViewer {
             y: (middle_of_screen.y / tile_size.height() as f32).round() as i32,
         };
 
-        if viewport_tile_coord != self.current_center_tile {
-            self.pending_tile_cache = self.shown_tile_cache.clone();
-            self.pending_tile_cache.retain(|_, v| {
-                (v.x - viewport_tile_coord.x).abs() <= 1 && (v.y - viewport_tile_coord.y).abs() <= 1
-            });
+        self.pending_tile_cache.clear();
+        self.current_center_tile = viewport_tile_coord;
+        self.populate_cache();
+    }
+
+    fn invalidate_cache(&mut self) {
+        let middle_of_screen = self.translation.scaled(self.pending_scale);
+        let tile_size = self.tile_bounds(Vector::zero()).unwrap();
+
+        let viewport_tile_coord = Vector {
+            x: (middle_of_screen.x / tile_size.width() as f32).round() as i32,
+            y: (middle_of_screen.y / tile_size.height() as f32).round() as i32,
+        };
+
+        if viewport_tile_coord != self.current_center_tile || self.pending_scale != self.shown_scale
+        {
+            if self.pending_scale != self.shown_scale {
+                self.pending_tile_cache.clear();
+            } else {
+                self.pending_tile_cache = self.shown_tile_cache.clone();
+                self.pending_tile_cache.retain(|_, v| {
+                    (v.x - viewport_tile_coord.x).abs() <= 1
+                        && (v.y - viewport_tile_coord.y).abs() <= 1
+                });
+            }
             self.current_center_tile = viewport_tile_coord;
-            for x in -half_grid_size..=half_grid_size {
-                for y in -half_grid_size..=half_grid_size {
-                    if !self.pending_tile_cache.contains_key(&(
-                        self.current_center_tile.x + x,
-                        self.current_center_tile.y + y,
-                    )) {
-                        self.command_tx
-                            .send(WorkerCommand::RenderTile(RenderRequest {
-                                id: 0,
-                                page_number: self.cur_page_idx,
-                                bounds: self
-                                    .tile_bounds(self.current_center_tile + Vector { x, y })
-                                    .unwrap(),
-                                invert_colors: self.invert_colors,
-                                scale: self.pending_scale,
-                                x: self.current_center_tile.x + x,
-                                y: self.current_center_tile.y + y,
-                            }))
-                            .unwrap();
-                    }
+            self.populate_cache();
+        }
+    }
+
+    fn populate_cache(&mut self) {
+        let half_grid_size = TILE_CACHE_GRID_SIZE / 2;
+        for x in -half_grid_size..=half_grid_size {
+            for y in -half_grid_size..=half_grid_size {
+                if !self.pending_tile_cache.contains_key(&(
+                    self.current_center_tile.x + x,
+                    self.current_center_tile.y + y,
+                )) {
+                    self.command_tx
+                        .send(WorkerCommand::RenderTile(RenderRequest {
+                            id: 0,
+                            page_number: self.cur_page_idx,
+                            bounds: self
+                                .tile_bounds(self.current_center_tile + Vector { x, y })
+                                .unwrap(),
+                            invert_colors: self.invert_colors,
+                            scale: self.pending_scale,
+                            x: self.current_center_tile.x + x,
+                            y: self.current_center_tile.y + y,
+                        }))
+                        .unwrap();
                 }
             }
         }
@@ -269,7 +269,7 @@ impl PdfViewer {
                 -(self.inner_state.bounds.width() - page.size.x * self.pending_scale) / 2.0,
                 -(self.inner_state.bounds.height() - page.size.y * self.pending_scale) / 2.0,
             ));
-            out_box.scale(0.5);
+            out_box.scale(0.6);
             for _ in 0..coord.x.abs() {
                 out_box.translate(Vector {
                     x: out_box.width() * (coord.x.signum() as f32),

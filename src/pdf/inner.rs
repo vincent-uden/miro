@@ -153,29 +153,12 @@ where
                         - tile_bounds.size().scaled(0.5))
                     .into(),
                     |renderer: &mut Renderer| {
-                        renderer.fill_quad(
-                            Quad {
-                                bounds: iced::Rectangle {
-                                    x: tile_bounds.x0.x - 1.0,
-                                    y: tile_bounds.x0.y - 1.0,
-                                    width: tile_bounds.width() + 2.0,
-                                    height: tile_bounds.height() + 2.0,
-                                },
-                                border: iced::Border {
-                                    color: Color::from_rgb(1.0, 0.0, 0.0),
-                                    width: 1.0,
-                                    radius: 0.0.into(),
-                                },
-                                ..Default::default()
-                            },
-                            Color::WHITE,
-                        );
                         renderer.draw_image(
                             image::Image {
                                 handle: v.image_handle.clone(),
                                 filter_method: self.filter_method,
                                 rotation: iced::Radians::from(0.0),
-                                opacity: 0.2,
+                                opacity: 1.0,
                                 snap: true,
                             },
                             tile_bounds.into(),
@@ -188,31 +171,18 @@ where
             let viewport_bounds = layout.bounds();
             renderer.fill_quad(
                 Quad {
-                    bounds: iced::Rectangle {
-                        x: viewport_bounds.center_x() - 10.0,
-                        y: viewport_bounds.center_y(),
-                        width: 20.0,
-                        height: 1.0,
-                    },
+                    bounds: viewport_bounds,
                     ..Default::default()
                 },
-                Color::from_rgb(1.0, 0.0, 0.0),
-            );
-            renderer.fill_quad(
-                Quad {
-                    bounds: iced::Rectangle {
-                        x: viewport_bounds.center_x(),
-                        y: viewport_bounds.center_y() - 10.0,
-                        width: 1.0,
-                        height: 20.0,
-                    },
-                    ..Default::default()
+                if self.invert_colors {
+                    DARK_THEME.extended_palette().background.base.color
+                } else {
+                    LIGHT_THEME.extended_palette().background.base.color
                 },
-                Color::from_rgb(1.0, 0.0, 0.0),
             );
         };
-        renderer.with_layer(img_bounds, render);
         renderer.with_layer(img_bounds, cross_hair);
+        renderer.with_layer(img_bounds, render);
     }
 
     fn on_event(
