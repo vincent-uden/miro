@@ -67,6 +67,8 @@ pub struct CachedTile {
     pub id: RequestId,
     pub image_handle: image::Handle,
     pub bounds: mupdf::IRect,
+    pub x: i32,
+    pub y: i32,
 }
 
 /// Manages worker state
@@ -165,6 +167,8 @@ impl PdfWorker {
                     x1: (pixmap.width() as i32) * req.x + pixmap.width() as i32,
                     y1: (pixmap.height() as i32) * req.y + pixmap.height() as i32,
                 },
+                x: req.x,
+                y: req.y,
             })
         } else {
             Err(anyhow!("No page set"))
@@ -181,7 +185,7 @@ pub async fn worker_main(
     let mut worker = PdfWorker::new();
 
     while let Some(cmd) = command_rx.recv().await {
-        debug!("{:?}", cmd);
+        // debug!("{:?}", cmd);
         match cmd {
             WorkerCommand::RenderTile(req) => match worker.render_tile(req) {
                 Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),

@@ -24,7 +24,6 @@ pub struct PdfViewer {
     pub path: PathBuf,
     pub label: String,
     pub cur_page_idx: i32,
-    shown_scale: f32,
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     inner_state: inner::State,
@@ -33,9 +32,11 @@ pub struct PdfViewer {
     command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
     document_info: Option<DocumentInfo>,
     page_info: Option<PageInfo>,
-    pending_tile_cache: HashMap<RequestId, CachedTile>,
-    shown_tile_cache: HashMap<RequestId, CachedTile>,
+    shown_scale: f32,
     pending_scale: f32,
+    pending_tile_cache: HashMap<(i32, i32), CachedTile>,
+    shown_tile_cache: HashMap<(i32, i32), CachedTile>,
+    current_center_tile: Vector<i32>,
 }
 
 impl PdfViewer {
@@ -61,6 +62,7 @@ impl PdfViewer {
             page_info: None,
             pending_tile_cache: HashMap::new(),
             shown_tile_cache: HashMap::new(),
+            current_center_tile: Vector::zero(),
         }
     }
 
@@ -112,6 +114,7 @@ impl PdfViewer {
                     if self.panning && self.last_mouse_pos.is_some() {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
+                        self.invalidate_cache();
                     }
                     self.last_mouse_pos = Some(vector);
                 } else {
@@ -128,7 +131,8 @@ impl PdfViewer {
             PdfMessage::MouseRightUp => {}
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
-                    self.pending_tile_cache.insert(cached_tile.id, cached_tile);
+                    self.pending_tile_cache
+                        .insert((cached_tile.x, cached_tile.y), cached_tile);
                     if self.pending_tile_cache.len() == TILE_CACHE_GRID_SIZE.pow(2) as usize {
                         std::mem::swap(&mut self.pending_tile_cache, &mut self.shown_tile_cache);
                         self.pending_tile_cache.clear();
@@ -196,6 +200,48 @@ impl PdfViewer {
                     }))
                     .unwrap();
                 id += 1;
+            }
+        }
+    }
+
+    fn invalidate_cache(&mut self) {
+        let half_grid_size = TILE_CACHE_GRID_SIZE / 2;
+
+        let middle_of_screen = self.translation.scaled(self.pending_scale);
+        let tile_size = self.tile_bounds(Vector::zero()).unwrap();
+
+        let viewport_tile_coord = Vector {
+            x: (middle_of_screen.x / tile_size.width() as f32).round() as i32,
+            y: (middle_of_screen.y / tile_size.height() as f32).round() as i32,
+        };
+
+        if viewport_tile_coord != self.current_center_tile {
+            self.pending_tile_cache = self.shown_tile_cache.clone();
+            self.pending_tile_cache.retain(|_, v| {
+                (v.x - viewport_tile_coord.x).abs() <= 1 && (v.y - viewport_tile_coord.y).abs() <= 1
+            });
+            self.current_center_tile = viewport_tile_coord;
+            for x in -half_grid_size..=half_grid_size {
+                for y in -half_grid_size..=half_grid_size {
+                    if !self.pending_tile_cache.contains_key(&(
+                        self.current_center_tile.x + x,
+                        self.current_center_tile.y + y,
+                    )) {
+                        self.command_tx
+                            .send(WorkerCommand::RenderTile(RenderRequest {
+                                id: 0,
+                                page_number: self.cur_page_idx,
+                                bounds: self
+                                    .tile_bounds(self.current_center_tile + Vector { x, y })
+                                    .unwrap(),
+                                invert_colors: self.invert_colors,
+                                scale: self.pending_scale,
+                                x: self.current_center_tile.x + x,
+                                y: self.current_center_tile.y + y,
+                            }))
+                            .unwrap();
+                    }
+                }
             }
         }
     }

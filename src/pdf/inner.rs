@@ -31,7 +31,7 @@ pub struct State {
 
 #[derive(Debug)]
 pub struct PageViewer<'a> {
-    cache: &'a HashMap<RequestId, CachedTile>,
+    cache: &'a HashMap<(i32, i32), CachedTile>,
     state: &'a State,
     // TODO: Maybe remove these?
     width: Length,
@@ -45,7 +45,7 @@ pub struct PageViewer<'a> {
 }
 
 impl<'a> PageViewer<'a> {
-    pub fn new(cache: &'a HashMap<RequestId, CachedTile>, state: &'a State) -> Self {
+    pub fn new(cache: &'a HashMap<(i32, i32), CachedTile>, state: &'a State) -> Self {
         Self {
             cache,
             state,
@@ -146,7 +146,7 @@ where
         // Render said image onto the screen
         let render = |renderer: &mut Renderer| {
             for (_, v) in self.cache.iter() {
-                let mut tile_bounds: Rect<f32> = v.bounds.into();
+                let tile_bounds: Rect<f32> = v.bounds.into();
                 let viewport_bounds = layout.bounds();
                 renderer.with_translation(
                     (-self.translation.scaled(self.scale) + viewport_bounds.center().into()
@@ -184,7 +184,35 @@ where
                 );
             }
         };
+        let cross_hair = |renderer: &mut Renderer| {
+            let viewport_bounds = layout.bounds();
+            renderer.fill_quad(
+                Quad {
+                    bounds: iced::Rectangle {
+                        x: viewport_bounds.center_x() - 10.0,
+                        y: viewport_bounds.center_y(),
+                        width: 20.0,
+                        height: 1.0,
+                    },
+                    ..Default::default()
+                },
+                Color::from_rgb(1.0, 0.0, 0.0),
+            );
+            renderer.fill_quad(
+                Quad {
+                    bounds: iced::Rectangle {
+                        x: viewport_bounds.center_x(),
+                        y: viewport_bounds.center_y() - 10.0,
+                        width: 1.0,
+                        height: 20.0,
+                    },
+                    ..Default::default()
+                },
+                Color::from_rgb(1.0, 0.0, 0.0),
+            );
+        };
         renderer.with_layer(img_bounds, render);
+        renderer.with_layer(img_bounds, cross_hair);
     }
 
     fn on_event(
