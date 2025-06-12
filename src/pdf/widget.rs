@@ -1,5 +1,5 @@
 use anyhow::Result;
-use iced::widget::vertical_space;
+use iced::{Rectangle, widget::vertical_space};
 use std::{collections::HashMap, path::PathBuf};
 use tracing::debug;
 
@@ -94,11 +94,35 @@ impl PdfViewer {
                 if self.document_info.is_some() && self.page_info.is_some() {
                     self.command_tx
                         .send(WorkerCommand::RenderTile(RenderRequest {
-                            id: 0,
+                            id: 1,
                             page_number: self.cur_page_idx,
-                            bounds: self.visible_page_rect().unwrap(),
+                            bounds: self.tile_bounds(Vector { x: 0, y: 0 }).unwrap(),
                             invert_colors: self.invert_colors,
                             scale: self.scale,
+                            x: 0,
+                            y: 0,
+                        }))
+                        .unwrap();
+                    self.command_tx
+                        .send(WorkerCommand::RenderTile(RenderRequest {
+                            id: 2,
+                            page_number: self.cur_page_idx,
+                            bounds: self.tile_bounds(Vector { x: 0, y: -1 }).unwrap(),
+                            invert_colors: self.invert_colors,
+                            scale: self.scale,
+                            x: 0,
+                            y: -1,
+                        }))
+                        .unwrap();
+                    self.command_tx
+                        .send(WorkerCommand::RenderTile(RenderRequest {
+                            id: 3,
+                            page_number: self.cur_page_idx,
+                            bounds: self.tile_bounds(Vector { x: 0, y: 1 }).unwrap(),
+                            invert_colors: self.invert_colors,
+                            scale: self.scale,
+                            x: 0,
+                            y: 1,
                         }))
                         .unwrap();
                 }
@@ -139,9 +163,11 @@ impl PdfViewer {
                         .send(WorkerCommand::RenderTile(RenderRequest {
                             id: 0,
                             page_number: self.cur_page_idx,
-                            bounds: self.visible_page_rect().unwrap(),
+                            bounds: self.tile_bounds(Vector { x: 0, y: 0 }).unwrap(),
                             invert_colors: self.invert_colors,
                             scale: self.scale,
+                            x: 0,
+                            y: 0,
                         }))
                         .unwrap();
                 }
@@ -195,7 +221,7 @@ impl PdfViewer {
         }
     }
 
-    fn visible_page_rect(&self) -> Option<mupdf::IRect> {
+    fn tile_bounds(&self, coord: Vector<i32>) -> Option<mupdf::IRect> {
         // TODO: This is returning a rect with no size
         if let Some(page) = self.page_info {
             let mut out_box = self.inner_state.bounds;
@@ -204,6 +230,19 @@ impl PdfViewer {
                 -(self.inner_state.bounds.width() - page.size.x * self.scale) / 2.0,
                 -(self.inner_state.bounds.height() - page.size.y * self.scale) / 2.0,
             ));
+            out_box.scale(0.5);
+            for _ in 0..coord.x.abs() {
+                out_box.translate(Vector {
+                    x: out_box.width() * (coord.x.signum() as f32),
+                    y: 0.0,
+                });
+            }
+            for _ in 0..coord.y.abs() {
+                out_box.translate(Vector {
+                    x: 0.0,
+                    y: out_box.height() * (coord.y.signum() as f32),
+                });
+            }
             Some(out_box.into())
         } else {
             None

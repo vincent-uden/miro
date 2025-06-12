@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 use tokio::sync::mpsc;
 
 use anyhow::{Result, anyhow};
@@ -6,7 +6,11 @@ use iced::advanced::image;
 use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
 use tracing::{debug, error, info};
 
-use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
+use crate::{
+    DARK_THEME, LIGHT_THEME,
+    geometry::{Rect, Vector},
+    pdf::inner::cpu_pdf_dark_mode_shader,
+};
 
 /// A unique identifier for a complete render request (e.g., for a specific view).
 pub type RequestId = u64;
@@ -29,12 +33,14 @@ pub enum WorkerCommand {
 pub struct RenderRequest {
     pub id: RequestId,
     pub page_number: i32,
-    /// Bounds in pdf-coordinate space
+    /// The bounds of a tile to be renderer. It's size and position is in screen pixels with respect to the pdf at scale 1.0
     pub bounds: mupdf::IRect,
     pub invert_colors: bool,
     /// The same pdf bounds can of course be up-/down-sample to many different resolutions
     /// depending on the viewport
     pub scale: f32,
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -118,7 +124,6 @@ impl PdfWorker {
                     req.page_number
                 ));
             }
-            // TODO: Look at current render_page to figure somethign out
             let mut matrix = Matrix::default();
             matrix.scale(req.scale, req.scale);
             let mut pixmap = Pixmap::new_with_rect(&Colorspace::device_rgb(), req.bounds, true)?;
@@ -153,7 +158,13 @@ impl PdfWorker {
             Ok(CachedTile {
                 id: req.id,
                 image_handle: handle,
-                bounds: req.bounds,
+                // bounds: req.bounds,
+                bounds: mupdf::IRect {
+                    x0: (pixmap.width() as i32) * req.x,
+                    y0: (pixmap.height() as i32) * req.y,
+                    x1: (pixmap.width() as i32) * req.x + pixmap.width() as i32,
+                    y1: (pixmap.height() as i32) * req.y + pixmap.height() as i32,
+                },
             })
         } else {
             Err(anyhow!("No page set"))

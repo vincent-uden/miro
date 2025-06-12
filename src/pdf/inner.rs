@@ -140,31 +140,45 @@ where
     ) {
         // TODO: This might be leaking memory. Could be related to wl_registry still attached
         let img_bounds = layout.bounds();
-        for (k, v) in self.cache.iter() {
-            let bounds = layout.bounds();
 
-            // Render said image onto the screen
-            let render = |renderer: &mut Renderer| {
-                renderer.fill_quad(
-                    Quad {
-                        bounds,
-                        ..Default::default()
-                    },
-                    Color::BLACK,
-                );
-                renderer.draw_image(
-                    image::Image {
-                        handle: v.image_handle.clone(),
-                        filter_method: self.filter_method,
-                        rotation: iced::Radians::from(0.0),
-                        opacity: 1.0,
-                        snap: true,
-                    },
-                    img_bounds,
-                );
-            };
-            renderer.with_layer(img_bounds, render);
-        }
+        // Calculate the position of a tile from it's in-document bounds
+
+        // Render said image onto the screen
+        let render = |renderer: &mut Renderer| {
+            for (_, v) in self.cache.iter() {
+                let mut tile_bounds: Rect<f32> = v.bounds.into();
+                renderer.with_translation((-self.translation).into(), |renderer: &mut Renderer| {
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: iced::Rectangle {
+                                x: tile_bounds.x0.x - 1.0,
+                                y: tile_bounds.x0.y - 1.0,
+                                width: tile_bounds.width() + 2.0,
+                                height: tile_bounds.height() + 2.0,
+                            },
+                            border: iced::Border {
+                                color: Color::from_rgb(1.0, 0.0, 0.0),
+                                width: 1.0,
+                                radius: 0.0.into(),
+                            },
+                            ..Default::default()
+                        },
+                        Color::WHITE,
+                    );
+                    renderer.draw_image(
+                        image::Image {
+                            handle: v.image_handle.clone(),
+                            filter_method: self.filter_method,
+                            rotation: iced::Radians::from(0.0),
+                            opacity: 1.0,
+                            snap: true,
+                        },
+                        tile_bounds.into(),
+                    );
+                });
+            }
+        };
+        renderer.with_layer(img_bounds, render);
     }
 
     fn on_event(

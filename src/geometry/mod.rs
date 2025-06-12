@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 use num::Num;
 use serde::{Deserialize, Serialize};
@@ -78,6 +78,20 @@ where
     fn sub_assign(&mut self, rhs: Self) {
         self.x = self.x - rhs.x;
         self.y = self.y - rhs.y;
+    }
+}
+
+impl<T> Neg for Vector<T>
+where
+    T: Num + Copy + Neg<Output = T>,
+{
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            x: -self.x,
+            y: -self.y,
+        }
     }
 }
 
@@ -189,14 +203,14 @@ where
             .scaled(T::one() / (T::one() + T::one()));
     }
 
+    pub fn scaled(&self, s: T) -> Self {
+        let mut out = *self;
+        out.scale(s);
+        out
+    }
+
     pub fn contains(&self, v: Vector<T>) -> bool {
         self.x0.x < v.x && self.x1.x > v.x && self.x0.y < v.y && self.x1.y > v.y
-    }
-}
-
-impl From<Rect<f32>> for iced::Rectangle {
-    fn from(val: Rect<f32>) -> Self {
-        iced::Rectangle::new(val.x0.into(), (val.x1 - val.x0).into())
     }
 }
 
@@ -280,6 +294,35 @@ impl From<mupdf::Rect> for Rect<i32> {
                 x: value.x1 as i32,
                 y: value.y1 as i32,
             },
+        }
+    }
+}
+
+impl From<mupdf::IRect> for Rect<f32> {
+    fn from(value: mupdf::IRect) -> Self {
+        Self {
+            x0: Vector {
+                x: value.x0 as f32,
+                y: value.y0 as f32,
+            },
+            x1: Vector {
+                x: value.x1 as f32,
+                y: value.y1 as f32,
+            },
+        }
+    }
+}
+
+impl<T> Into<iced::Rectangle<T>> for Rect<T>
+where
+    T: Num + Copy,
+{
+    fn into(self) -> iced::Rectangle<T> {
+        iced::Rectangle {
+            x: self.x0.x,
+            y: self.x0.y,
+            width: self.x1.x - self.x0.x,
+            height: self.x1.y - self.x0.y,
         }
     }
 }
