@@ -140,8 +140,9 @@ impl PdfViewer {
                 }
                 WorkerResponse::SetPage(page_info) => {
                     self.page_info = Some(page_info);
-                    self.force_invalidate_cache();
-                    self.invalidate_cache();
+                    if self.inner_state.bounds.size() != Vector::zero() {
+                        self.force_invalidate_cache();
+                    }
                 }
             },
         }
@@ -149,7 +150,7 @@ impl PdfViewer {
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        PageViewer::new(&self.shown_tile_cache)
+        PageViewer::new(&self.shown_tile_cache, &self.inner_state)
             .translation(self.translation)
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)

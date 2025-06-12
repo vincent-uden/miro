@@ -4,13 +4,9 @@ use tokio::sync::mpsc;
 use anyhow::{Result, anyhow};
 use iced::advanced::image;
 use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
-use crate::{
-    DARK_THEME, LIGHT_THEME,
-    geometry::Vector,
-    pdf::inner::cpu_pdf_dark_mode_shader,
-};
+use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
 
 /// A unique identifier for a complete render request (e.g., for a specific view).
 pub type RequestId = u64;
@@ -185,6 +181,7 @@ pub async fn worker_main(
     let mut worker = PdfWorker::new();
 
     while let Some(cmd) = command_rx.recv().await {
+        debug!("{:?}", cmd);
         match cmd {
             WorkerCommand::RenderTile(req) => match worker.render_tile(req) {
                 Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),

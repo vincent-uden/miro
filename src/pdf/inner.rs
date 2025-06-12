@@ -23,6 +23,7 @@ pub struct State {
 #[derive(Debug)]
 pub struct PageViewer<'a> {
     cache: &'a HashMap<(i32, i32), CachedTile>,
+    state: &'a State,
     // TODO: Maybe remove these?
     width: Length,
     height: Length,
@@ -35,9 +36,10 @@ pub struct PageViewer<'a> {
 }
 
 impl<'a> PageViewer<'a> {
-    pub fn new(cache: &'a HashMap<(i32, i32), CachedTile>) -> Self {
+    pub fn new(cache: &'a HashMap<(i32, i32), CachedTile>, state: &'a State) -> Self {
         Self {
             cache,
+            state,
             width: Length::Fill,
             height: Length::Fill,
             content_fit: ContentFit::None,
@@ -195,6 +197,8 @@ where
         };
         if let Some(msg) = out {
             shell.publish(msg);
+        } else if self.state.bounds.size() == Vector::zero() {
+            shell.publish(PdfMessage::UpdateBounds(bounds.into()));
         }
         iced::event::Status::Ignored
     }
