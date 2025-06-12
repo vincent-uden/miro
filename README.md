@@ -24,7 +24,7 @@ Head over to [releases](https://github.com/vincent-uden/miro/releases) and downl
 ### Crates.io
 This is pretty much the same as the following option, but doesn't require cloning the repo. See [building from source](#building-from-source) for possible complications when compiling for Windows. I've had **no** problems compiling on Linux thus far.
 ```sh
-cargo install miro
+cargo install miro-pdf
 ```
 
 ### Building from source
