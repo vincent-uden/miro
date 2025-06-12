@@ -147,8 +147,11 @@ where
         let render = |renderer: &mut Renderer| {
             for (_, v) in self.cache.iter() {
                 let mut tile_bounds: Rect<f32> = v.bounds.into();
+                let viewport_bounds = layout.bounds();
                 renderer.with_translation(
-                    (-self.translation.scaled(self.scale)).into(),
+                    (-self.translation.scaled(self.scale) + viewport_bounds.center().into()
+                        - tile_bounds.size().scaled(0.5))
+                    .into(),
                     |renderer: &mut Renderer| {
                         renderer.fill_quad(
                             Quad {
