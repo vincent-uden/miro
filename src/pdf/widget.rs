@@ -134,7 +134,6 @@ impl PdfViewer {
                     }
                 }
                 WorkerResponse::Loaded(document_info) => {
-                    debug!("LOADED");
                     self.pending_tile_cache.clear();
                     self.shown_tile_cache.clear();
                     self.document_info = Some(document_info);

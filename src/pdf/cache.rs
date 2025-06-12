@@ -187,7 +187,6 @@ pub async fn worker_main(
     while let Some(cmd) = command_rx.recv().await {
         let gen_mtx = RENDER_GENERATION.get().unwrap();
         let generation = gen_mtx.lock().await;
-        debug!("{:?}", cmd);
         match cmd {
             WorkerCommand::RenderTile(req) => {
                 if *generation <= req.generation {
@@ -203,12 +202,16 @@ pub async fn worker_main(
             }
             WorkerCommand::LoadDocument(path_buf) => match worker.load_document(&path_buf) {
                 Ok(doc) => result_tx.send(WorkerResponse::Loaded(doc)).unwrap(),
-                Err(_) => todo!(),
+                Err(e) => {
+                    error!("{}", e);
+                }
             },
             WorkerCommand::Shutdown => break,
             WorkerCommand::SetPage(idx) => match worker.set_page(idx) {
                 Ok(page) => result_tx.send(WorkerResponse::SetPage(page)).unwrap(),
-                Err(_) => todo!(),
+                Err(e) => {
+                    error!("{}", e);
+                }
             },
         }
     }
