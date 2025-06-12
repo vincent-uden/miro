@@ -7,12 +7,11 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use anyhow::anyhow;
 use app::App;
 use clap::Parser;
 use iced::{
     Theme,
-    window::{Icon, icon::from_file_data},
+    window::icon::from_file_data,
 };
 use keymap::Config;
 use once_cell::sync::OnceCell;
@@ -82,7 +81,7 @@ pub fn theme(app: &App) -> Theme {
 
 //#[cfg(target_os = "windows")]
 pub fn settings() -> iced::window::Settings {
-    use iced::window::{self, Settings};
+    use iced::window::Settings;
 
     let icon_img = include_bytes!("../assets/logo.png");
     let icon = from_file_data(icon_img, None).ok();

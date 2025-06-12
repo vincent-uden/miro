@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use keybinds::{Key, KeyInput, Keybind, Keybinds};
+use keybinds::{KeyInput, Keybind, Keybinds};
 use logos::Logos;
 use strum::EnumString;
 

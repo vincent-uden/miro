@@ -313,16 +313,16 @@ impl From<mupdf::IRect> for Rect<f32> {
     }
 }
 
-impl<T> Into<iced::Rectangle<T>> for Rect<T>
+impl<T> From<Rect<T>> for iced::Rectangle<T>
 where
     T: Num + Copy,
 {
-    fn into(self) -> iced::Rectangle<T> {
+    fn from(val: Rect<T>) -> Self {
         iced::Rectangle {
-            x: self.x0.x,
-            y: self.x0.y,
-            width: self.x1.x - self.x0.x,
-            height: self.x1.y - self.x0.y,
+            x: val.x0.x,
+            y: val.x0.y,
+            width: val.x1.x - val.x0.x,
+            height: val.x1.y - val.x0.y,
         }
     }
 }

@@ -1,14 +1,14 @@
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 use tokio::sync::mpsc;
 
 use anyhow::{Result, anyhow};
 use iced::advanced::image;
 use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{
     DARK_THEME, LIGHT_THEME,
-    geometry::{Rect, Vector},
+    geometry::Vector,
     pdf::inner::cpu_pdf_dark_mode_shader,
 };
 

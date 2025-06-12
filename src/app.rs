@@ -1,4 +1,4 @@
-use std::{fs::canonicalize, path::PathBuf, time::Duration};
+use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
     Background, Border, Element, Event, Length, Shadow, Subscription, Theme, alignment,
@@ -23,7 +23,6 @@ use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::mpsc;
-use tracing::{debug, error};
 
 use crate::{
     CONFIG, WORKER_RX,
@@ -463,7 +462,7 @@ fn file_tab(
 ) -> Element<'_, AppMessage> {
     container(
         widget::row![
-            labeled_button(&label, on_press).style(file_tab_style),
+            labeled_button(label, on_press).style(file_tab_style),
             // TODO: Fix alignment on the x, it doesnt look great next to the text
             base_button(
                 text(icon_to_string(RequiredIcons::X))

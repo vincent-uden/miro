@@ -1,28 +1,19 @@
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    io::{BufWriter, Write},
-};
+use std::collections::HashMap;
 
-use anyhow::{Result, anyhow};
 use colorgrad::{Gradient, GradientBuilder, LinearGradient};
 use iced::{
-    Color, ContentFit, Element, Length, Size,
+    ContentFit, Element, Length, Size,
     advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
     widget::image::FilterMethod,
 };
-use mupdf::{Page, Pixmap};
-use tracing::error;
+use mupdf::Pixmap;
 
 use crate::{
     DARK_THEME, LIGHT_THEME,
     geometry::{Rect, Vector},
 };
 
-use super::{
-    PdfMessage,
-    cache::{CachedTile, RequestId},
-};
+use super::{PdfMessage, cache::CachedTile};
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -32,7 +23,6 @@ pub struct State {
 #[derive(Debug)]
 pub struct PageViewer<'a> {
     cache: &'a HashMap<(i32, i32), CachedTile>,
-    state: &'a State,
     // TODO: Maybe remove these?
     width: Length,
     height: Length,
@@ -45,10 +35,9 @@ pub struct PageViewer<'a> {
 }
 
 impl<'a> PageViewer<'a> {
-    pub fn new(cache: &'a HashMap<(i32, i32), CachedTile>, state: &'a State) -> Self {
+    pub fn new(cache: &'a HashMap<(i32, i32), CachedTile>) -> Self {
         Self {
             cache,
-            state,
             width: Length::Fill,
             height: Length::Fill,
             content_fit: ContentFit::None,

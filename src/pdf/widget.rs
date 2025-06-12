@@ -1,18 +1,13 @@
 use anyhow::Result;
-use iced::{Rectangle, widget::vertical_space};
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf};
 use tracing::debug;
-
-use mupdf::{Document, Page};
 
 use crate::geometry::Vector;
 
 use super::{
     PdfMessage,
-    cache::{
-        CachedTile, DocumentInfo, PageInfo, RenderRequest, RequestId, WorkerCommand, WorkerResponse,
-    },
+    cache::{CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse},
     inner::{self, PageViewer},
 };
 
@@ -154,8 +149,7 @@ impl PdfViewer {
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        // TODO: Show rendered tiles
-        PageViewer::new(&self.shown_tile_cache, &self.inner_state)
+        PageViewer::new(&self.shown_tile_cache)
             .translation(self.translation)
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
@@ -247,7 +241,7 @@ impl PdfViewer {
     }
 
     fn refresh_file(&mut self) -> Result<()> {
-        // TODO: Implement, maybe through a special command
+        self.force_invalidate_cache();
         Ok(())
     }
 
