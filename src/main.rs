@@ -7,14 +7,13 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use anyhow::anyhow;
 use app::App;
 use clap::Parser;
-use iced::{
-    Theme,
-    window::{Icon, icon::from_file_data},
-};
+use iced::{Theme, window::icon::from_file_data};
 use keymap::Config;
+use once_cell::sync::OnceCell;
+use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
+use tokio::sync::{Mutex, mpsc};
 use tracing_subscriber::EnvFilter;
 
 mod app;
@@ -27,6 +26,9 @@ const DARK_THEME: Theme = Theme::TokyoNight;
 const LIGHT_THEME: Theme = Theme::Light;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
+static WORKER_RX: OnceCell<Mutex<tokio::sync::mpsc::UnboundedReceiver<WorkerResponse>>> =
+    OnceCell::new();
+static RENDER_GENERATION: OnceCell<Mutex<usize>> = OnceCell::new();
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]
@@ -43,14 +45,25 @@ fn main() -> iced::Result {
 
     let args = Args::parse();
 
+    let (command_tx, command_rx) = mpsc::unbounded_channel::<WorkerCommand>();
+    let (result_tx, result_rx) = mpsc::unbounded_channel::<WorkerResponse>();
+
+    let _worker_handle = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(worker_main(command_rx, result_tx));
+    });
+
+    WORKER_RX.get_or_init(move || Mutex::new(result_rx));
+    RENDER_GENERATION.get_or_init(|| Mutex::new(0));
+
     iced::application("App", App::update, App::view)
         .antialiasing(true)
         .theme(theme)
         .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
         .window(settings())
-        .run_with(|| {
-            let state = App::new();
+        .run_with(move || {
+            let state = App::new(command_tx);
             (state, match args.path {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
@@ -67,7 +80,7 @@ pub fn theme(app: &App) -> Theme {
 
 //#[cfg(target_os = "windows")]
 pub fn settings() -> iced::window::Settings {
-    use iced::window::{self, Settings};
+    use iced::window::Settings;
 
     let icon_img = include_bytes!("../assets/logo.png");
     let icon = from_file_data(icon_img, None).ok();

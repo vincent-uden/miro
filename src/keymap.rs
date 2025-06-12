@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use keybinds::{Key, KeyInput, Keybind, Keybinds};
+use keybinds::{KeyInput, Keybind, Keybinds};
 use logos::Logos;
 use strum::EnumString;
 
@@ -23,7 +23,6 @@ pub enum BindableMessage {
     NextTab,
     PreviousTab,
     ToggleDarkModePdf,
-    DebugPrintImage,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -48,7 +47,6 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::NextTab => AppMessage::NextTab,
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
             BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
-            BindableMessage::DebugPrintImage => AppMessage::DebugPrintImage,
         }
     }
 }
@@ -92,7 +90,6 @@ impl Default for Config {
                     KeyInput::from_str("Ctrl+r").unwrap(),
                     BindableMessage::ToggleDarkModePdf,
                 ),
-                Keybind::new(KeyInput::from(Key::F12), BindableMessage::DebugPrintImage),
             ]),
         }
     }

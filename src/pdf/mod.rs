@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
 use crate::geometry::{Rect, Vector};
+use cache::WorkerResponse;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
+pub mod cache;
 mod inner;
 pub mod widget;
 
@@ -25,7 +27,9 @@ pub enum PdfMessage {
     MouseRightDown,
     MouseLeftUp,
     MouseRightUp,
+    #[strum(disabled)]
+    #[serde(skip)]
+    WorkerResponse(WorkerResponse),
     #[default]
     None,
-    DebugPrintImage,
 }
