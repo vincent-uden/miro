@@ -8,6 +8,12 @@ use crate::{app::AppMessage, pdf::PdfMessage};
 
 const MOVE_STEP: f32 = 40.0;
 
+// Showing keybindings in menus
+//
+// There must be a link between each menu button and the corresponding, bound action
+// That does inherently mean that each menu button needs to be able to be key-bound
+// If that isn't desirable, each menu button could have an Option<BindableMessage> instead
+
 #[derive(Debug, EnumString, Clone, Copy, PartialEq, Eq)]
 pub enum BindableMessage {
     MoveUp,
@@ -23,6 +29,7 @@ pub enum BindableMessage {
     NextTab,
     PreviousTab,
     ToggleDarkModePdf,
+    // TODO: ToggleDarkModeUi
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -61,6 +68,11 @@ impl Config {
         Config {
             keyboard: Keybinds::new(vec![]),
         }
+    }
+
+    pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
+        let binds = self.keyboard.as_slice();
+        binds.iter().find(|b| b.action == msg).map(|b| b.clone())
     }
 }
 

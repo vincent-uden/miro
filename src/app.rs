@@ -8,7 +8,7 @@ use iced::{
     stream,
     theme::palette,
     widget::{
-        self, button, container, scrollable,
+        self, button, container, row, scrollable,
         scrollable::{Direction, Scrollbar},
         text, vertical_space,
     },
@@ -19,6 +19,7 @@ use iced_aw::{
     menu_bar,
 };
 use iced_fonts::required::{RequiredIcons, icon_to_string};
+use keybinds::{KeySeq, Keybind};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -27,6 +28,7 @@ use tokio::sync::mpsc;
 use crate::{
     CONFIG, WORKER_RX,
     geometry::Vector,
+    keymap::BindableMessage,
     pdf::{
         PdfMessage,
         cache::{WorkerCommand, WorkerResponse},
@@ -214,6 +216,7 @@ impl App {
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
         let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
+        let cfg = CONFIG.read().unwrap();
 
         #[rustfmt::skip]
         let mb = container(
@@ -221,10 +224,12 @@ impl App {
                 debug_button_s("File"),
                 menu_tpl_1(menu_items!((menu_button(
                     "Open",
-                    AppMessage::OpenNewFileFinder
+                    AppMessage::OpenNewFileFinder,
+                    None,
                 ))(menu_button(
                     "Close",
-                    AppMessage::CloseTab(self.pdf_idx)
+                    AppMessage::CloseTab(self.pdf_idx),
+                    None,
                 ))))
             )(
                 debug_button_s("View"),
@@ -235,7 +240,8 @@ impl App {
                     } else {
                         "Dark Interface"
                     },
-                    AppMessage::ToggleDarkModeUi
+                    AppMessage::ToggleDarkModeUi,
+                    None
                     ))
                     (menu_button(
                     if self.invert_pdf {
@@ -243,23 +249,28 @@ impl App {
                     } else {
                         "Dark Pdf"
                     },
-                    AppMessage::ToggleDarkModePdf
+                    AppMessage::ToggleDarkModePdf,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
                     ))
                     (menu_button(
                         "Zoom In",
-                    AppMessage::PdfMessage(PdfMessage::ZoomIn)
+                    AppMessage::PdfMessage(PdfMessage::ZoomIn),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomIn)
                     ))
                     (menu_button(
                         "Zoom Out",
-                    AppMessage::PdfMessage(PdfMessage::ZoomOut)
+                    AppMessage::PdfMessage(PdfMessage::ZoomOut),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomOut)
                     ))
                     (menu_button(
                         "Zoom 100%",
-                    AppMessage::PdfMessage(PdfMessage::ZoomHome)
+                    AppMessage::PdfMessage(PdfMessage::ZoomHome),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomHome)
                     ))
                     (menu_button(
                         "Fit To Screen",
-                    AppMessage::PdfMessage(PdfMessage::ZoomFit)
+                    AppMessage::PdfMessage(PdfMessage::ZoomFit),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomFit)
                     ))
                 ))
             ))
@@ -432,26 +443,53 @@ fn debug_button_s(label: &str) -> button::Button<AppMessage, iced::Theme, iced::
         })
 }
 
+fn format_key_sequence(seq: &KeySeq) -> String {
+    let parts = seq.as_slice().iter().map(|inp| format!("{} ", inp));
+    let mut out = String::from("(");
+    for p in parts {
+        out.push_str(&p);
+    }
+    out.pop();
+    out.push_str(")");
+    out
+}
+
 fn menu_button(
     label: &str,
     msg: AppMessage,
+    binding: Option<Keybind<BindableMessage>>,
 ) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
-    base_button(text(label), msg)
-        .width(Length::Fill)
-        .style(move |theme, status| {
-            let palette = theme.extended_palette();
-            let pair = match status {
-                button::Status::Active => palette.background.base,
-                button::Status::Hovered => palette.background.weak,
-                button::Status::Pressed => palette.background.strong,
-                button::Status::Disabled => palette.secondary.weak,
-            };
-            button::Style {
-                text_color: pair.text,
-                background: Some(Background::Color(pair.color)),
-                ..Default::default()
-            }
-        })
+    let txt = format!(
+        " {}",
+        binding.map_or(String::new(), |b| format_key_sequence(&b.seq))
+    );
+    base_button(
+        row![
+            text(label),
+            text(txt).style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                text::Style {
+                    color: Some(palette.primary.base.color),
+                }
+            })
+        ],
+        msg,
+    )
+    .width(Length::Fill)
+    .style(move |theme, status| {
+        let palette = theme.extended_palette();
+        let pair = match status {
+            button::Status::Active => palette.background.base,
+            button::Status::Hovered => palette.background.weak,
+            button::Status::Pressed => palette.background.strong,
+            button::Status::Disabled => palette.secondary.weak,
+        };
+        button::Style {
+            text_color: pair.text,
+            background: Some(Background::Color(pair.color)),
+            ..Default::default()
+        }
+    })
 }
 
 fn file_tab(

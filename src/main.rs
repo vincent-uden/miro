@@ -1,6 +1,3 @@
-// Widgets to use from iced-aw
-// - Menu (File -> Open/Save and so on)
-
 use std::{
     io,
     path::PathBuf,
