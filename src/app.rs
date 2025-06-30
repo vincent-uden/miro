@@ -33,6 +33,7 @@ use crate::{
         PdfMessage,
         cache::{WorkerCommand, WorkerResponse},
     },
+    rpc::{RpcMessage, rpc_server},
 };
 use crate::{
     pdf::widget::PdfViewer,
@@ -72,6 +73,9 @@ pub enum AppMessage {
     #[strum(disabled)]
     #[serde(skip)]
     WorkerResponse(WorkerResponse),
+    #[serde(skip)]
+    #[strum(disabled)]
+    RpcMessage(RpcMessage),
     #[default]
     None,
 }
@@ -380,6 +384,7 @@ impl App {
             keys,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
             Subscription::run(worker_responder).map(AppMessage::WorkerResponse),
+            Subscription::run(rpc_server),
         ])
     }
 }

@@ -17,6 +17,7 @@ mod app;
 mod geometry;
 mod keymap;
 mod pdf;
+mod rpc;
 mod watch;
 
 const DARK_THEME: Theme = Theme::TokyoNight;
