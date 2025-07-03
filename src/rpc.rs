@@ -6,9 +6,9 @@ use iced::{
     stream,
 };
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{error, info};
 
-use crate::app::AppMessage;
+use crate::{CONFIG, app::AppMessage};
 
 #[derive(Clone)]
 struct AppState {
@@ -31,10 +31,17 @@ struct RpcRequest {
 
 pub fn rpc_server() -> impl Stream<Item = AppMessage> {
     stream::channel(100, |output| async move {
+        info!("RPC Server started");
+        let port = {
+            let config = CONFIG.read().unwrap();
+            config.rpc_port
+        };
         let app = Router::new()
             .route("/", post(root_handler))
             .with_state(AppState { tx: output });
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
+            .await
+            .unwrap();
         axum::serve(listener, app).await.unwrap();
     })
 }

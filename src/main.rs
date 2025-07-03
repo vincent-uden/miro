@@ -11,6 +11,7 @@ use keymap::Config;
 use once_cell::sync::OnceCell;
 use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
 use tokio::sync::{Mutex, mpsc};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod app;
@@ -53,6 +54,23 @@ fn main() -> iced::Result {
 
     WORKER_RX.get_or_init(move || Mutex::new(result_rx));
     RENDER_GENERATION.get_or_init(|| Mutex::new(0));
+
+    match Config::system_config() {
+        Ok(cfg) => {
+            let mut config = CONFIG.write().unwrap();
+            *config = cfg;
+            info!(
+                "Using system config file located at {}",
+                Config::system_config_path()
+                    .expect(
+                        "Managed to load a config file without being able to determine its location"
+                    )
+                    .to_str()
+                    .unwrap()
+            );
+        }
+        Err(_) => {}
+    }
 
     iced::application("App", App::update, App::view)
         .antialiasing(true)
