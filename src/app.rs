@@ -261,6 +261,21 @@ impl App {
                     iced::Task::none()
                 }
             }
+            AppMessage::BookmarkMessage(BookmarkMessage::RequestNewBookmark { name }) => {
+                let path = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.path.clone());
+                let page = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.cur_page_idx);
+                if let (Some(path), Some(page)) = (path, page) {
+                    self.bookmark_store
+                        .update(BookmarkMessage::CreateBookmark {
+                            path,
+                            name,
+                            page: (page + 1) as usize,
+                        })
+                        .map(AppMessage::BookmarkMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
             AppMessage::BookmarkMessage(bookmark_message) => self
                 .bookmark_store
                 .update(bookmark_message)
@@ -422,7 +437,7 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
-        let keys = listen_with(|event, _, _| match event {
+        let keys = listen_with(|event, status, _| match event {
             Event::Mouse(e) => match e {
                 iced::mouse::Event::CursorMoved { position } => {
                     Some(AppMessage::MouseMoved(position.into()))
@@ -469,7 +484,12 @@ impl App {
             },
             Event::Keyboard(e) => {
                 let mut config = CONFIG.write().unwrap();
-                config.keyboard.dispatch(e).map(|x| (*x).into())
+                match status {
+                    iced::event::Status::Ignored => {
+                        config.keyboard.dispatch(e).map(|x| (*x).into())
+                    }
+                    iced::event::Status::Captured => None,
+                }
             }
             _ => None,
         });

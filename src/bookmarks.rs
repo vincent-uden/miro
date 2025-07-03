@@ -1,9 +1,12 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Result, anyhow};
 use iced::{
     Length,
-    widget::{container, text},
+    widget::{self, container, horizontal_rule, text, text_input, vertical_space},
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -11,19 +14,19 @@ use twox_hash::XxHash64;
 
 // This does not need to be cryptographically sound in the slightest. It is just used for
 // fingerprinting files to detect updates.
-const HASH_SEED: usize = 1337;
+const HASH_SEED: u64 = 1337;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bookmark {
-    page: usize,
-    name: String,
+    pub page: usize,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BookmarkSet {
-    marks: Vec<Bookmark>,
-    file_hash: XxHash64,
-    path: PathBuf,
+    pub marks: Vec<Bookmark>,
+    file_hash: u64,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -42,6 +45,10 @@ pub enum BookmarkMessage {
         path: PathBuf,
         page: usize,
     },
+    PendingName(String),
+    RequestNewBookmark {
+        name: String,
+    },
     #[default]
     None,
 }
@@ -49,6 +56,8 @@ pub enum BookmarkMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookmarkStore {
     sets: Vec<BookmarkSet>,
+    #[serde(skip)]
+    pending_name: String,
 }
 
 impl BookmarkStore {
@@ -77,20 +86,76 @@ impl BookmarkStore {
 
     pub fn update(&mut self, message: BookmarkMessage) -> iced::Task<BookmarkMessage> {
         match message {
-            BookmarkMessage::CreateBookmark { path, name, page } => todo!(),
+            BookmarkMessage::CreateBookmark { path, name, page } => {
+                self.create_bookmark(path, name, page);
+                iced::Task::none()
+            }
             BookmarkMessage::DeleteBookmark { path, name, page } => todo!(),
             BookmarkMessage::GoTo { path, page } => panic!("Should be handled by app"),
             BookmarkMessage::None => todo!(),
+            BookmarkMessage::PendingName(s) => {
+                self.pending_name = s;
+                iced::Task::none()
+            }
+            BookmarkMessage::RequestNewBookmark { name } => panic!("Should be handled by app"),
         }
     }
 
     pub fn view(&self) -> iced::Element<'_, BookmarkMessage> {
-        container(text("Bookmarks")).height(Length::Fill).into()
+        let mut col = widget::column![
+            text("Bookmarks").size(18.0),
+            vertical_space().height(8.0),
+            text_input("New bookmark", &self.pending_name)
+                .on_input(BookmarkMessage::PendingName)
+                .on_submit(BookmarkMessage::RequestNewBookmark {
+                    name: self.pending_name.clone()
+                }),
+            vertical_space().height(8.0),
+            horizontal_rule(2.0),
+            vertical_space().height(8.0),
+        ];
+        for set in &self.sets {
+            col = col.push(self.view_bookmark_set(set));
+        }
+
+        container(col).height(Length::Fill).padding(8.0).into()
     }
+
+    fn view_bookmark_set<'a>(&self, set: &'a BookmarkSet) -> iced::Element<'a, BookmarkMessage> {
+        let mut marks = widget::column![text(set.path.file_name().unwrap().to_string_lossy())];
+        for mark in &set.marks {
+            marks = marks.push(widget::row![text(&mark.name),]);
+        }
+        widget::scrollable(marks).into()
+    }
+
+    /// Requires canonical path
+    fn create_bookmark(&mut self, path: PathBuf, name: String, page: usize) {
+        match self.sets.iter_mut().find(|s| s.path == path) {
+            Some(set) => {
+                set.marks.push(Bookmark { page, name });
+            }
+            None => {
+                self.sets.push(BookmarkSet {
+                    marks: vec![Bookmark { page, name }],
+                    file_hash: hash_file(&path).unwrap_or(0),
+                    path,
+                });
+            }
+        }
+    }
+}
+
+fn hash_file(path: &Path) -> Result<u64> {
+    let bytes = fs::read(path)?;
+    Ok(XxHash64::oneshot(HASH_SEED, &bytes))
 }
 
 impl Default for BookmarkStore {
     fn default() -> Self {
-        Self { sets: vec![] }
+        Self {
+            sets: vec![],
+            pending_name: String::new(),
+        }
     }
 }
