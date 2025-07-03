@@ -27,8 +27,8 @@ use tokio::sync::mpsc;
 
 use crate::{
     CONFIG, WORKER_RX,
+    config::BindableMessage,
     geometry::Vector,
-    keymap::BindableMessage,
     pdf::{
         PdfMessage,
         cache::{WorkerCommand, WorkerResponse},

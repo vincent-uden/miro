@@ -248,6 +248,7 @@ mod tests {
                 ),
             ]),
             rpc_enabled: false,
+            rpc_port: 7890,
         };
     }
 

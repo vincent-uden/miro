@@ -6,8 +6,8 @@ use std::{
 
 use app::App;
 use clap::Parser;
+use config::Config;
 use iced::{Theme, window::icon::from_file_data};
-use keymap::Config;
 use once_cell::sync::OnceCell;
 use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
 use tokio::sync::{Mutex, mpsc};
@@ -15,8 +15,8 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod app;
+mod config;
 mod geometry;
-mod keymap;
 mod pdf;
 mod rpc;
 mod watch;
