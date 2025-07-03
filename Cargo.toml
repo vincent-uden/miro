@@ -32,3 +32,4 @@ toml = "0.8.20"
 tracing = "0.1.41"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+twox-hash = { version = "2.1.1", features = ["serialize"] }

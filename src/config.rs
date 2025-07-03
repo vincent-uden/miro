@@ -84,7 +84,7 @@ impl Config {
     }
 
     pub fn system_config() -> Result<Self> {
-        let config_path = Self::system_config_path()?.join("./.config/miro-pdf/miro.conf");
+        let config_path = Self::system_config_path()?;
         Ok(Self::merge_configs(
             Self::default(),
             &Config::from_str(&fs::read_to_string(config_path)?)?,
@@ -92,7 +92,9 @@ impl Config {
     }
 
     pub fn system_config_path() -> Result<PathBuf> {
-        home::home_dir().ok_or(anyhow!("No home directory could be determined"))
+        Ok(home::home_dir()
+            .ok_or(anyhow!("No home directory could be determined"))?
+            .join("./.config/miro-pdf/miro.conf"))
     }
 
     fn merge_configs(mut base: Config, overrider: &Config) -> Config {

@@ -15,6 +15,7 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod app;
+mod bookmarks;
 mod config;
 mod geometry;
 mod pdf;
