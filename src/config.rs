@@ -35,6 +35,7 @@ pub enum BindableMessage {
     PreviousTab,
     ToggleDarkModePdf,
     // TODO: ToggleDarkModeUi
+    ToggleSidebar,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -59,6 +60,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::NextTab => AppMessage::NextTab,
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
             BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
+            BindableMessage::ToggleSidebar => AppMessage::ToggleSidebar,
         }
     }
 }
@@ -132,6 +134,10 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Ctrl+r").unwrap(),
                     BindableMessage::ToggleDarkModePdf,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+b").unwrap(),
+                    BindableMessage::ToggleSidebar,
                 ),
             ]),
             rpc_enabled: false,
