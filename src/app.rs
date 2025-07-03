@@ -27,12 +27,13 @@ use tokio::sync::mpsc;
 
 use crate::{
     CONFIG, WORKER_RX,
+    config::BindableMessage,
     geometry::Vector,
-    keymap::BindableMessage,
     pdf::{
         PdfMessage,
         cache::{WorkerCommand, WorkerResponse},
     },
+    rpc::rpc_server,
 };
 use crate::{
     pdf::widget::PdfViewer,
@@ -52,6 +53,7 @@ pub struct App {
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum AppMessage {
     OpenFile(PathBuf),
+    CloseFile(PathBuf),
     OpenNewFileFinder,
     Debug(String),
     PdfMessage(PdfMessage),
@@ -102,6 +104,14 @@ impl App {
                 self.pdfs[self.pdf_idx]
                     .update(PdfMessage::OpenFile(path_buf))
                     .map(AppMessage::PdfMessage)
+            }
+            AppMessage::CloseFile(path_buf) => {
+                let path_buf = canonicalize(path_buf).unwrap();
+                if let Some(idx) = self.pdfs.iter().position(|p| p.path == path_buf) {
+                    iced::Task::done(AppMessage::CloseTab(idx))
+                } else {
+                    iced::Task::none()
+                }
             }
             AppMessage::Debug(s) => {
                 println!("[DEBUG] {s}");
@@ -376,11 +386,18 @@ impl App {
             _ => None,
         });
 
-        Subscription::batch(vec![
+        let mut subs = vec![
             keys,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
             Subscription::run(worker_responder).map(AppMessage::WorkerResponse),
-        ])
+        ];
+
+        let config = CONFIG.read().unwrap();
+        if config.rpc_enabled {
+            subs.push(Subscription::run(rpc_server));
+        }
+
+        Subscription::batch(subs)
     }
 }
 

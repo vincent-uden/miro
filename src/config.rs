@@ -1,4 +1,9 @@
-use std::str::FromStr;
+use anyhow::{Result, anyhow};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use keybinds::{KeyInput, Keybind, Keybinds};
 use logos::Logos;
@@ -61,18 +66,42 @@ impl From<BindableMessage> for AppMessage {
 #[derive(Debug)]
 pub struct Config {
     pub keyboard: Keybinds<BindableMessage>,
+    pub rpc_enabled: bool,
+    pub rpc_port: u32,
 }
 
 impl Config {
     pub fn new() -> Self {
         Config {
             keyboard: Keybinds::new(vec![]),
+            ..Default::default()
         }
     }
 
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
         let binds = self.keyboard.as_slice();
         binds.iter().find(|b| b.action == msg).map(|b| b.clone())
+    }
+
+    pub fn system_config() -> Result<Self> {
+        let config_path = Self::system_config_path()?.join("./.config/miro-pdf/miro.conf");
+        Ok(Self::merge_configs(
+            Self::default(),
+            &Config::from_str(&fs::read_to_string(config_path)?)?,
+        ))
+    }
+
+    pub fn system_config_path() -> Result<PathBuf> {
+        home::home_dir().ok_or(anyhow!("No home directory could be determined"))
+    }
+
+    fn merge_configs(mut base: Config, overrider: &Config) -> Config {
+        for binding in overrider.keyboard.as_slice() {
+            base.keyboard.push(binding.clone());
+        }
+        base.rpc_enabled = overrider.rpc_enabled;
+        base.rpc_port = overrider.rpc_port;
+        base
     }
 }
 
@@ -103,6 +132,8 @@ impl Default for Config {
                     BindableMessage::ToggleDarkModePdf,
                 ),
             ]),
+            rpc_enabled: false,
+            rpc_port: 7890,
         }
     }
 }
@@ -139,6 +170,25 @@ impl FromStr for Config {
                                     .bind(&args[0], BindableMessage::from_str(&args[1]).unwrap())
                                     .unwrap();
                             }
+                            Command::Set => {
+                                assert!(args.len() == 2, "Set requires two arguments");
+                                if args[0] == "Rpc" {
+                                    if args[1] == "True" {
+                                        out.rpc_enabled = true;
+                                    } else {
+                                        out.rpc_enabled = false;
+                                    }
+                                } else if args[0] == "RpcPort" {
+                                    match args[1].parse::<u32>() {
+                                        Ok(port) => {
+                                            out.rpc_port = port;
+                                        }
+                                        Err(_) => {}
+                                    }
+                                } else {
+                                    todo!("Error handling for config parsing")
+                                }
+                            }
                         }
                     } else {
                         todo!("Error handling for config parsing")
@@ -173,6 +223,7 @@ enum Token {
 #[derive(Debug, EnumString)]
 enum Command {
     Bind,
+    Set,
 }
 
 #[cfg(test)]
@@ -196,6 +247,8 @@ mod tests {
                     BindableMessage::NextTab,
                 ),
             ]),
+            rpc_enabled: false,
+            rpc_port: 7890,
         };
     }
 
