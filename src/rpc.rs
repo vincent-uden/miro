@@ -1,17 +1,11 @@
-use std::{fs, net::SocketAddr, path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
-use async_watcher::{AsyncDebouncer, notify::RecursiveMode};
-use axum::{
-    Json, Router,
-    extract::State,
-    routing::{get, post},
-};
+use axum::{Json, Router, extract::State, routing::post};
 use iced::{
     futures::{SinkExt, Stream, channel::mpsc::Sender},
     stream,
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
 use tracing::error;
 
 use crate::app::AppMessage;
@@ -21,7 +15,7 @@ struct AppState {
     tx: Sender<AppMessage>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "data")]
 enum RpcMessage {
     OpenFile { path: PathBuf },
@@ -30,7 +24,7 @@ enum RpcMessage {
     ToggleDarkModePdf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct RpcRequest {
     pub message: RpcMessage,
 }
@@ -60,5 +54,22 @@ async fn root_handler(
         error!("Failed to send message: {}", e);
     }
 
-    "Hello from Axum!".to_string()
+    "OK".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn json_parsing_of_rpc() {
+        let input = r#"{"message": {"type": "OpenFile", "data": { "path": "./"}}}"#;
+        let output: RpcRequest = serde_json::from_str(input).unwrap();
+        assert!(
+            output
+                == RpcRequest {
+                    message: RpcMessage::OpenFile { path: "./".into() }
+                }
+        );
+    }
 }

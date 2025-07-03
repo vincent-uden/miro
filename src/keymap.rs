@@ -61,12 +61,14 @@ impl From<BindableMessage> for AppMessage {
 #[derive(Debug)]
 pub struct Config {
     pub keyboard: Keybinds<BindableMessage>,
+    pub rpc_enabled: bool,
 }
 
 impl Config {
     pub fn new() -> Self {
         Config {
             keyboard: Keybinds::new(vec![]),
+            rpc_enabled: false,
         }
     }
 
@@ -103,6 +105,7 @@ impl Default for Config {
                     BindableMessage::ToggleDarkModePdf,
                 ),
             ]),
+            rpc_enabled: false,
         }
     }
 }
@@ -139,6 +142,14 @@ impl FromStr for Config {
                                     .bind(&args[0], BindableMessage::from_str(&args[1]).unwrap())
                                     .unwrap();
                             }
+                            Command::Enable => {
+                                assert!(args.len() == 1, "Enable requires one argument");
+                                if args[0] == "rpc" {
+                                    out.rpc_enabled = true;
+                                } else {
+                                    todo!("Error handling for config parsing")
+                                }
+                            }
                         }
                     } else {
                         todo!("Error handling for config parsing")
@@ -173,6 +184,7 @@ enum Token {
 #[derive(Debug, EnumString)]
 enum Command {
     Bind,
+    Enable,
 }
 
 #[cfg(test)]
@@ -196,6 +208,7 @@ mod tests {
                     BindableMessage::NextTab,
                 ),
             ]),
+            rpc_enabled: false,
         };
     }
 

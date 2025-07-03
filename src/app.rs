@@ -386,12 +386,18 @@ impl App {
             _ => None,
         });
 
-        Subscription::batch(vec![
+        let mut subs = vec![
             keys,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
             Subscription::run(worker_responder).map(AppMessage::WorkerResponse),
-            Subscription::run(rpc_server),
-        ])
+        ];
+
+        let config = CONFIG.read().unwrap();
+        if config.rpc_enabled {
+            subs.push(Subscription::run(rpc_server));
+        }
+
+        Subscription::batch(subs)
     }
 }
 
