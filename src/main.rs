@@ -5,6 +5,7 @@ use std::{
 };
 
 use app::App;
+use bookmarks::BookmarkStore;
 use clap::Parser;
 use config::Config;
 use iced::{Theme, window::icon::from_file_data};
@@ -80,7 +81,10 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .window(settings())
         .run_with(move || {
-            let state = App::new(command_tx);
+            let state = App::new(
+                command_tx,
+                BookmarkStore::system_store().unwrap_or_default(),
+            );
             (state, match args.path {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),

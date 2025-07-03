@@ -8,7 +8,7 @@ use iced::{
     stream,
     theme::palette,
     widget::{
-        self, button, container, row, scrollable,
+        self, PaneGrid, button, container, pane_grid, responsive, row, scrollable,
         scrollable::{Direction, Scrollbar},
         text, vertical_space,
     },
@@ -24,9 +24,11 @@ use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::mpsc;
+use tracing::debug;
 
 use crate::{
     CONFIG, WORKER_RX,
+    bookmarks::{BookmarkMessage, BookmarkStore},
     config::BindableMessage,
     geometry::Vector,
     pdf::{
@@ -41,13 +43,27 @@ use crate::{
 };
 
 #[derive(Debug)]
+enum PaneType {
+    Pdf,
+    Bookmarks,
+}
+
+#[derive(Debug)]
+struct Pane {
+    id: usize,
+    pane_type: PaneType,
+}
+
+#[derive(Debug)]
 pub struct App {
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
     pub dark_mode: bool,
     pub invert_pdf: bool,
+    bookmark_store: BookmarkStore,
     command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
+    pane_state: pane_grid::State<Pane>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -74,19 +90,36 @@ pub enum AppMessage {
     #[strum(disabled)]
     #[serde(skip)]
     WorkerResponse(WorkerResponse),
+    BookmarkMessage(BookmarkMessage),
+    #[strum(disabled)]
+    #[serde(skip)]
+    PaneResize(pane_grid::ResizeEvent),
     #[default]
     None,
 }
 
 impl App {
-    pub fn new(command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>) -> Self {
+    pub fn new(
+        command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
+        bookmark_store: BookmarkStore,
+    ) -> Self {
+        let (mut ps, p) = pane_grid::State::new(Pane {
+            id: 0,
+            pane_type: PaneType::Bookmarks,
+        });
+        ps.split(pane_grid::Axis::Vertical, p, Pane {
+            id: 1,
+            pane_type: PaneType::Pdf,
+        });
         Self {
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
             dark_mode: false,
             invert_pdf: false,
+            bookmark_store,
             command_tx,
+            pane_state: ps,
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
@@ -221,6 +254,14 @@ impl App {
                     iced::Task::none()
                 }
             }
+            AppMessage::BookmarkMessage(bookmark_message) => self
+                .bookmark_store
+                .update(bookmark_message)
+                .map(AppMessage::BookmarkMessage),
+            AppMessage::PaneResize(pane_grid::ResizeEvent { split, ratio }) => {
+                self.pane_state.resize(split, ratio);
+                iced::Task::none()
+            }
         }
     }
 
@@ -328,7 +369,24 @@ impl App {
             Scrollbar::default().scroller_width(0.0).width(0.0),
         ));
 
-        let c = widget::column![mb, image, tabs];
+        let pg = PaneGrid::new(&self.pane_state, |id, pane, is_maximized| {
+            pane_grid::Content::new(responsive(move |size| match pane.pane_type {
+                PaneType::Pdf => self.bookmark_store.view().map(AppMessage::BookmarkMessage),
+                PaneType::Bookmarks => {
+                    if !self.pdfs.is_empty() {
+                        self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
+                    } else {
+                        vertical_space().into()
+                    }
+                }
+            }))
+            .style(|theme: &Theme| container::Style {
+                ..Default::default()
+            })
+        })
+        .on_resize(10, AppMessage::PaneResize);
+
+        let c = widget::column![mb, pg, tabs];
 
         c.into()
     }
@@ -398,6 +456,12 @@ impl App {
         }
 
         Subscription::batch(subs)
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.bookmark_store.save().unwrap()
     }
 }
 

@@ -151,7 +151,9 @@ impl From<iced::Size> for Vector<f32> {
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct Rect<T> {
+    /// Top left
     pub x0: Vector<T>,
+    /// Bottom right
     pub x1: Vector<T>,
 }
 

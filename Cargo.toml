@@ -15,7 +15,7 @@ axum = "0.8.4"
 clap = {version = "4.5.32", features = ["derive"] }
 colorgrad = "0.7.1"
 home = "0.5.11"
-iced = {version = "0.13.1", features = ["advanced", "image", "tokio", "web-colors"] }
+iced = {version = "0.13.1", features = ["advanced", "image", "tokio", "web-colors", "lazy"] }
 iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
 keybinds = { version = "0.1.1", features = ["iced", "serde"] }
