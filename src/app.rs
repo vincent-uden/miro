@@ -162,10 +162,6 @@ impl App {
             AppMessage::PdfMessage(msg) => self.pdfs[self.pdf_idx]
                 .update(msg)
                 .map(AppMessage::PdfMessage),
-            AppMessage::OpenTab(i) => {
-                self.pdf_idx = i;
-                iced::Task::none()
-            }
             AppMessage::OpenNewFileFinder => {
                 if let Some(path_buf) = FileDialog::new().add_filter("Pdf", &["pdf"]).pick_file() {
                     self.pdfs.push(PdfViewer::new(self.command_tx.clone()));
@@ -188,12 +184,17 @@ impl App {
                 }
                 iced::Task::none()
             }
+            // TODO: Worker-Main thread desync on tab switching
             AppMessage::PreviousTab => {
                 self.pdf_idx = (self.pdf_idx - 1).max(0);
                 iced::Task::none()
             }
             AppMessage::NextTab => {
                 self.pdf_idx = (self.pdf_idx + 1).min(self.pdfs.len() - 1);
+                iced::Task::none()
+            }
+            AppMessage::OpenTab(i) => {
+                self.pdf_idx = i;
                 iced::Task::none()
             }
             AppMessage::FileWatcher(watch_notification) => {

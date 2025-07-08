@@ -19,6 +19,7 @@ mod app;
 mod bookmarks;
 mod config;
 mod geometry;
+mod icons;
 mod pdf;
 mod rpc;
 mod watch;

@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use twox_hash::XxHash64;
 
+use crate::icons::{self, ButtonVariant, icon_button};
+
 // This does not need to be cryptographically sound in the slightest. It is just used for
 // fingerprinting files to detect updates.
 const HASH_SEED: u64 = 1337;
@@ -42,7 +44,6 @@ pub enum BookmarkMessage {
     DeleteBookmark {
         path: PathBuf,
         name: String,
-        page: i32,
     },
     GoTo {
         path: PathBuf,
@@ -93,14 +94,17 @@ impl BookmarkStore {
                 self.create_bookmark(path, name, page);
                 iced::Task::none()
             }
-            BookmarkMessage::DeleteBookmark { path, name, page } => todo!(),
-            BookmarkMessage::GoTo { path, page } => panic!("Should be handled by app"),
-            BookmarkMessage::None => todo!(),
+            BookmarkMessage::DeleteBookmark { path, name } => {
+                self.delete_bookmark(path, name);
+                iced::Task::none()
+            }
             BookmarkMessage::PendingName(s) => {
                 self.pending_name = s;
                 iced::Task::none()
             }
-            BookmarkMessage::RequestNewBookmark { name } => panic!("Should be handled by app"),
+            BookmarkMessage::GoTo { path: _, page: _ } => panic!("Should be handled by app"),
+            BookmarkMessage::RequestNewBookmark { name: _ } => panic!("Should be handled by app"),
+            BookmarkMessage::None => iced::Task::none(),
         }
     }
 
@@ -131,17 +135,29 @@ impl BookmarkStore {
         ];
         for mark in &set.marks {
             marks = marks.push(
-                button(widget::row![hover(
-                    text(&mark.name).style(|_: &Theme| widget::text::Style {
-                        color: Some(iced::Color::from_rgb(0.5, 0.5, 0.5)),
-                    }),
-                    text(&mark.name).style(|theme: &Theme| {
-                        let palette = theme.extended_palette();
-                        widget::text::Style {
-                            color: Some(palette.primary.base.color),
+                button(widget::row![
+                    hover(
+                        text(&mark.name)
+                            .style(|_: &Theme| widget::text::Style {
+                                color: Some(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                            })
+                            .width(Length::Fill),
+                        text(&mark.name)
+                            .style(|theme: &Theme| {
+                                let palette = theme.extended_palette();
+                                widget::text::Style {
+                                    color: Some(palette.primary.base.color),
+                                }
+                            })
+                            .width(Length::Fill),
+                    ),
+                    icon_button(icons::delete(), ButtonVariant::Danger).on_press(
+                        BookmarkMessage::DeleteBookmark {
+                            path: set.path.clone(),
+                            name: mark.name.clone()
                         }
-                    }),
-                )])
+                    )
+                ])
                 .style(|_: &Theme, _| widget::button::Style {
                     background: None,
                     ..Default::default()
@@ -169,6 +185,21 @@ impl BookmarkStore {
                     file_hash: hash_file(&path).unwrap_or(0),
                     path,
                 });
+            }
+        }
+    }
+
+    /// Requires canonical path
+    fn delete_bookmark(&mut self, path: PathBuf, name: String) {
+        if let Some((i, set)) = self
+            .sets
+            .iter_mut()
+            .enumerate()
+            .find(|(_, set)| set.path == path)
+        {
+            set.marks.retain(|m| m.name != name);
+            if set.marks.is_empty() {
+                self.sets.remove(i);
             }
         }
     }
