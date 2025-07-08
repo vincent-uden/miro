@@ -197,7 +197,7 @@ where
         };
         if let Some(msg) = out {
             shell.publish(msg);
-        } else if self.state.bounds.size() == Vector::zero() {
+        } else if self.state.bounds.size() == Vector::zero() || self.state.bounds != bounds.into() {
             shell.publish(PdfMessage::UpdateBounds(bounds.into()));
         }
         iced::event::Status::Ignored

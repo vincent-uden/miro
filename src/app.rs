@@ -8,7 +8,7 @@ use iced::{
     stream,
     theme::palette,
     widget::{
-        self, button, container, row, scrollable,
+        self, PaneGrid, button, container, pane_grid, responsive, row, scrollable,
         scrollable::{Direction, Scrollbar},
         text, vertical_space,
     },
@@ -24,9 +24,11 @@ use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::mpsc;
+use tracing::debug;
 
 use crate::{
     CONFIG, WORKER_RX,
+    bookmarks::{BookmarkMessage, BookmarkStore},
     config::BindableMessage,
     geometry::Vector,
     pdf::{
@@ -41,13 +43,30 @@ use crate::{
 };
 
 #[derive(Debug)]
+enum PaneType {
+    Pdf,
+    Sidebar,
+}
+
+#[derive(Debug)]
+struct Pane {
+    id: usize,
+    pane_type: PaneType,
+}
+
+#[derive(Debug)]
 pub struct App {
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
     pub dark_mode: bool,
     pub invert_pdf: bool,
+    bookmark_store: BookmarkStore,
     command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
+    pane_state: pane_grid::State<Pane>,
+    pane_ratio: f32,
+    sidebar_showing: bool,
+    waiting_for_worker: Vec<AppMessage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -74,19 +93,42 @@ pub enum AppMessage {
     #[strum(disabled)]
     #[serde(skip)]
     WorkerResponse(WorkerResponse),
+    BookmarkMessage(BookmarkMessage),
+    #[strum(disabled)]
+    #[serde(skip)]
+    PaneResize(pane_grid::ResizeEvent),
+    ToggleSidebar,
     #[default]
     None,
 }
 
 impl App {
-    pub fn new(command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>) -> Self {
+    pub fn new(
+        command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
+        bookmark_store: BookmarkStore,
+    ) -> Self {
+        let (mut ps, p) = pane_grid::State::new(Pane {
+            id: 0,
+            pane_type: PaneType::Pdf,
+        });
+        if let Some((_, split)) = ps.split(pane_grid::Axis::Vertical, p, Pane {
+            id: 1,
+            pane_type: PaneType::Sidebar,
+        }) {
+            ps.resize(split, 0.7);
+        }
         Self {
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
             dark_mode: false,
             invert_pdf: false,
+            bookmark_store,
             command_tx,
+            pane_state: ps,
+            pane_ratio: 0.7,
+            sidebar_showing: false,
+            waiting_for_worker: vec![],
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
@@ -120,10 +162,6 @@ impl App {
             AppMessage::PdfMessage(msg) => self.pdfs[self.pdf_idx]
                 .update(msg)
                 .map(AppMessage::PdfMessage),
-            AppMessage::OpenTab(i) => {
-                self.pdf_idx = i;
-                iced::Task::none()
-            }
             AppMessage::OpenNewFileFinder => {
                 if let Some(path_buf) = FileDialog::new().add_filter("Pdf", &["pdf"]).pick_file() {
                     self.pdfs.push(PdfViewer::new(self.command_tx.clone()));
@@ -146,12 +184,17 @@ impl App {
                 }
                 iced::Task::none()
             }
+            // TODO: Worker-Main thread desync on tab switching
             AppMessage::PreviousTab => {
                 self.pdf_idx = (self.pdf_idx - 1).max(0);
                 iced::Task::none()
             }
             AppMessage::NextTab => {
                 self.pdf_idx = (self.pdf_idx + 1).min(self.pdfs.len() - 1);
+                iced::Task::none()
+            }
+            AppMessage::OpenTab(i) => {
+                self.pdf_idx = i;
                 iced::Task::none()
             }
             AppMessage::FileWatcher(watch_notification) => {
@@ -213,6 +256,20 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::WorkerResponse(worker_response) => {
+                let on_response = match &worker_response {
+                    WorkerResponse::Loaded(_) => {
+                        if let Some(idx) = self
+                            .waiting_for_worker
+                            .iter()
+                            .position(|msg| matches!(msg, AppMessage::BookmarkMessage(_)))
+                        {
+                            iced::Task::done(self.waiting_for_worker.remove(idx))
+                        } else {
+                            iced::Task::none()
+                        }
+                    }
+                    _ => iced::Task::none(),
+                };
                 if !self.pdfs.is_empty() {
                     self.pdfs[self.pdf_idx]
                         .update(PdfMessage::WorkerResponse(worker_response))
@@ -220,6 +277,52 @@ impl App {
                 } else {
                     iced::Task::none()
                 }
+                .chain(on_response)
+            }
+            AppMessage::BookmarkMessage(BookmarkMessage::RequestNewBookmark { name }) => {
+                let path = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.path.clone());
+                let page = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.cur_page_idx);
+                if let (Some(path), Some(page)) = (path, page) {
+                    self.bookmark_store
+                        .update(BookmarkMessage::CreateBookmark { path, name, page })
+                        .map(AppMessage::BookmarkMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
+            AppMessage::BookmarkMessage(BookmarkMessage::GoTo { path, page }) => {
+                match self
+                    .pdfs
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, pdf)| pdf.path == path)
+                {
+                    Some((i, pdf)) => iced::Task::done(AppMessage::OpenTab(i)).chain(
+                        pdf.update(PdfMessage::SetPage(page))
+                            .map(AppMessage::PdfMessage),
+                    ),
+                    None => {
+                        self.waiting_for_worker.push(AppMessage::BookmarkMessage(
+                            BookmarkMessage::GoTo {
+                                path: path.clone(),
+                                page,
+                            },
+                        ));
+                        iced::Task::done(AppMessage::OpenFile(path))
+                    }
+                }
+            }
+            AppMessage::BookmarkMessage(bookmark_message) => self
+                .bookmark_store
+                .update(bookmark_message)
+                .map(AppMessage::BookmarkMessage),
+            AppMessage::PaneResize(pane_grid::ResizeEvent { split, ratio }) => {
+                self.pane_state.resize(split, ratio);
+                iced::Task::none()
+            }
+            AppMessage::ToggleSidebar => {
+                self.sidebar_showing = !self.sidebar_showing;
+                iced::Task::none()
             }
         }
     }
@@ -245,42 +348,47 @@ impl App {
                 debug_button_s("View"),
                 menu_tpl_1(menu_items!(
                     (menu_button(
-                    if self.dark_mode {
-                        "Light Interface"
-                    } else {
-                        "Dark Interface"
-                    },
-                    AppMessage::ToggleDarkModeUi,
-                    None
+                        if self.dark_mode {
+                            "Light Interface"
+                        } else {
+                            "Dark Interface"
+                        },
+                        AppMessage::ToggleDarkModeUi,
+                        None
                     ))
                     (menu_button(
-                    if self.invert_pdf {
-                        "Light Pdf"
-                    } else {
-                        "Dark Pdf"
-                    },
-                    AppMessage::ToggleDarkModePdf,
-                    cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
+                        if self.invert_pdf {
+                            "Light Pdf"
+                        } else {
+                            "Dark Pdf"
+                        },
+                        AppMessage::ToggleDarkModePdf,
+                        cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
                     ))
                     (menu_button(
                         "Zoom In",
-                    AppMessage::PdfMessage(PdfMessage::ZoomIn),
-                    cfg.get_binding_for_msg(BindableMessage::ZoomIn)
+                        AppMessage::PdfMessage(PdfMessage::ZoomIn),
+                        cfg.get_binding_for_msg(BindableMessage::ZoomIn)
                     ))
                     (menu_button(
                         "Zoom Out",
-                    AppMessage::PdfMessage(PdfMessage::ZoomOut),
-                    cfg.get_binding_for_msg(BindableMessage::ZoomOut)
+                        AppMessage::PdfMessage(PdfMessage::ZoomOut),
+                        cfg.get_binding_for_msg(BindableMessage::ZoomOut)
                     ))
                     (menu_button(
                         "Zoom 100%",
-                    AppMessage::PdfMessage(PdfMessage::ZoomHome),
-                    cfg.get_binding_for_msg(BindableMessage::ZoomHome)
+                        AppMessage::PdfMessage(PdfMessage::ZoomHome),
+                        cfg.get_binding_for_msg(BindableMessage::ZoomHome)
                     ))
                     (menu_button(
                         "Fit To Screen",
-                    AppMessage::PdfMessage(PdfMessage::ZoomFit),
-                    cfg.get_binding_for_msg(BindableMessage::ZoomFit)
+                        AppMessage::PdfMessage(PdfMessage::ZoomFit),
+                        cfg.get_binding_for_msg(BindableMessage::ZoomFit)
+                    ))
+                    (menu_button(
+                        if self.sidebar_showing { "Close sidebar" } else { "Open sidebar" },
+                        AppMessage::ToggleSidebar,
+                        cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
                     ))
                 ))
             ))
@@ -328,13 +436,44 @@ impl App {
             Scrollbar::default().scroller_width(0.0).width(0.0),
         ));
 
-        let c = widget::column![mb, image, tabs];
+        let c = if self.sidebar_showing {
+            let pg = PaneGrid::new(&self.pane_state, |id, pane, is_maximized| {
+                pane_grid::Content::new(responsive(move |size| match pane.pane_type {
+                    PaneType::Sidebar => {
+                        self.bookmark_store.view().map(AppMessage::BookmarkMessage)
+                    }
+                    PaneType::Pdf => {
+                        if !self.pdfs.is_empty() {
+                            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
+                        } else {
+                            vertical_space().into()
+                        }
+                    }
+                }))
+                .style(|theme: &Theme| container::Style {
+                    ..Default::default()
+                })
+            })
+            .on_resize(10, AppMessage::PaneResize);
+
+            widget::column![mb, pg, tabs]
+        } else {
+            widget::column![mb, self.view_pdf(), tabs]
+        };
 
         c.into()
     }
 
+    fn view_pdf(&self) -> Element<'_, AppMessage> {
+        if !self.pdfs.is_empty() {
+            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
+        } else {
+            vertical_space().into()
+        }
+    }
+
     pub fn subscription(&self) -> Subscription<AppMessage> {
-        let keys = listen_with(|event, _, _| match event {
+        let keys = listen_with(|event, status, _| match event {
             Event::Mouse(e) => match e {
                 iced::mouse::Event::CursorMoved { position } => {
                     Some(AppMessage::MouseMoved(position.into()))
@@ -381,7 +520,12 @@ impl App {
             },
             Event::Keyboard(e) => {
                 let mut config = CONFIG.write().unwrap();
-                config.keyboard.dispatch(e).map(|x| (*x).into())
+                match status {
+                    iced::event::Status::Ignored => {
+                        config.keyboard.dispatch(e).map(|x| (*x).into())
+                    }
+                    iced::event::Status::Captured => None,
+                }
             }
             _ => None,
         });
@@ -398,6 +542,12 @@ impl App {
         }
 
         Subscription::batch(subs)
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.bookmark_store.save().unwrap()
     }
 }
 

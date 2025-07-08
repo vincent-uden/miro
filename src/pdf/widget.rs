@@ -75,6 +75,7 @@ impl PdfViewer {
             PdfMessage::RefreshFile => self.refresh_file().unwrap(),
             PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
+            PdfMessage::SetPage(page) => self.set_page(page).unwrap(),
             PdfMessage::ZoomIn => {
                 self.pending_scale *= 1.2;
                 self.invalidate_cache();
@@ -116,7 +117,16 @@ impl PdfViewer {
                 }
             }
             PdfMessage::MouseLeftDown => {
-                self.panning = true;
+                // Dont start panning if we're close enough to the edge that a pane resizing might
+                // happen
+                if let Some(mp) = self.last_mouse_pos {
+                    let mut padded_bounds = self.inner_state.bounds;
+                    padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
+                    padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
+                    if padded_bounds.contains(mp) {
+                        self.panning = true;
+                    }
+                }
             }
             PdfMessage::MouseRightDown => {}
             PdfMessage::MouseLeftUp => {
