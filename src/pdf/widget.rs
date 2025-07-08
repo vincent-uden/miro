@@ -75,6 +75,7 @@ impl PdfViewer {
             PdfMessage::RefreshFile => self.refresh_file().unwrap(),
             PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
+            PdfMessage::SetPage(page) => self.set_page(page).unwrap(),
             PdfMessage::ZoomIn => {
                 self.pending_scale *= 1.2;
                 self.invalidate_cache();

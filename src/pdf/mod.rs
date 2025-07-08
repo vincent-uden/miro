@@ -15,6 +15,7 @@ pub enum PdfMessage {
     RefreshFile,
     NextPage,
     PreviousPage,
+    SetPage(i32),
     ZoomIn,
     ZoomOut,
     ZoomHome,

@@ -66,6 +66,7 @@ pub struct App {
     pane_state: pane_grid::State<Pane>,
     pane_ratio: f32,
     sidebar_showing: bool,
+    waiting_for_worker: Vec<AppMessage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -127,6 +128,7 @@ impl App {
             pane_state: ps,
             pane_ratio: 0.7,
             sidebar_showing: false,
+            waiting_for_worker: vec![],
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
@@ -253,6 +255,20 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::WorkerResponse(worker_response) => {
+                let on_response = match &worker_response {
+                    WorkerResponse::Loaded(_) => {
+                        if let Some(idx) = self
+                            .waiting_for_worker
+                            .iter()
+                            .position(|msg| matches!(msg, AppMessage::BookmarkMessage(_)))
+                        {
+                            iced::Task::done(self.waiting_for_worker.remove(idx))
+                        } else {
+                            iced::Task::none()
+                        }
+                    }
+                    _ => iced::Task::none(),
+                };
                 if !self.pdfs.is_empty() {
                     self.pdfs[self.pdf_idx]
                         .update(PdfMessage::WorkerResponse(worker_response))
@@ -260,20 +276,39 @@ impl App {
                 } else {
                     iced::Task::none()
                 }
+                .chain(on_response)
             }
             AppMessage::BookmarkMessage(BookmarkMessage::RequestNewBookmark { name }) => {
                 let path = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.path.clone());
                 let page = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.cur_page_idx);
                 if let (Some(path), Some(page)) = (path, page) {
                     self.bookmark_store
-                        .update(BookmarkMessage::CreateBookmark {
-                            path,
-                            name,
-                            page: (page + 1) as usize,
-                        })
+                        .update(BookmarkMessage::CreateBookmark { path, name, page })
                         .map(AppMessage::BookmarkMessage)
                 } else {
                     iced::Task::none()
+                }
+            }
+            AppMessage::BookmarkMessage(BookmarkMessage::GoTo { path, page }) => {
+                match self
+                    .pdfs
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, pdf)| pdf.path == path)
+                {
+                    Some((i, pdf)) => iced::Task::done(AppMessage::OpenTab(i)).chain(
+                        pdf.update(PdfMessage::SetPage(page))
+                            .map(AppMessage::PdfMessage),
+                    ),
+                    None => {
+                        self.waiting_for_worker.push(AppMessage::BookmarkMessage(
+                            BookmarkMessage::GoTo {
+                                path: path.clone(),
+                                page,
+                            },
+                        ));
+                        iced::Task::done(AppMessage::OpenFile(path))
+                    }
                 }
             }
             AppMessage::BookmarkMessage(bookmark_message) => self

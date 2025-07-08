@@ -5,8 +5,11 @@ use std::{
 
 use anyhow::{Result, anyhow};
 use iced::{
-    Length,
-    widget::{self, container, horizontal_rule, text, text_input, vertical_space},
+    Length, Padding, Theme,
+    widget::{
+        self, button, container, horizontal_rule, horizontal_space, hover, text, text_input,
+        vertical_space,
+    },
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -18,7 +21,7 @@ const HASH_SEED: u64 = 1337;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bookmark {
-    pub page: usize,
+    pub page: i32,
     pub name: String,
 }
 
@@ -34,16 +37,16 @@ pub enum BookmarkMessage {
     CreateBookmark {
         path: PathBuf,
         name: String,
-        page: usize,
+        page: i32,
     },
     DeleteBookmark {
         path: PathBuf,
         name: String,
-        page: usize,
+        page: i32,
     },
     GoTo {
         path: PathBuf,
-        page: usize,
+        page: i32,
     },
     PendingName(String),
     RequestNewBookmark {
@@ -122,15 +125,40 @@ impl BookmarkStore {
     }
 
     fn view_bookmark_set<'a>(&self, set: &'a BookmarkSet) -> iced::Element<'a, BookmarkMessage> {
-        let mut marks = widget::column![text(set.path.file_name().unwrap().to_string_lossy())];
+        let mut marks = widget::column![
+            text(set.path.file_name().unwrap().to_string_lossy()),
+            vertical_space().height(4.0)
+        ];
         for mark in &set.marks {
-            marks = marks.push(widget::row![text(&mark.name),]);
+            marks = marks.push(
+                button(widget::row![hover(
+                    text(&mark.name).style(|_: &Theme| widget::text::Style {
+                        color: Some(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                    }),
+                    text(&mark.name).style(|theme: &Theme| {
+                        let palette = theme.extended_palette();
+                        widget::text::Style {
+                            color: Some(palette.primary.base.color),
+                        }
+                    }),
+                )])
+                .style(|_: &Theme, _| widget::button::Style {
+                    background: None,
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+                .padding(Padding::default().left(8.0).right(8.0))
+                .on_press(BookmarkMessage::GoTo {
+                    path: set.path.clone(),
+                    page: mark.page,
+                }),
+            );
         }
         widget::scrollable(marks).into()
     }
 
     /// Requires canonical path
-    fn create_bookmark(&mut self, path: PathBuf, name: String, page: usize) {
+    fn create_bookmark(&mut self, path: PathBuf, name: String, page: i32) {
         match self.sets.iter_mut().find(|s| s.path == path) {
             Some(set) => {
                 set.marks.push(Bookmark { page, name });
