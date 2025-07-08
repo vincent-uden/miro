@@ -1,18 +1,17 @@
 use std::path::PathBuf;
 
 use crate::geometry::{Rect, Vector};
-use cache::WorkerResponse;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
+use worker::WorkerResponse;
 
-pub mod cache;
 mod inner;
 pub mod widget;
+pub mod worker;
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PdfMessage {
     OpenFile(PathBuf),
-    RefreshFile,
     NextPage,
     PreviousPage,
     SetPage(i32),
