@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 
 use anyhow::{Result, anyhow};
@@ -25,6 +25,8 @@ pub enum WorkerCommand {
     SetPage(i32),
     /// Command to shut down the worker thread gracefully.
     Shutdown,
+    /// Reloads the DocumentInfo for the active pdf
+    RefreshFile,
 }
 
 /// Requests sent from the ui thread to the worker thread
@@ -48,6 +50,7 @@ pub enum WorkerResponse {
     RenderedTile(CachedTile),
     Loaded(DocumentInfo),
     SetPage(PageInfo),
+    Refreshed(PathBuf, DocumentInfo),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +77,7 @@ pub struct CachedTile {
 /// Manages worker state
 #[derive(Debug, Clone)]
 pub struct PdfWorker {
+    path: Option<PathBuf>,
     document: Option<mupdf::Document>,
     current_page: Option<mupdf::Page>,
     current_page_idx: i32,
@@ -82,13 +86,14 @@ pub struct PdfWorker {
 impl PdfWorker {
     pub fn new() -> Self {
         Self {
+            path: None,
             document: None,
             current_page: None,
             current_page_idx: -1,
         }
     }
 
-    pub fn load_document(&mut self, path: &Path) -> Result<DocumentInfo> {
+    pub fn load_document(&mut self, path: PathBuf) -> Result<DocumentInfo> {
         let doc = Document::open(path.to_str().unwrap())?;
         let out = DocumentInfo {
             page_count: doc.page_count()?,
@@ -96,6 +101,7 @@ impl PdfWorker {
         self.document = Some(doc);
         self.current_page = None;
         self.current_page_idx = -1;
+        self.path = Some(path);
         Ok(out)
     }
 
@@ -174,6 +180,19 @@ impl PdfWorker {
             Err(anyhow!("No page set"))
         }
     }
+
+    fn refresh_document(&mut self) -> Result<DocumentInfo> {
+        if let Some(path) = &self.path {
+            let doc = Document::open(path.to_str().unwrap())?;
+            let out = DocumentInfo {
+                page_count: doc.page_count()?,
+            };
+            self.document = Some(doc);
+            Ok(out)
+        } else {
+            Err(anyhow!("No document set"))
+        }
+    }
 }
 
 pub async fn worker_main(
@@ -200,7 +219,7 @@ pub async fn worker_main(
                     continue;
                 }
             }
-            WorkerCommand::LoadDocument(path_buf) => match worker.load_document(&path_buf) {
+            WorkerCommand::LoadDocument(path_buf) => match worker.load_document(path_buf) {
                 Ok(doc) => result_tx.send(WorkerResponse::Loaded(doc)).unwrap(),
                 Err(e) => {
                     error!("{}", e);
@@ -211,6 +230,17 @@ pub async fn worker_main(
                 Ok(page) => result_tx.send(WorkerResponse::SetPage(page)).unwrap(),
                 Err(e) => {
                     error!("{}", e);
+                }
+            },
+            WorkerCommand::RefreshFile => match (worker.path.clone(), worker.refresh_document()) {
+                (Some(path), Ok(doc)) => result_tx
+                    .send(WorkerResponse::Refreshed(path, doc))
+                    .unwrap(),
+                (_, Err(e)) => {
+                    error!("{}", e)
+                }
+                _ => {
+                    error!("Worker has no path")
                 }
             },
         }

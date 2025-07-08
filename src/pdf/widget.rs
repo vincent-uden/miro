@@ -7,8 +7,8 @@ use crate::{RENDER_GENERATION, geometry::Vector};
 
 use super::{
     PdfMessage,
-    cache::{CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse},
     inner::{self, PageViewer},
+    worker::{CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse},
 };
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
@@ -72,7 +72,6 @@ impl PdfViewer {
         );
         match message {
             PdfMessage::OpenFile(path_buf) => self.load_file(path_buf).unwrap(),
-            PdfMessage::RefreshFile => self.refresh_file().unwrap(),
             PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
             PdfMessage::SetPage(page) => self.set_page(page).unwrap(),
@@ -155,6 +154,10 @@ impl PdfViewer {
                         self.force_invalidate_cache();
                     }
                 }
+                WorkerResponse::Refreshed(_, document_info) => {
+                    self.document_info = Some(document_info);
+                    self.refresh_file().unwrap();
+                }
             },
         }
         iced::Task::none()
@@ -170,8 +173,9 @@ impl PdfViewer {
 
     fn set_page(&mut self, idx: i32) -> Result<()> {
         if let Some(doc) = self.document_info {
-            self.command_tx.send(WorkerCommand::SetPage(idx))?;
-            self.cur_page_idx = idx.clamp(0, doc.page_count);
+            self.cur_page_idx = idx.clamp(0, doc.page_count - 1);
+            self.command_tx
+                .send(WorkerCommand::SetPage(self.cur_page_idx))?;
         }
         Ok(())
     }

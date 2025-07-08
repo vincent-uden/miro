@@ -10,7 +10,7 @@ use clap::Parser;
 use config::Config;
 use iced::{Theme, window::icon::from_file_data};
 use once_cell::sync::OnceCell;
-use pdf::cache::{WorkerCommand, WorkerResponse, worker_main};
+use pdf::worker::{WorkerCommand, WorkerResponse, worker_main};
 use tokio::sync::{Mutex, mpsc};
 use tracing::info;
 use tracing_subscriber::EnvFilter;

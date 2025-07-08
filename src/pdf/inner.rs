@@ -13,7 +13,7 @@ use crate::{
     geometry::{Rect, Vector},
 };
 
-use super::{PdfMessage, cache::CachedTile};
+use super::{PdfMessage, worker::CachedTile};
 
 #[derive(Debug, Default)]
 pub struct State {

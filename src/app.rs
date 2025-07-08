@@ -33,7 +33,7 @@ use crate::{
     geometry::Vector,
     pdf::{
         PdfMessage,
-        cache::{WorkerCommand, WorkerResponse},
+        worker::{WorkerCommand, WorkerResponse},
     },
     rpc::rpc_server,
 };
@@ -184,7 +184,6 @@ impl App {
                 }
                 iced::Task::none()
             }
-            // TODO: Worker-Main thread desync on tab switching
             AppMessage::PreviousTab => {
                 self.pdf_idx = (self.pdf_idx - 1).max(0);
                 iced::Task::none()
@@ -202,12 +201,8 @@ impl App {
                     WatchNotification::Ready(sender) => {
                         self.file_watcher = Some(sender);
                     }
-                    WatchNotification::Changed(path_buf) => {
-                        for pdf in &mut self.pdfs {
-                            if pdf.path == path_buf {
-                                let _ = pdf.update(PdfMessage::RefreshFile);
-                            }
-                        }
+                    WatchNotification::Changed(_) => {
+                        self.command_tx.send(WorkerCommand::RefreshFile);
                     }
                 }
                 iced::Task::none()
@@ -256,19 +251,29 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::WorkerResponse(worker_response) => {
-                let on_response = match &worker_response {
+                let (pdf_idx, on_response) = match &worker_response {
                     WorkerResponse::Loaded(_) => {
                         if let Some(idx) = self
                             .waiting_for_worker
                             .iter()
                             .position(|msg| matches!(msg, AppMessage::BookmarkMessage(_)))
                         {
-                            iced::Task::done(self.waiting_for_worker.remove(idx))
+                            (
+                                self.pdf_idx,
+                                iced::Task::done(self.waiting_for_worker.remove(idx)),
+                            )
                         } else {
-                            iced::Task::none()
+                            (self.pdf_idx, iced::Task::none())
                         }
                     }
-                    _ => iced::Task::none(),
+                    WorkerResponse::Refreshed(path, doc) => (
+                        self.pdfs
+                            .iter()
+                            .position(|pdf| &pdf.path == path)
+                            .unwrap_or(self.pdf_idx),
+                        iced::Task::none(),
+                    ),
+                    _ => (self.pdf_idx, iced::Task::none()),
                 };
                 if !self.pdfs.is_empty() {
                     self.pdfs[self.pdf_idx]
