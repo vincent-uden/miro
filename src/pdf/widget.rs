@@ -1,7 +1,7 @@
 use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
 
 use crate::geometry::Vector;
@@ -9,7 +9,10 @@ use crate::geometry::Vector;
 use super::{
     PdfMessage,
     inner::{self, PageViewer},
-    worker::{CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse, worker_main},
+    worker::{
+        CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
+        worker_main,
+    },
 };
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
@@ -44,15 +47,15 @@ impl PdfViewer {
             TILE_CACHE_GRID_SIZE.is_odd(),
             "The tile cache grid must be of an odd size, is currently {TILE_CACHE_GRID_SIZE}"
         );
-        
+
         let (command_tx, command_rx) = mpsc::unbounded_channel::<WorkerCommand>();
         let (result_tx, result_rx) = mpsc::unbounded_channel::<WorkerResponse>();
-        
+
         let worker_handle = std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(worker_main(command_rx, result_tx));
         });
-        
+
         Self {
             shown_scale: 1.0,
             pending_scale: 1.0,
@@ -148,12 +151,18 @@ impl PdfViewer {
             PdfMessage::MouseRightUp => {}
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
-                    self.pending_tile_cache
-                        .insert((cached_tile.x, cached_tile.y), cached_tile);
-                    if self.pending_tile_cache.len() == TILE_CACHE_GRID_SIZE.pow(2) as usize {
-                        std::mem::swap(&mut self.pending_tile_cache, &mut self.shown_tile_cache);
-                        self.pending_tile_cache.clear();
-                        self.shown_scale = self.pending_scale;
+                    let current_generation = *self.generation.lock().unwrap();
+                    if cached_tile.generation == current_generation {
+                        self.pending_tile_cache
+                            .insert((cached_tile.x, cached_tile.y), cached_tile);
+                        if self.pending_tile_cache.len() == TILE_CACHE_GRID_SIZE.pow(2) as usize {
+                            std::mem::swap(
+                                &mut self.pending_tile_cache,
+                                &mut self.shown_tile_cache,
+                            );
+                            self.pending_tile_cache.clear();
+                            self.shown_scale = self.pending_scale;
+                        }
                     }
                 }
                 WorkerResponse::Loaded(document_info) => {

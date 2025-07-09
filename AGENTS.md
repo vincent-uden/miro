@@ -5,7 +5,7 @@
 - `cargo run` - Run the application
 - `cargo test` - Run all tests
 - `cargo test <test_name>` - Run a specific test
-- `cargo check` - Check code without building
+- `cargo check` - Check code without building, use this before each build since it is a lot faster
 
 ## Code Style Guidelines
 - Use `snake_case` for variables, functions, and modules
