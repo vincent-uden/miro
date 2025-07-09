@@ -2,7 +2,7 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::geometry::{Rect, Vector};
 

@@ -82,9 +82,9 @@ pub enum AppMessage {
     ToggleDarkModeUi,
     ToggleDarkModePdf,
     MouseMoved(Vector<f32>),
-    MouseLeftDown(bool), // bool indicates if Ctrl is pressed
+    MouseLeftDown,
     MouseRightDown,
-    MouseLeftUp(bool), // bool indicates if Ctrl is pressed
+    MouseLeftUp,
     MouseRightUp,
     CtrlPressed(bool),
     #[strum(disabled)]
@@ -221,7 +221,7 @@ impl App {
                 }
                 iced::Task::none()
             }
-            AppMessage::MouseLeftDown(_) => {
+            AppMessage::MouseLeftDown => {
                 if !self.pdfs.is_empty() {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftDown(self.ctrl_pressed));
                 }
@@ -233,7 +233,7 @@ impl App {
                 }
                 iced::Task::none()
             }
-            AppMessage::MouseLeftUp(_) => {
+            AppMessage::MouseLeftUp => {
                 if !self.pdfs.is_empty() {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp(self.ctrl_pressed));
                 }
@@ -498,7 +498,7 @@ impl App {
                     Some(AppMessage::MouseMoved(position.into()))
                 }
                 iced::mouse::Event::ButtonPressed(button) => match button {
-                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown(false)), // We'll handle modifiers differently
+                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown),
                     iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
                     iced::mouse::Button::Middle => None,
                     iced::mouse::Button::Back => {
@@ -510,7 +510,7 @@ impl App {
                     iced::mouse::Button::Other(_) => None,
                 },
                 iced::mouse::Event::ButtonReleased(button) => match button {
-                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp(false)), // We'll handle modifiers differently
+                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp),
                     iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
                     iced::mouse::Button::Middle => None,
                     _ => None,
