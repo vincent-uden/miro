@@ -1,4 +1,4 @@
-use std::{fs::canonicalize, path::PathBuf};
+use std::{fs::canonicalize, path::PathBuf, sync::Arc};
 
 use iced::{
     Background, Border, Element, Event, Length, Shadow, Subscription, Theme, alignment,
@@ -23,18 +23,15 @@ use keybinds::{KeySeq, Keybind};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
 
 use crate::{
-    CONFIG, WORKER_RX,
+    CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
     config::BindableMessage,
     geometry::Vector,
-    pdf::{
-        PdfMessage,
-        worker::{WorkerCommand, WorkerResponse},
-    },
+    pdf::{PdfMessage, worker::WorkerResponse},
     rpc::rpc_server,
 };
 use crate::{
@@ -62,7 +59,6 @@ pub struct App {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     bookmark_store: BookmarkStore,
-    command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
     pane_state: pane_grid::State<Pane>,
     pane_ratio: f32,
     sidebar_showing: bool,
@@ -103,10 +99,7 @@ pub enum AppMessage {
 }
 
 impl App {
-    pub fn new(
-        command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
-        bookmark_store: BookmarkStore,
-    ) -> Self {
+    pub fn new(bookmark_store: BookmarkStore) -> Self {
         let (mut ps, p) = pane_grid::State::new(Pane {
             id: 0,
             pane_type: PaneType::Pdf,
@@ -124,7 +117,6 @@ impl App {
             dark_mode: false,
             invert_pdf: false,
             bookmark_store,
-            command_tx,
             pane_state: ps,
             pane_ratio: 0.7,
             sidebar_showing: false,
@@ -136,7 +128,7 @@ impl App {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 if self.pdfs.is_empty() {
-                    self.pdfs.push(PdfViewer::new(self.command_tx.clone()));
+                    self.pdfs.push(PdfViewer::new());
                     self.pdf_idx = 0;
                 }
                 if let Some(sender) = &self.file_watcher {
@@ -164,7 +156,7 @@ impl App {
                 .map(AppMessage::PdfMessage),
             AppMessage::OpenNewFileFinder => {
                 if let Some(path_buf) = FileDialog::new().add_filter("Pdf", &["pdf"]).pick_file() {
-                    self.pdfs.push(PdfViewer::new(self.command_tx.clone()));
+                    self.pdfs.push(PdfViewer::new());
                     self.pdf_idx = self.pdfs.len() - 1;
                     iced::Task::done(AppMessage::OpenFile(path_buf))
                 } else {
@@ -201,8 +193,11 @@ impl App {
                     WatchNotification::Ready(sender) => {
                         self.file_watcher = Some(sender);
                     }
-                    WatchNotification::Changed(_) => {
-                        self.command_tx.send(WorkerCommand::RefreshFile);
+                    WatchNotification::Changed(path) => {
+                        // Find the PDF tab that matches this path and refresh it
+                        if let Some(pdf) = self.pdfs.iter_mut().find(|p| p.path == path) {
+                            let _ = pdf.refresh_file_worker();
+                        }
                     }
                 }
                 iced::Task::none()
@@ -538,8 +533,19 @@ impl App {
         let mut subs = vec![
             keys,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
-            Subscription::run(worker_responder).map(AppMessage::WorkerResponse),
         ];
+
+        // Add worker response subscriptions for each PDF
+        for (_, pdf) in self.pdfs.iter().enumerate() {
+            let rx = pdf.result_rx.clone();
+            subs.push(
+                Subscription::run_with_id(
+                    format!("worker_{}", pdf.path.to_str().unwrap()),
+                    worker_responder_single(rx),
+                )
+                .map(AppMessage::WorkerResponse),
+            );
+        }
 
         let config = CONFIG.read().unwrap();
         if config.rpc_enabled {
@@ -556,17 +562,18 @@ impl Drop for App {
     }
 }
 
-fn worker_responder() -> impl Stream<Item = WorkerResponse> {
+fn worker_responder_single(
+    rx: Arc<Mutex<mpsc::UnboundedReceiver<WorkerResponse>>>,
+) -> impl Stream<Item = WorkerResponse> {
     stream::channel(100, |mut output| async move {
-        let wrx = WORKER_RX.get().unwrap();
         loop {
             let msg = {
-                let mut worker_rx = wrx.lock().await;
-                worker_rx.recv().await
+                let mut receiver = rx.lock().await;
+                receiver.recv().await
             };
             match msg {
                 Some(msg) => {
-                    output.send(msg).await.unwrap();
+                    let _ = output.send(msg).await;
                 }
                 None => break, // Channel closed
             }

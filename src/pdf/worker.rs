@@ -6,10 +6,7 @@ use iced::advanced::image;
 use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
 use tracing::{debug, error, info};
 
-use crate::{
-    DARK_THEME, LIGHT_THEME, RENDER_GENERATION, geometry::Vector,
-    pdf::inner::cpu_pdf_dark_mode_shader,
-};
+use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
 
 /// A unique identifier for a complete render request (e.g., for a specific view).
 pub type RequestId = u64;
@@ -72,6 +69,7 @@ pub struct CachedTile {
     pub bounds: mupdf::IRect,
     pub x: i32,
     pub y: i32,
+    pub generation: usize,
 }
 
 /// Manages worker state
@@ -175,6 +173,7 @@ impl PdfWorker {
                 },
                 x: req.x,
                 y: req.y,
+                generation: req.generation,
             })
         } else {
             Err(anyhow!("No page set"))
@@ -202,21 +201,21 @@ pub async fn worker_main(
     info!("Worker thread started");
 
     let mut worker = PdfWorker::new();
+    let mut current_generation = 0usize;
 
     while let Some(cmd) = command_rx.recv().await {
-        let gen_mtx = RENDER_GENERATION.get().unwrap();
-        let generation = gen_mtx.lock().await;
         match cmd {
             WorkerCommand::RenderTile(req) => {
-                if *generation <= req.generation {
+                if req.generation > current_generation {
+                    current_generation = req.generation;
+                }
+                if req.generation == current_generation {
                     match worker.render_tile(&req) {
                         Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),
                         Err(e) => {
                             error!("{}", e);
                         }
                     }
-                } else {
-                    continue;
                 }
             }
             WorkerCommand::LoadDocument(path_buf) => match worker.load_document(path_buf) {

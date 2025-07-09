@@ -1,14 +1,18 @@
 use anyhow::Result;
 use num::Integer;
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
 
-use crate::{RENDER_GENERATION, geometry::Vector};
+use crate::geometry::Vector;
 
 use super::{
     PdfMessage,
     inner::{self, PageViewer},
-    worker::{CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse},
+    worker::{
+        CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
+        worker_main,
+    },
 };
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
@@ -24,7 +28,9 @@ pub struct PdfViewer {
     inner_state: inner::State,
     last_mouse_pos: Option<Vector<f32>>,
     panning: bool,
-    command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
+    command_tx: mpsc::UnboundedSender<WorkerCommand>,
+    pub result_rx: Arc<Mutex<mpsc::UnboundedReceiver<WorkerResponse>>>,
+    worker_handle: Option<std::thread::JoinHandle<()>>,
     document_info: Option<DocumentInfo>,
     page_info: Option<PageInfo>,
     shown_scale: f32,
@@ -32,15 +38,24 @@ pub struct PdfViewer {
     pending_tile_cache: HashMap<(i32, i32), CachedTile>,
     shown_tile_cache: HashMap<(i32, i32), CachedTile>,
     current_center_tile: Vector<i32>,
-    generation: usize,
+    generation: Arc<std::sync::Mutex<usize>>,
 }
 
 impl PdfViewer {
-    pub fn new(command_tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>) -> Self {
+    pub fn new() -> Self {
         assert!(
             TILE_CACHE_GRID_SIZE.is_odd(),
             "The tile cache grid must be of an odd size, is currently {TILE_CACHE_GRID_SIZE}"
         );
+
+        let (command_tx, command_rx) = mpsc::unbounded_channel::<WorkerCommand>();
+        let (result_tx, result_rx) = mpsc::unbounded_channel::<WorkerResponse>();
+
+        let worker_handle = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(worker_main(command_rx, result_tx));
+        });
+
         Self {
             shown_scale: 1.0,
             pending_scale: 1.0,
@@ -54,12 +69,14 @@ impl PdfViewer {
             last_mouse_pos: None,
             panning: false,
             command_tx,
+            result_rx: Arc::new(Mutex::new(result_rx)),
+            worker_handle: Some(worker_handle),
             document_info: None,
             page_info: None,
             pending_tile_cache: HashMap::new(),
             shown_tile_cache: HashMap::new(),
             current_center_tile: Vector::zero(),
-            generation: 0,
+            generation: Arc::new(std::sync::Mutex::new(0)),
         }
     }
 
@@ -134,12 +151,18 @@ impl PdfViewer {
             PdfMessage::MouseRightUp => {}
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
-                    self.pending_tile_cache
-                        .insert((cached_tile.x, cached_tile.y), cached_tile);
-                    if self.pending_tile_cache.len() == TILE_CACHE_GRID_SIZE.pow(2) as usize {
-                        std::mem::swap(&mut self.pending_tile_cache, &mut self.shown_tile_cache);
-                        self.pending_tile_cache.clear();
-                        self.shown_scale = self.pending_scale;
+                    let current_generation = *self.generation.lock().unwrap();
+                    if cached_tile.generation == current_generation {
+                        self.pending_tile_cache
+                            .insert((cached_tile.x, cached_tile.y), cached_tile);
+                        if self.pending_tile_cache.len() == TILE_CACHE_GRID_SIZE.pow(2) as usize {
+                            std::mem::swap(
+                                &mut self.pending_tile_cache,
+                                &mut self.shown_tile_cache,
+                            );
+                            self.pending_tile_cache.clear();
+                            self.shown_scale = self.pending_scale;
+                        }
                     }
                 }
                 WorkerResponse::Loaded(document_info) => {
@@ -207,10 +230,8 @@ impl PdfViewer {
     }
 
     fn increment_generation(&mut self) {
-        let gen_mtx = RENDER_GENERATION.get().unwrap();
-        let mut generation = gen_mtx.blocking_lock();
+        let mut generation = self.generation.lock().unwrap();
         *generation += 1;
-        self.generation = *generation;
     }
 
     fn invalidate_cache(&mut self) {
@@ -258,7 +279,7 @@ impl PdfViewer {
                             scale: self.pending_scale,
                             x: self.current_center_tile.x + x,
                             y: self.current_center_tile.y + y,
-                            generation: self.generation,
+                            generation: *self.generation.lock().unwrap(),
                         }))
                         .unwrap();
                 }
@@ -305,6 +326,28 @@ impl PdfViewer {
             Some(out_box.into())
         } else {
             None
+        }
+    }
+
+    pub async fn try_recv_worker_response(&self) -> Option<WorkerResponse> {
+        if let Ok(mut rx) = self.result_rx.try_lock() {
+            rx.try_recv().ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn refresh_file_worker(&mut self) -> Result<()> {
+        self.command_tx.send(WorkerCommand::RefreshFile)?;
+        Ok(())
+    }
+}
+
+impl Drop for PdfViewer {
+    fn drop(&mut self) {
+        let _ = self.command_tx.send(WorkerCommand::Shutdown);
+        if let Some(handle) = self.worker_handle.take() {
+            let _ = handle.join();
         }
     }
 }
