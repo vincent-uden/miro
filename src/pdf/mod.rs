@@ -30,10 +30,6 @@ pub enum PdfMessage {
     MouseRightDown,
     MouseLeftUp(bool), // bool indicates if Ctrl is pressed
     MouseRightUp,
-    StartTextSelection(Vector<f32>),
-    UpdateTextSelection(Vector<f32>),
-    EndTextSelection,
-    CopySelectedText,
     #[strum(disabled)]
     #[serde(skip)]
     WorkerResponse(WorkerResponse),

@@ -167,24 +167,19 @@ impl PdfViewer {
             PdfMessage::MouseRightDown => {}
             PdfMessage::MouseLeftUp(ctrl_pressed) => {
                 if ctrl_pressed {
-                    // Ctrl+Left release stops panning
                     self.panning = false;
                 } else {
-                    // Regular left release ends text selection
                     if let (Some(start), Some(end)) =
                         (self.text_selection_start, self.text_selection_current)
                     {
-                        // Convert screen coordinates to document coordinates
                         let doc_start = self.screen_to_document_coords(start);
                         let doc_end = self.screen_to_document_coords(end);
 
-                        // Create selection rectangle
                         let selection_rect = Rect::from_points(
                             Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
                             Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
                         );
 
-                        // Extract text in the selection
                         if let Some(ref mut extractor) = self.text_extractor {
                             if let Ok(_) = extractor.set_page(self.cur_page_idx) {
                                 if let Ok(selection) =
@@ -198,30 +193,18 @@ impl PdfViewer {
                     }
                     self.text_selection_start = None;
                     self.text_selection_current = None;
-                }
-            }
-            PdfMessage::MouseRightUp => {}
-
-            PdfMessage::CopySelectedText => {
-                if let Some(ref text) = self.selected_text {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        if let Err(e) = clipboard.set_text(text) {
-                            error!("Failed to copy text to clipboard: {}", e);
-                        } else {
-                            error!("Text copied to clipboard: {}", text);
+                    if let Some(ref text) = self.selected_text {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            if let Err(e) = clipboard.set_text(text) {
+                                error!("Failed to copy text to clipboard: {}", e);
+                            } else {
+                                error!("Text copied to clipboard: {}", text);
+                            }
                         }
                     }
                 }
             }
-            PdfMessage::StartTextSelection(_) => {
-                // These messages are now handled in MouseLeftDown
-            }
-            PdfMessage::UpdateTextSelection(_) => {
-                // These messages are now handled in MouseMoved
-            }
-            PdfMessage::EndTextSelection => {
-                // These messages are now handled in MouseLeftUp
-            }
+            PdfMessage::MouseRightUp => {}
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
                     let current_generation = *self.generation.lock().unwrap();
