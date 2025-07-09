@@ -4,7 +4,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
 
-use crate::geometry::Vector;
+use crate::geometry::{Vector, Rect};
 
 use super::{
     PdfMessage,
@@ -13,6 +13,7 @@ use super::{
         CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
         worker_main,
     },
+    text_extraction::TextExtractor,
 };
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
@@ -39,6 +40,10 @@ pub struct PdfViewer {
     shown_tile_cache: HashMap<(i32, i32), CachedTile>,
     current_center_tile: Vector<i32>,
     generation: Arc<std::sync::Mutex<usize>>,
+    text_selection_start: Option<Vector<f32>>,
+    text_selection_current: Option<Vector<f32>>,
+    text_extractor: Option<TextExtractor>,
+    selected_text: Option<String>,
 }
 
 impl PdfViewer {
@@ -77,6 +82,10 @@ impl PdfViewer {
             shown_tile_cache: HashMap::new(),
             current_center_tile: Vector::zero(),
             generation: Arc::new(std::sync::Mutex::new(0)),
+            text_selection_start: None,
+            text_selection_current: None,
+            text_extractor: None,
+            selected_text: None,
         }
     }
 
@@ -126,29 +135,89 @@ impl PdfViewer {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
                         self.invalidate_cache();
+                    } else if self.text_selection_start.is_some() {
+                        // Update text selection
+                        self.text_selection_current = Some(vector);
                     }
                     self.last_mouse_pos = Some(vector);
                 } else {
                     self.last_mouse_pos = None;
                 }
             }
-            PdfMessage::MouseLeftDown => {
-                // Dont start panning if we're close enough to the edge that a pane resizing might
-                // happen
-                if let Some(mp) = self.last_mouse_pos {
-                    let mut padded_bounds = self.inner_state.bounds;
-                    padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
-                    padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
-                    if padded_bounds.contains(mp) {
-                        self.panning = true;
+            PdfMessage::MouseLeftDown(ctrl_pressed) => {
+                if ctrl_pressed {
+                    // Ctrl+Left click starts panning
+                    // Don't start panning if we're close enough to the edge that a pane resizing might happen
+                    if let Some(mp) = self.last_mouse_pos {
+                        let mut padded_bounds = self.inner_state.bounds;
+                        padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
+                        padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
+                        if padded_bounds.contains(mp) {
+                            self.panning = true;
+                        }
+                    }
+                } else {
+                    // Regular left click starts text selection
+                    if let Some(pos) = self.last_mouse_pos {
+                        self.text_selection_start = Some(pos);
+                        self.text_selection_current = Some(pos);
                     }
                 }
             }
             PdfMessage::MouseRightDown => {}
-            PdfMessage::MouseLeftUp => {
-                self.panning = false;
+            PdfMessage::MouseLeftUp(ctrl_pressed) => {
+                if ctrl_pressed {
+                    // Ctrl+Left release stops panning
+                    self.panning = false;
+                } else {
+                    // Regular left release ends text selection
+                    if let (Some(start), Some(end)) = (self.text_selection_start, self.text_selection_current) {
+                        // Convert screen coordinates to document coordinates
+                        let doc_start = self.screen_to_document_coords(start);
+                        let doc_end = self.screen_to_document_coords(end);
+                        
+                        // Create selection rectangle
+                        let selection_rect = Rect::from_points(
+                            Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
+                            Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
+                        );
+                        
+                        // Extract text in the selection
+                        if let Some(ref mut extractor) = self.text_extractor {
+                            if let Ok(_) = extractor.set_page(self.cur_page_idx) {
+                                if let Ok(selection) = extractor.extract_text_in_rect(selection_rect.into()) {
+                                    self.selected_text = Some(selection.text.clone());
+                                    println!("Selected text: {}", selection.text);
+                                }
+                            }
+                        }
+                    }
+                    self.text_selection_start = None;
+                    self.text_selection_current = None;
+                }
             }
             PdfMessage::MouseRightUp => {}
+
+            PdfMessage::CopySelectedText => {
+                if let Some(ref text) = self.selected_text {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if let Err(e) = clipboard.set_text(text) {
+                            eprintln!("Failed to copy text to clipboard: {}", e);
+                        } else {
+                            println!("Text copied to clipboard: {}", text);
+                        }
+                    }
+                }
+            }
+            PdfMessage::StartTextSelection(_) => {
+                // These messages are now handled in MouseLeftDown
+            }
+            PdfMessage::UpdateTextSelection(_) => {
+                // These messages are now handled in MouseMoved
+            }
+            PdfMessage::EndTextSelection => {
+                // These messages are now handled in MouseLeftUp
+            }
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
                     let current_generation = *self.generation.lock().unwrap();
@@ -210,6 +279,12 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         self.path = path.to_path_buf();
+        
+        // Create text extractor for the new document
+        if let Ok(extractor) = TextExtractor::new(&path) {
+            self.text_extractor = Some(extractor);
+        }
+        
         self.command_tx.send(WorkerCommand::LoadDocument(path))?;
         Ok(())
     }
@@ -340,6 +415,15 @@ impl PdfViewer {
     pub fn refresh_file_worker(&mut self) -> Result<()> {
         self.command_tx.send(WorkerCommand::RefreshFile)?;
         Ok(())
+    }
+
+    fn screen_to_document_coords(&self, screen_pos: Vector<f32>) -> Vector<f32> {
+        // Convert screen coordinates to document coordinates
+        // This is a simplified conversion - you may need to adjust based on your coordinate system
+        let viewport_center = self.inner_state.bounds.center();
+        let relative_pos = screen_pos - viewport_center;
+        let doc_pos = relative_pos.scaled(1.0 / self.shown_scale) + self.translation;
+        doc_pos
     }
 }
 

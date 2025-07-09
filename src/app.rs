@@ -63,6 +63,7 @@ pub struct App {
     pane_ratio: f32,
     sidebar_showing: bool,
     waiting_for_worker: Vec<AppMessage>,
+    ctrl_pressed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -82,10 +83,11 @@ pub enum AppMessage {
     ToggleDarkModeUi,
     ToggleDarkModePdf,
     MouseMoved(Vector<f32>),
-    MouseLeftDown,
+    MouseLeftDown(bool), // bool indicates if Ctrl is pressed
     MouseRightDown,
-    MouseLeftUp,
+    MouseLeftUp(bool), // bool indicates if Ctrl is pressed
     MouseRightUp,
+    CtrlPressed(bool),
     #[strum(disabled)]
     #[serde(skip)]
     WorkerResponse(WorkerResponse),
@@ -121,6 +123,7 @@ impl App {
             pane_ratio: 0.7,
             sidebar_showing: false,
             waiting_for_worker: vec![],
+            ctrl_pressed: false,
         }
     }
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
@@ -221,9 +224,9 @@ impl App {
                 }
                 iced::Task::none()
             }
-            AppMessage::MouseLeftDown => {
+            AppMessage::MouseLeftDown(_) => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftDown);
+                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftDown(self.ctrl_pressed));
                 }
                 iced::Task::none()
             }
@@ -233,9 +236,9 @@ impl App {
                 }
                 iced::Task::none()
             }
-            AppMessage::MouseLeftUp => {
+            AppMessage::MouseLeftUp(_) => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp);
+                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp(self.ctrl_pressed));
                 }
                 iced::Task::none()
             }
@@ -243,6 +246,10 @@ impl App {
                 if !self.pdfs.is_empty() {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
                 }
+                iced::Task::none()
+            }
+            AppMessage::CtrlPressed(pressed) => {
+                self.ctrl_pressed = pressed;
                 iced::Task::none()
             }
             AppMessage::WorkerResponse(worker_response) => {
@@ -474,12 +481,27 @@ impl App {
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
         let keys = listen_with(|event, status, _| match event {
+            Event::Keyboard(keyboard_event) => match keyboard_event {
+                iced::keyboard::Event::ModifiersChanged(modifiers) => {
+                    Some(AppMessage::CtrlPressed(modifiers.control()))
+                }
+                _ => {
+                    // Handle other keyboard events for keybinds
+                    let mut config = CONFIG.write().unwrap();
+                    match status {
+                        iced::event::Status::Ignored => {
+                            config.keyboard.dispatch(keyboard_event).map(|x| (*x).into())
+                        }
+                        iced::event::Status::Captured => None,
+                    }
+                }
+            },
             Event::Mouse(e) => match e {
                 iced::mouse::Event::CursorMoved { position } => {
                     Some(AppMessage::MouseMoved(position.into()))
                 }
                 iced::mouse::Event::ButtonPressed(button) => match button {
-                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown),
+                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown(false)), // We'll handle modifiers differently
                     iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
                     iced::mouse::Button::Middle => None,
                     iced::mouse::Button::Back => {
@@ -491,7 +513,7 @@ impl App {
                     iced::mouse::Button::Other(_) => None,
                 },
                 iced::mouse::Event::ButtonReleased(button) => match button {
-                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp),
+                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp(false)), // We'll handle modifiers differently
                     iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
                     iced::mouse::Button::Middle => None,
                     _ => None,
@@ -518,15 +540,7 @@ impl App {
                 },
                 _ => None,
             },
-            Event::Keyboard(e) => {
-                let mut config = CONFIG.write().unwrap();
-                match status {
-                    iced::event::Status::Ignored => {
-                        config.keyboard.dispatch(e).map(|x| (*x).into())
-                    }
-                    iced::event::Status::Captured => None,
-                }
-            }
+
             _ => None,
         });
 
