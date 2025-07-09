@@ -1,6 +1,5 @@
-use anyhow::{Result, anyhow};
-use mupdf::{Document, Rect as MupdfRect, TextPage, TextPageOptions};
-use std::path::Path;
+use anyhow::Result;
+use mupdf::{Page, Rect as MupdfRect, TextPage, TextPageOptions};
 
 #[derive(Debug, Clone)]
 pub struct TextSelection {
@@ -8,35 +7,17 @@ pub struct TextSelection {
 }
 
 #[derive(Debug)]
-pub struct TextExtractor {
-    document: Document,
-    current_page_idx: i32,
+pub struct TextExtractor<'a> {
+    page: &'a Page,
 }
 
-impl TextExtractor {
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let document = Document::open(path.as_ref().to_str().unwrap())?;
-        Ok(Self {
-            document,
-            current_page_idx: -1,
-        })
-    }
-
-    pub fn set_page(&mut self, page_idx: i32) -> Result<()> {
-        if page_idx < 0 || page_idx >= self.document.page_count()? {
-            return Err(anyhow!("Page index {} out of bounds", page_idx));
-        }
-        self.current_page_idx = page_idx;
-        Ok(())
+impl<'a> TextExtractor<'a> {
+    pub fn new(page: &'a Page) -> Self {
+        Self { page }
     }
 
     pub fn extract_text_in_rect(&self, selection_rect: MupdfRect) -> Result<TextSelection> {
-        if self.current_page_idx < 0 {
-            return Err(anyhow!("No page set"));
-        }
-
-        let page = self.document.load_page(self.current_page_idx)?;
-        let text_page = page.to_text_page(TextPageOptions::empty())?;
+        let text_page = self.page.to_text_page(TextPageOptions::empty())?;
 
         let mut selected_text = String::new();
 
@@ -72,29 +53,14 @@ impl TextExtractor {
 
     #[allow(dead_code)]
     pub fn extract_all_text(&self) -> Result<String> {
-        if self.current_page_idx < 0 {
-            return Err(anyhow!("No page set"));
-        }
-
-        let page = self.document.load_page(self.current_page_idx)?;
-        let text = page.to_text()?;
+        let text = self.page.to_text()?;
         Ok(text)
     }
 
     #[allow(dead_code)]
     pub fn get_text_page(&self) -> Result<TextPage> {
-        if self.current_page_idx < 0 {
-            return Err(anyhow!("No page set"));
-        }
-
-        let page = self.document.load_page(self.current_page_idx)?;
-        let text_page = page.to_text_page(TextPageOptions::empty())?;
+        let text_page = self.page.to_text_page(TextPageOptions::empty())?;
         Ok(text_page)
-    }
-
-    #[allow(dead_code)]
-    pub fn page_count(&self) -> Result<i32> {
-        Ok(self.document.page_count()?)
     }
 }
 
@@ -105,13 +71,13 @@ fn rectangles_intersect(rect1: MupdfRect, rect2: MupdfRect) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mupdf::Rect as MupdfRect;
+    use mupdf::{Document, Rect as MupdfRect};
 
     #[test]
     fn test_text_extraction_basic() -> Result<()> {
-        let mut extractor = TextExtractor::new("assets/text-copy-test.pdf")?;
-
-        extractor.set_page(0)?;
+        let document = Document::open("assets/text-copy-test.pdf")?;
+        let page = document.load_page(0)?;
+        let extractor = TextExtractor::new(&page);
 
         let all_text = extractor.extract_all_text()?;
         assert!(!all_text.is_empty());
@@ -123,9 +89,9 @@ mod tests {
 
     #[test]
     fn test_text_extraction_rectangle_selection() -> Result<()> {
-        let mut extractor = TextExtractor::new("assets/text-copy-test.pdf")?;
-
-        extractor.set_page(0)?;
+        let document = Document::open("assets/text-copy-test.pdf")?;
+        let page = document.load_page(0)?;
+        let extractor = TextExtractor::new(&page);
 
         let selection_rect = MupdfRect {
             x0: 100.0,
@@ -142,12 +108,13 @@ mod tests {
 
     #[test]
     fn test_multiple_pages() -> Result<()> {
-        let mut extractor = TextExtractor::new("assets/text-copy-test.pdf")?;
-
-        let page_count = extractor.page_count()?;
+        let document = Document::open("assets/text-copy-test.pdf")?;
+        
+        let page_count = document.page_count()?;
         assert!(page_count > 1);
 
-        extractor.set_page(1)?;
+        let page = document.load_page(1)?;
+        let extractor = TextExtractor::new(&page);
         let page2_text = extractor.extract_all_text()?;
         assert!(page2_text.contains("Introduction"));
 
@@ -156,11 +123,12 @@ mod tests {
 
     #[test]
     fn test_text_extraction_integration() -> Result<()> {
-        let mut extractor = TextExtractor::new("assets/text-copy-test.pdf")?;
+        let document = Document::open("assets/text-copy-test.pdf")?;
 
         // Test page 0
-        extractor.set_page(0)?;
-        let all_text = extractor.extract_all_text()?;
+        let page0 = document.load_page(0)?;
+        let extractor0 = TextExtractor::new(&page0);
+        let all_text = extractor0.extract_all_text()?;
         assert!(all_text.contains("Energy harvesting"));
 
         // Test specific rectangle selection on page 0 - use a larger area to ensure we catch text
@@ -171,13 +139,14 @@ mod tests {
             y1: 600.0,
         };
 
-        let selection = extractor.extract_text_in_rect(title_rect)?;
+        let selection = extractor0.extract_text_in_rect(title_rect)?;
         // The selection might be empty if coordinates don't match text, so let's just check it doesn't error
         println!("Title selection: '{}'", selection.text);
 
         // Test page 1
-        extractor.set_page(1)?;
-        let page1_text = extractor.extract_all_text()?;
+        let page1 = document.load_page(1)?;
+        let extractor1 = TextExtractor::new(&page1);
+        let page1_text = extractor1.extract_all_text()?;
         assert!(page1_text.contains("Introduction"));
 
         // Test rectangle selection on page 1 - use a larger area
@@ -188,7 +157,7 @@ mod tests {
             y1: 400.0,
         };
 
-        let intro_selection = extractor.extract_text_in_rect(intro_rect)?;
+        let intro_selection = extractor1.extract_text_in_rect(intro_rect)?;
         println!("Intro selection: '{}'", intro_selection.text);
 
         Ok(())

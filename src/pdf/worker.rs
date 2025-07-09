@@ -3,10 +3,11 @@ use tokio::sync::mpsc;
 
 use anyhow::{Result, anyhow};
 use iced::advanced::image;
-use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
+use mupdf::{Colorspace, Device, Document, Matrix, Pixmap, Rect as MupdfRect};
 use tracing::{error, info};
 
 use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
+use super::text_extraction::{TextExtractor, TextSelection};
 
 /// A unique identifier for a complete render request (e.g., for a specific view).
 pub type RequestId = u64;
@@ -24,6 +25,8 @@ pub enum WorkerCommand {
     Shutdown,
     /// Reloads the DocumentInfo for the active pdf
     RefreshFile,
+    /// Extract text from a rectangular selection on the current page
+    ExtractText(MupdfRect),
 }
 
 /// Requests sent from the ui thread to the worker thread
@@ -48,6 +51,7 @@ pub enum WorkerResponse {
     Loaded(DocumentInfo),
     SetPage(PageInfo),
     Refreshed(PathBuf, DocumentInfo),
+    ExtractedText(TextSelection),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -118,6 +122,15 @@ impl PdfWorker {
             })
         } else {
             Err(anyhow!("No document loaded"))
+        }
+    }
+
+    pub fn extract_text(&self, selection_rect: MupdfRect) -> Result<TextSelection> {
+        if let Some(ref page) = self.current_page {
+            let extractor = TextExtractor::new(page);
+            extractor.extract_text_in_rect(selection_rect)
+        } else {
+            Err(anyhow!("No page set"))
         }
     }
 
@@ -240,6 +253,14 @@ pub async fn worker_main(
                 }
                 _ => {
                     error!("Worker has no path")
+                }
+            },
+            WorkerCommand::ExtractText(selection_rect) => match worker.extract_text(selection_rect) {
+                Ok(text_selection) => result_tx
+                    .send(WorkerResponse::ExtractedText(text_selection))
+                    .unwrap(),
+                Err(e) => {
+                    error!("Text extraction failed: {}", e);
                 }
             },
         }

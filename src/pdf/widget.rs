@@ -9,7 +9,6 @@ use crate::geometry::{Rect, Vector};
 use super::{
     PdfMessage,
     inner::{self, PageViewer},
-    text_extraction::TextExtractor,
     worker::{
         CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
         worker_main,
@@ -41,7 +40,7 @@ pub struct PdfViewer {
     current_center_tile: Vector<i32>,
     generation: Arc<std::sync::Mutex<usize>>,
     text_selection_rect: Option<Rect<f32>>,
-    text_extractor: Option<TextExtractor>,
+
     selected_text: Option<String>,
 }
 
@@ -88,7 +87,7 @@ impl PdfViewer {
             current_center_tile: Vector::zero(),
             generation: Arc::new(std::sync::Mutex::new(0)),
             text_selection_rect: None,
-            text_extractor: None,
+
             selected_text: None,
         }
     }
@@ -180,24 +179,12 @@ impl PdfViewer {
                             Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
                         );
 
-                        if let Some(ref mut extractor) = self.text_extractor {
-                            if extractor.set_page(self.cur_page_idx).is_ok() {
-                                if let Ok(selection) =
-                                    extractor.extract_text_in_rect(selection_rect.into())
-                                {
-                                    self.selected_text = Some(selection.text.clone());
-                                }
-                            }
+                        // Send text extraction request to worker
+                        if let Err(e) = self.command_tx.send(WorkerCommand::ExtractText(selection_rect.into())) {
+                            error!("Failed to send text extraction command: {}", e);
                         }
                     }
                     self.text_selection_rect = None;
-                    if let Some(ref text) = self.selected_text {
-                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                            if let Err(e) = clipboard.set_text(text) {
-                                error!("Failed to copy text to clipboard: {}", e);
-                            }
-                        }
-                    }
                 }
             }
             PdfMessage::MouseRightUp => {}
@@ -233,6 +220,14 @@ impl PdfViewer {
                     self.document_info = Some(document_info);
                     self.refresh_file().unwrap();
                 }
+                WorkerResponse::ExtractedText(text_selection) => {
+                    self.selected_text = Some(text_selection.text.clone());
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if let Err(e) = clipboard.set_text(&text_selection.text) {
+                            error!("Failed to copy text to clipboard: {}", e);
+                        }
+                    }
+                }
             },
         }
         iced::Task::none()
@@ -264,9 +259,7 @@ impl PdfViewer {
             .to_string();
         self.path = path.to_path_buf();
 
-        if let Ok(extractor) = TextExtractor::new(&path) {
-            self.text_extractor = Some(extractor);
-        }
+
 
         self.command_tx.send(WorkerCommand::LoadDocument(path))?;
         Ok(())
