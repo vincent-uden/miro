@@ -9,9 +9,6 @@ use bookmarks::BookmarkStore;
 use clap::Parser;
 use config::Config;
 use iced::{Theme, window::icon::from_file_data};
-use once_cell::sync::OnceCell;
-use pdf::worker::{WorkerCommand, WorkerResponse, worker_main};
-use tokio::sync::{Mutex, mpsc};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -28,9 +25,6 @@ const DARK_THEME: Theme = Theme::TokyoNight;
 const LIGHT_THEME: Theme = Theme::Light;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
-static WORKER_RX: OnceCell<Mutex<tokio::sync::mpsc::UnboundedReceiver<WorkerResponse>>> =
-    OnceCell::new();
-static RENDER_GENERATION: OnceCell<Mutex<usize>> = OnceCell::new();
 
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]
@@ -47,16 +41,7 @@ fn main() -> iced::Result {
 
     let args = Args::parse();
 
-    let (command_tx, command_rx) = mpsc::unbounded_channel::<WorkerCommand>();
-    let (result_tx, result_rx) = mpsc::unbounded_channel::<WorkerResponse>();
 
-    let _worker_handle = std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(worker_main(command_rx, result_tx));
-    });
-
-    WORKER_RX.get_or_init(move || Mutex::new(result_rx));
-    RENDER_GENERATION.get_or_init(|| Mutex::new(0));
 
     match Config::system_config() {
         Ok(cfg) => {
@@ -82,10 +67,7 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .window(settings())
         .run_with(move || {
-            let state = App::new(
-                command_tx,
-                BookmarkStore::system_store().unwrap_or_default(),
-            );
+            let state = App::new(BookmarkStore::system_store().unwrap_or_default());
             (state, match args.path {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),

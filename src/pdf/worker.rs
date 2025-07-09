@@ -7,7 +7,7 @@ use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
 use tracing::{debug, error, info};
 
 use crate::{
-    DARK_THEME, LIGHT_THEME, RENDER_GENERATION, geometry::Vector,
+    DARK_THEME, LIGHT_THEME, geometry::Vector,
     pdf::inner::cpu_pdf_dark_mode_shader,
 };
 
@@ -202,13 +202,13 @@ pub async fn worker_main(
     info!("Worker thread started");
 
     let mut worker = PdfWorker::new();
+    let mut current_generation = 0usize;
 
     while let Some(cmd) = command_rx.recv().await {
-        let gen_mtx = RENDER_GENERATION.get().unwrap();
-        let generation = gen_mtx.lock().await;
         match cmd {
             WorkerCommand::RenderTile(req) => {
-                if *generation <= req.generation {
+                if current_generation <= req.generation {
+                    current_generation = req.generation;
                     match worker.render_tile(&req) {
                         Ok(tile) => result_tx.send(WorkerResponse::RenderedTile(tile)).unwrap(),
                         Err(e) => {
