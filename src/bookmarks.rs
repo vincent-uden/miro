@@ -7,7 +7,7 @@ use anyhow::{Result, anyhow};
 use iced::{
     Length, Padding, Theme,
     widget::{
-        self, button, container, horizontal_rule, horizontal_space, hover, text, text_input,
+        self, button, container, horizontal_rule, hover, text, text_input,
         vertical_space,
     },
 };
@@ -57,7 +57,7 @@ pub enum BookmarkMessage {
     None,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BookmarkStore {
     sets: Vec<BookmarkSet>,
     #[serde(skip)]
@@ -208,13 +208,4 @@ impl BookmarkStore {
 fn hash_file(path: &Path) -> Result<u64> {
     let bytes = fs::read(path)?;
     Ok(XxHash64::oneshot(HASH_SEED, &bytes))
-}
-
-impl Default for BookmarkStore {
-    fn default() -> Self {
-        Self {
-            sets: vec![],
-            pending_name: String::new(),
-        }
-    }
 }

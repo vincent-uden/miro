@@ -24,7 +24,7 @@ use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::{Mutex, mpsc};
-use tracing::debug;
+
 
 use crate::{
     CONFIG,
@@ -47,7 +47,6 @@ enum PaneType {
 
 #[derive(Debug)]
 struct Pane {
-    id: usize,
     pane_type: PaneType,
 }
 
@@ -60,7 +59,7 @@ pub struct App {
     pub invert_pdf: bool,
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
-    pane_ratio: f32,
+
     sidebar_showing: bool,
     waiting_for_worker: Vec<AppMessage>,
     ctrl_pressed: bool,
@@ -103,11 +102,9 @@ pub enum AppMessage {
 impl App {
     pub fn new(bookmark_store: BookmarkStore) -> Self {
         let (mut ps, p) = pane_grid::State::new(Pane {
-            id: 0,
             pane_type: PaneType::Pdf,
         });
         if let Some((_, split)) = ps.split(pane_grid::Axis::Vertical, p, Pane {
-            id: 1,
             pane_type: PaneType::Sidebar,
         }) {
             ps.resize(split, 0.7);
@@ -120,7 +117,7 @@ impl App {
             invert_pdf: false,
             bookmark_store,
             pane_state: ps,
-            pane_ratio: 0.7,
+
             sidebar_showing: false,
             waiting_for_worker: vec![],
             ctrl_pressed: false,
@@ -253,7 +250,7 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::WorkerResponse(worker_response) => {
-                let (pdf_idx, on_response) = match &worker_response {
+                let (_pdf_idx, on_response) = match &worker_response {
                     WorkerResponse::Loaded(_) => {
                         if let Some(idx) = self
                             .waiting_for_worker
@@ -268,7 +265,7 @@ impl App {
                             (self.pdf_idx, iced::Task::none())
                         }
                     }
-                    WorkerResponse::Refreshed(path, doc) => (
+                    WorkerResponse::Refreshed(path, _doc) => (
                         self.pdfs
                             .iter()
                             .position(|pdf| &pdf.path == path)
@@ -423,7 +420,7 @@ impl App {
             ..Default::default()
         });
 
-        let image: Element<'_, AppMessage> = if !self.pdfs.is_empty() {
+        let _image: Element<'_, AppMessage> = if !self.pdfs.is_empty() {
             self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
         } else {
             vertical_space().into()
@@ -444,8 +441,8 @@ impl App {
         ));
 
         let c = if self.sidebar_showing {
-            let pg = PaneGrid::new(&self.pane_state, |id, pane, is_maximized| {
-                pane_grid::Content::new(responsive(move |size| match pane.pane_type {
+            let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
+                pane_grid::Content::new(responsive(move |_size| match pane.pane_type {
                     PaneType::Sidebar => {
                         self.bookmark_store.view().map(AppMessage::BookmarkMessage)
                     }
@@ -457,7 +454,7 @@ impl App {
                         }
                     }
                 }))
-                .style(|theme: &Theme| container::Style {
+                .style(|_theme: &Theme| container::Style {
                     ..Default::default()
                 })
             })
@@ -550,7 +547,7 @@ impl App {
         ];
 
         // Add worker response subscriptions for each PDF
-        for (_, pdf) in self.pdfs.iter().enumerate() {
+        for pdf in self.pdfs.iter() {
             let rx = pdf.result_rx.clone();
             subs.push(
                 Subscription::run_with_id(
@@ -643,7 +640,7 @@ fn format_key_sequence(seq: &KeySeq) -> String {
         out.push_str(&p);
     }
     out.pop();
-    out.push_str(")");
+    out.push(')');
     out
 }
 

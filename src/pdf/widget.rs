@@ -46,6 +46,12 @@ pub struct PdfViewer {
     selected_text: Option<String>,
 }
 
+impl Default for PdfViewer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PdfViewer {
     pub fn new() -> Self {
         assert!(
@@ -146,7 +152,6 @@ impl PdfViewer {
             }
             PdfMessage::MouseLeftDown(ctrl_pressed) => {
                 if ctrl_pressed {
-                    // Ctrl+Left click starts panning
                     // Don't start panning if we're close enough to the edge that a pane resizing might happen
                     if let Some(mp) = self.last_mouse_pos {
                         let mut padded_bounds = self.inner_state.bounds;
@@ -156,12 +161,9 @@ impl PdfViewer {
                             self.panning = true;
                         }
                     }
-                } else {
-                    // Regular left click starts text selection
-                    if let Some(pos) = self.last_mouse_pos {
-                        self.text_selection_start = Some(pos);
-                        self.text_selection_current = Some(pos);
-                    }
+                } else if let Some(pos) = self.last_mouse_pos {
+                    self.text_selection_start = Some(pos);
+                    self.text_selection_current = Some(pos);
                 }
             }
             PdfMessage::MouseRightDown => {}
@@ -181,13 +183,12 @@ impl PdfViewer {
                         );
 
                         if let Some(ref mut extractor) = self.text_extractor {
-                            if let Ok(_) = extractor.set_page(self.cur_page_idx) {
+                            if extractor.set_page(self.cur_page_idx).is_ok() {
                                 if let Ok(selection) =
                                     extractor.extract_text_in_rect(selection_rect.into())
                                 {
                                     self.selected_text = Some(selection.text.clone());
                                 }
-                                debug!("Selected: {:?}", self.selected_text);
                             }
                         }
                     }
@@ -197,8 +198,6 @@ impl PdfViewer {
                         if let Ok(mut clipboard) = arboard::Clipboard::new() {
                             if let Err(e) = clipboard.set_text(text) {
                                 error!("Failed to copy text to clipboard: {}", e);
-                            } else {
-                                debug!("Text copied to clipboard: {}", text);
                             }
                         }
                     }
@@ -268,7 +267,6 @@ impl PdfViewer {
             .to_string();
         self.path = path.to_path_buf();
 
-        // Create text extractor for the new document
         if let Ok(extractor) = TextExtractor::new(&path) {
             self.text_extractor = Some(extractor);
         }
@@ -427,9 +425,7 @@ impl PdfViewer {
             let pdf_relative = viewport_relative - pdf_top_left;
 
             // Convert to document coordinates by scaling and adding translation
-            let doc_pos = pdf_relative.scaled(1.0 / self.shown_scale) + self.translation;
-
-            doc_pos
+            pdf_relative.scaled(1.0 / self.shown_scale) + self.translation
         } else {
             // Fallback to old method if no page info
             let viewport_center = self.inner_state.bounds.center();

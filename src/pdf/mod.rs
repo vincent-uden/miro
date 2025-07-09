@@ -9,7 +9,7 @@ mod inner;
 pub mod widget;
 pub mod worker;
 
-pub use text_extraction::*;
+
 mod text_extraction;
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]

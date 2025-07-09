@@ -72,5 +72,4 @@ pub fn icon_button<'a, T>(
             ..Default::default()
         }
     })
-    .into()
 }

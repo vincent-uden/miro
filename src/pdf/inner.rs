@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use colorgrad::{Gradient, GradientBuilder, LinearGradient};
 use iced::{
-    ContentFit, Element, Length, Size, Border, Shadow,
+    Border, ContentFit, Element, Length, Shadow, Size,
     advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
     border::Radius,
     widget::image::FilterMethod,
@@ -96,7 +96,11 @@ impl<'a> PageViewer<'a> {
         self
     }
 
-    pub fn text_selection(mut self, start: Option<Vector<f32>>, current: Option<Vector<f32>>) -> Self {
+    pub fn text_selection(
+        mut self,
+        start: Option<Vector<f32>>,
+        current: Option<Vector<f32>>,
+    ) -> Self {
         self.text_selection_start = start;
         self.text_selection_current = current;
         self
@@ -178,11 +182,11 @@ where
                 },
             );
         };
-        
+
         let draw_selection = |renderer: &mut Renderer| {
-            if let (Some(start), Some(current)) = (self.text_selection_start, self.text_selection_current) {
-                let viewport_bounds = layout.bounds();
-                
+            if let (Some(start), Some(current)) =
+                (self.text_selection_start, self.text_selection_current)
+            {
                 // Create selection rectangle in screen coordinates
                 let selection_rect = iced::Rectangle {
                     x: start.x.min(current.x),
@@ -190,7 +194,7 @@ where
                     width: (current.x - start.x).abs(),
                     height: (current.y - start.y).abs(),
                 };
-                
+
                 // Draw selection rectangle with semi-transparent blue fill and blue border
                 renderer.fill_quad(
                     Quad {
@@ -206,7 +210,7 @@ where
                 );
             }
         };
-        
+
         renderer.with_layer(img_bounds, cross_hair);
         renderer.with_layer(img_bounds, render);
         renderer.with_layer(img_bounds, draw_selection);
