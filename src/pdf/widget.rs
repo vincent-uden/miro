@@ -40,8 +40,7 @@ pub struct PdfViewer {
     shown_tile_cache: HashMap<(i32, i32), CachedTile>,
     current_center_tile: Vector<i32>,
     generation: Arc<std::sync::Mutex<usize>>,
-    text_selection_start: Option<Vector<f32>>,
-    text_selection_current: Option<Vector<f32>>,
+    text_selection_rect: Option<Rect<f32>>,
     text_extractor: Option<TextExtractor>,
     selected_text: Option<String>,
 }
@@ -88,8 +87,7 @@ impl PdfViewer {
             shown_tile_cache: HashMap::new(),
             current_center_tile: Vector::zero(),
             generation: Arc::new(std::sync::Mutex::new(0)),
-            text_selection_start: None,
-            text_selection_current: None,
+            text_selection_rect: None,
             text_extractor: None,
             selected_text: None,
         }
@@ -141,9 +139,11 @@ impl PdfViewer {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
                         self.invalidate_cache();
-                    } else if self.text_selection_start.is_some() {
-                        // Update text selection
-                        self.text_selection_current = Some(vector);
+                    } else if let Some(rect) = self.text_selection_rect {
+                        // Update text selection - extend rectangle to current mouse position
+                        let top_left = Vector::new(rect.x0.x.min(vector.x), rect.x0.y.min(vector.y));
+                        let bottom_right = Vector::new(rect.x0.x.max(vector.x), rect.x0.y.max(vector.y));
+                        self.text_selection_rect = Some(Rect::from_points(top_left, bottom_right));
                     }
                     self.last_mouse_pos = Some(vector);
                 } else {
@@ -162,8 +162,8 @@ impl PdfViewer {
                         }
                     }
                 } else if let Some(pos) = self.last_mouse_pos {
-                    self.text_selection_start = Some(pos);
-                    self.text_selection_current = Some(pos);
+                    // Start text selection with a zero-size rectangle at mouse position
+                    self.text_selection_rect = Some(Rect::from_points(pos, pos));
                 }
             }
             PdfMessage::MouseRightDown => {}
@@ -171,11 +171,9 @@ impl PdfViewer {
                 if ctrl_pressed {
                     self.panning = false;
                 } else {
-                    if let (Some(start), Some(end)) =
-                        (self.text_selection_start, self.text_selection_current)
-                    {
-                        let doc_start = self.screen_to_document_coords(start);
-                        let doc_end = self.screen_to_document_coords(end);
+                    if let Some(screen_rect) = self.text_selection_rect {
+                        let doc_start = self.screen_to_document_coords(screen_rect.x0);
+                        let doc_end = self.screen_to_document_coords(screen_rect.x1);
 
                         let selection_rect = Rect::from_points(
                             Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
@@ -192,8 +190,7 @@ impl PdfViewer {
                             }
                         }
                     }
-                    self.text_selection_start = None;
-                    self.text_selection_current = None;
+                    self.text_selection_rect = None;
                     if let Some(ref text) = self.selected_text {
                         if let Ok(mut clipboard) = arboard::Clipboard::new() {
                             if let Err(e) = clipboard.set_text(text) {
@@ -246,7 +243,7 @@ impl PdfViewer {
             .translation(self.translation)
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
-            .text_selection(self.text_selection_start, self.text_selection_current)
+            .text_selection(self.text_selection_rect)
             .into()
     }
 
