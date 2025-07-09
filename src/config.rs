@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
 };
 
@@ -82,7 +82,7 @@ impl Config {
 
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
         let binds = self.keyboard.as_slice();
-        binds.iter().find(|b| b.action == msg).map(|b| b.clone())
+        binds.iter().find(|b| b.action == msg).cloned()
     }
 
     pub fn system_config() -> Result<Self> {
@@ -181,19 +181,10 @@ impl FromStr for Config {
                             Command::Set => {
                                 assert!(args.len() == 2, "Set requires two arguments");
                                 if args[0] == "Rpc" {
-                                    if args[1] == "True" {
-                                        out.rpc_enabled = true;
-                                    } else {
-                                        out.rpc_enabled = false;
-                                    }
-                                } else if args[0] == "RpcPort" {
-                                    match args[1].parse::<u32>() {
-                                        Ok(port) => {
-                                            out.rpc_port = port;
-                                        }
-                                        Err(_) => {}
-                                    }
-                                } else {
+                                out.rpc_enabled = args[1] == "True";                                } else if args[0] == "RpcPort" {
+                                if let Ok(port) = args[1].parse::<u32>() {
+                                    out.rpc_port = port;
+                                }                                } else {
                                     todo!("Error handling for config parsing")
                                 }
                             }

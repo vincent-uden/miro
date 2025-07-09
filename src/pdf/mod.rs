@@ -9,6 +9,9 @@ mod inner;
 pub mod widget;
 pub mod worker;
 
+
+mod text_extraction;
+
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PdfMessage {
     OpenFile(PathBuf),
@@ -23,9 +26,9 @@ pub enum PdfMessage {
     MoveVertical(f32),
     UpdateBounds(Rect<f32>),
     MouseMoved(Vector<f32>),
-    MouseLeftDown,
+    MouseLeftDown(bool), // bool indicates if Ctrl is pressed
     MouseRightDown,
-    MouseLeftUp,
+    MouseLeftUp(bool), // bool indicates if Ctrl is pressed
     MouseRightUp,
     #[strum(disabled)]
     #[serde(skip)]

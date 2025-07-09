@@ -2,9 +2,9 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::debug;
+use tracing::error;
 
-use crate::geometry::Vector;
+use crate::geometry::{Rect, Vector};
 
 use super::{
     PdfMessage,
@@ -39,6 +39,15 @@ pub struct PdfViewer {
     shown_tile_cache: HashMap<(i32, i32), CachedTile>,
     current_center_tile: Vector<i32>,
     generation: Arc<std::sync::Mutex<usize>>,
+    text_selection_rect: Option<Rect<f32>>,
+
+    selected_text: Option<String>,
+}
+
+impl Default for PdfViewer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PdfViewer {
@@ -77,6 +86,9 @@ impl PdfViewer {
             shown_tile_cache: HashMap::new(),
             current_center_tile: Vector::zero(),
             generation: Arc::new(std::sync::Mutex::new(0)),
+            text_selection_rect: None,
+
+            selected_text: None,
         }
     }
 
@@ -126,27 +138,54 @@ impl PdfViewer {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
                         self.invalidate_cache();
+                    } else if let Some(rect) = self.text_selection_rect {
+                        // Update text selection - extend rectangle to current mouse position
+                        let top_left = Vector::new(rect.x0.x.min(vector.x), rect.x0.y.min(vector.y));
+                        let bottom_right = Vector::new(rect.x0.x.max(vector.x), rect.x0.y.max(vector.y));
+                        self.text_selection_rect = Some(Rect::from_points(top_left, bottom_right));
                     }
                     self.last_mouse_pos = Some(vector);
                 } else {
                     self.last_mouse_pos = None;
                 }
             }
-            PdfMessage::MouseLeftDown => {
-                // Dont start panning if we're close enough to the edge that a pane resizing might
-                // happen
-                if let Some(mp) = self.last_mouse_pos {
-                    let mut padded_bounds = self.inner_state.bounds;
-                    padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
-                    padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
-                    if padded_bounds.contains(mp) {
-                        self.panning = true;
+            PdfMessage::MouseLeftDown(ctrl_pressed) => {
+                if ctrl_pressed {
+                    // Don't start panning if we're close enough to the edge that a pane resizing might happen
+                    if let Some(mp) = self.last_mouse_pos {
+                        let mut padded_bounds = self.inner_state.bounds;
+                        padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
+                        padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
+                        if padded_bounds.contains(mp) {
+                            self.panning = true;
+                        }
                     }
+                } else if let Some(pos) = self.last_mouse_pos {
+                    // Start text selection with a zero-size rectangle at mouse position
+                    self.text_selection_rect = Some(Rect::from_points(pos, pos));
                 }
             }
             PdfMessage::MouseRightDown => {}
-            PdfMessage::MouseLeftUp => {
-                self.panning = false;
+            PdfMessage::MouseLeftUp(ctrl_pressed) => {
+                if ctrl_pressed {
+                    self.panning = false;
+                } else {
+                    if let Some(screen_rect) = self.text_selection_rect {
+                        let doc_start = self.screen_to_document_coords(screen_rect.x0);
+                        let doc_end = self.screen_to_document_coords(screen_rect.x1);
+
+                        let selection_rect = Rect::from_points(
+                            Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
+                            Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
+                        );
+
+                        // Send text extraction request to worker
+                        if let Err(e) = self.command_tx.send(WorkerCommand::ExtractText(selection_rect.into())) {
+                            error!("Failed to send text extraction command: {}", e);
+                        }
+                    }
+                    self.text_selection_rect = None;
+                }
             }
             PdfMessage::MouseRightUp => {}
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
@@ -181,6 +220,14 @@ impl PdfViewer {
                     self.document_info = Some(document_info);
                     self.refresh_file().unwrap();
                 }
+                WorkerResponse::ExtractedText(text_selection) => {
+                    self.selected_text = Some(text_selection.text.clone());
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if let Err(e) = clipboard.set_text(&text_selection.text) {
+                            error!("Failed to copy text to clipboard: {}", e);
+                        }
+                    }
+                }
             },
         }
         iced::Task::none()
@@ -191,6 +238,7 @@ impl PdfViewer {
             .translation(self.translation)
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
+            .text_selection(self.text_selection_rect)
             .into()
     }
 
@@ -210,6 +258,9 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         self.path = path.to_path_buf();
+
+
+
         self.command_tx.send(WorkerCommand::LoadDocument(path))?;
         Ok(())
     }
@@ -340,6 +391,37 @@ impl PdfViewer {
     pub fn refresh_file_worker(&mut self) -> Result<()> {
         self.command_tx.send(WorkerCommand::RefreshFile)?;
         Ok(())
+    }
+
+    fn screen_to_document_coords(&self, screen_pos: Vector<f32>) -> Vector<f32> {
+        if let Some(page) = self.page_info {
+            // Calculate where the PDF page is positioned within the viewport
+            // The PDF is centered in the viewport
+            let scaled_page_size = Vector::new(
+                page.size.x * self.shown_scale,
+                page.size.y * self.shown_scale,
+            );
+
+            let viewport_size = self.inner_state.bounds.size();
+            let pdf_top_left = Vector::new(
+                (viewport_size.x - scaled_page_size.x) / 2.0,
+                (viewport_size.y - scaled_page_size.y) / 2.0,
+            );
+
+            // Convert screen position to viewport-relative position
+            let viewport_relative = screen_pos - self.inner_state.bounds.x0;
+
+            // Convert to PDF-relative position (relative to PDF's top-left corner)
+            let pdf_relative = viewport_relative - pdf_top_left;
+
+            // Convert to document coordinates by scaling and adding translation
+            pdf_relative.scaled(1.0 / self.shown_scale) + self.translation
+        } else {
+            // Fallback to old method if no page info
+            let viewport_center = self.inner_state.bounds.center();
+            let relative_pos = screen_pos - viewport_center;
+            relative_pos.scaled(1.0 / self.shown_scale) + self.translation
+        }
     }
 }
 

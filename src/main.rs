@@ -43,21 +43,18 @@ fn main() -> iced::Result {
 
 
 
-    match Config::system_config() {
-        Ok(cfg) => {
-            let mut config = CONFIG.write().unwrap();
-            *config = cfg;
-            info!(
-                "Using system config file located at {}",
-                Config::system_config_path()
-                    .expect(
-                        "Managed to load a config file without being able to determine its location"
-                    )
-                    .to_str()
-                    .unwrap()
-            );
-        }
-        Err(_) => {}
+    if let Ok(cfg) = Config::system_config() {
+        let mut config = CONFIG.write().unwrap();
+        *config = cfg;
+        info!(
+            "Using system config file located at {}",
+            Config::system_config_path()
+                .expect(
+                    "Managed to load a config file without being able to determine its location"
+                )
+                .to_str()
+                .unwrap()
+        );
     }
 
     iced::application("App", App::update, App::view)
