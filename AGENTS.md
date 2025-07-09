@@ -22,3 +22,4 @@
 - Prefer `PathBuf` over `&str` for file paths
 - Use `tokio::sync` primitives for async communication
 - Structure modules with `mod.rs` files for organization
+- Use the `debug!`, `info!` and `error!` from `tracing` for printing and logging

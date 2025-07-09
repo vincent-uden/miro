@@ -176,7 +176,7 @@ where
     }
 
     pub fn center(&self) -> Vector<T> {
-        (self.x0 + self.x1).scaled(T::one() + T::one())
+        (self.x0 + self.x1).scaled(T::one() / (T::one() + T::one()))
     }
 
     pub fn width(&self) -> T {

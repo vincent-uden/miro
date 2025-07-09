@@ -2,18 +2,18 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::debug;
+use tracing::{debug, error};
 
-use crate::geometry::{Vector, Rect};
+use crate::geometry::{Rect, Vector};
 
 use super::{
     PdfMessage,
     inner::{self, PageViewer},
+    text_extraction::TextExtractor,
     worker::{
         CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
         worker_main,
     },
-    text_extraction::TextExtractor,
 };
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
@@ -171,24 +171,28 @@ impl PdfViewer {
                     self.panning = false;
                 } else {
                     // Regular left release ends text selection
-                    if let (Some(start), Some(end)) = (self.text_selection_start, self.text_selection_current) {
+                    if let (Some(start), Some(end)) =
+                        (self.text_selection_start, self.text_selection_current)
+                    {
                         // Convert screen coordinates to document coordinates
                         let doc_start = self.screen_to_document_coords(start);
                         let doc_end = self.screen_to_document_coords(end);
-                        
+
                         // Create selection rectangle
                         let selection_rect = Rect::from_points(
                             Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
                             Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
                         );
-                        
+
                         // Extract text in the selection
                         if let Some(ref mut extractor) = self.text_extractor {
                             if let Ok(_) = extractor.set_page(self.cur_page_idx) {
-                                if let Ok(selection) = extractor.extract_text_in_rect(selection_rect.into()) {
+                                if let Ok(selection) =
+                                    extractor.extract_text_in_rect(selection_rect.into())
+                                {
                                     self.selected_text = Some(selection.text.clone());
-                                    println!("Selected text: {}", selection.text);
                                 }
+                                debug!("Selected: {:?}", self.selected_text);
                             }
                         }
                     }
@@ -202,9 +206,9 @@ impl PdfViewer {
                 if let Some(ref text) = self.selected_text {
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
                         if let Err(e) = clipboard.set_text(text) {
-                            eprintln!("Failed to copy text to clipboard: {}", e);
+                            error!("Failed to copy text to clipboard: {}", e);
                         } else {
-                            println!("Text copied to clipboard: {}", text);
+                            error!("Text copied to clipboard: {}", text);
                         }
                     }
                 }
@@ -280,12 +284,12 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         self.path = path.to_path_buf();
-        
+
         // Create text extractor for the new document
         if let Ok(extractor) = TextExtractor::new(&path) {
             self.text_extractor = Some(extractor);
         }
-        
+
         self.command_tx.send(WorkerCommand::LoadDocument(path))?;
         Ok(())
     }
@@ -419,12 +423,36 @@ impl PdfViewer {
     }
 
     fn screen_to_document_coords(&self, screen_pos: Vector<f32>) -> Vector<f32> {
-        // Convert screen coordinates to document coordinates
-        // This is a simplified conversion - you may need to adjust based on your coordinate system
-        let viewport_center = self.inner_state.bounds.center();
-        let relative_pos = screen_pos - viewport_center;
-        let doc_pos = relative_pos.scaled(1.0 / self.shown_scale) + self.translation;
-        doc_pos
+        if let Some(page) = self.page_info {
+            // Calculate where the PDF page is positioned within the viewport
+            // The PDF is centered in the viewport
+            let scaled_page_size = Vector::new(
+                page.size.x * self.shown_scale,
+                page.size.y * self.shown_scale,
+            );
+
+            let viewport_size = self.inner_state.bounds.size();
+            let pdf_top_left = Vector::new(
+                (viewport_size.x - scaled_page_size.x) / 2.0,
+                (viewport_size.y - scaled_page_size.y) / 2.0,
+            );
+
+            // Convert screen position to viewport-relative position
+            let viewport_relative = screen_pos - self.inner_state.bounds.x0;
+
+            // Convert to PDF-relative position (relative to PDF's top-left corner)
+            let pdf_relative = viewport_relative - pdf_top_left;
+
+            // Convert to document coordinates by scaling and adding translation
+            let doc_pos = pdf_relative.scaled(1.0 / self.shown_scale) + self.translation;
+
+            doc_pos
+        } else {
+            // Fallback to old method if no page info
+            let viewport_center = self.inner_state.bounds.center();
+            let relative_pos = screen_pos - viewport_center;
+            relative_pos.scaled(1.0 / self.shown_scale) + self.translation
+        }
     }
 }
 
