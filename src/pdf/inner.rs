@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use colorgrad::{Gradient, GradientBuilder, LinearGradient};
 use iced::{
-    ContentFit, Element, Length, Size,
+    ContentFit, Element, Length, Size, Border, Shadow,
     advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
+    border::Radius,
     widget::image::FilterMethod,
 };
 use mupdf::Pixmap;
@@ -33,6 +34,8 @@ pub struct PageViewer<'a> {
     translation: Vector<f32>,
     scale: f32,
     invert_colors: bool,
+    text_selection_start: Option<Vector<f32>>,
+    text_selection_current: Option<Vector<f32>>,
 }
 
 impl<'a> PageViewer<'a> {
@@ -47,6 +50,8 @@ impl<'a> PageViewer<'a> {
             translation: Vector::zero(),
             scale: 1.0,
             invert_colors: false,
+            text_selection_start: None,
+            text_selection_current: None,
         }
     }
     /// Sets the width of the [`Image`] boundaries.
@@ -88,6 +93,12 @@ impl<'a> PageViewer<'a> {
 
     pub fn invert_colors(mut self, invert: bool) -> Self {
         self.invert_colors = invert;
+        self
+    }
+
+    pub fn text_selection(mut self, start: Option<Vector<f32>>, current: Option<Vector<f32>>) -> Self {
+        self.text_selection_start = start;
+        self.text_selection_current = current;
         self
     }
 }
@@ -167,8 +178,38 @@ where
                 },
             );
         };
+        
+        let draw_selection = |renderer: &mut Renderer| {
+            if let (Some(start), Some(current)) = (self.text_selection_start, self.text_selection_current) {
+                let viewport_bounds = layout.bounds();
+                
+                // Create selection rectangle in screen coordinates
+                let selection_rect = iced::Rectangle {
+                    x: start.x.min(current.x),
+                    y: start.y.min(current.y),
+                    width: (current.x - start.x).abs(),
+                    height: (current.y - start.y).abs(),
+                };
+                
+                // Draw selection rectangle with semi-transparent blue fill and blue border
+                renderer.fill_quad(
+                    Quad {
+                        bounds: selection_rect,
+                        border: Border {
+                            color: iced::Color::from_rgb(0.0, 0.5, 1.0), // Blue border
+                            width: 2.0,
+                            radius: Radius::from(0.0),
+                        },
+                        shadow: Shadow::default(),
+                    },
+                    iced::Color::from_rgba(0.0, 0.5, 1.0, 0.2), // Semi-transparent blue fill
+                );
+            }
+        };
+        
         renderer.with_layer(img_bounds, cross_hair);
         renderer.with_layer(img_bounds, render);
+        renderer.with_layer(img_bounds, draw_selection);
     }
 
     fn on_event(

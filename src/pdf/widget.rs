@@ -260,6 +260,7 @@ impl PdfViewer {
             .translation(self.translation)
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
+            .text_selection(self.text_selection_start, self.text_selection_current)
             .into()
     }
 
