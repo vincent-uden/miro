@@ -198,7 +198,7 @@ impl PdfViewer {
                             if let Err(e) = clipboard.set_text(text) {
                                 error!("Failed to copy text to clipboard: {}", e);
                             } else {
-                                error!("Text copied to clipboard: {}", text);
+                                debug!("Text copied to clipboard: {}", text);
                             }
                         }
                     }
