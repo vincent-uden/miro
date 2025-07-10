@@ -35,9 +35,18 @@ cd miro
 cargo r --release
 cp ./target/release/miro /usr/bin/miro
 ```
+#### Windows
 
 On Windows, the same rough process *should* work, but often doesn't. I highly recommend downloading a precompiled binary for Windows. The problem lies in compiling the crate `mupdf-sys` which requires [MSVC](https://visualstudio.microsoft.com/vs/features/cplusplus/).
 
 The Visual Studio project embedded in this crate requires Visual Studio 2019 which isn't available for downloading anymore, but can [optionally be compiled using Visual Studio 2022](https://github.com/messense/mupdf-rs/pull/125). Even with this option, the build might just not work sometimes due to issues with the Windows 10/11 SDK kits which I have not managed to solve.
 
 However, I've managed to get compilation working in github actions which is what produces the release binaries which do function correctly on Windows systems.
+
+#### Windows
+
+Building on linx require some hidden dependendencies that you probably already have. On arch they are:
+- `clang`
+- `unzip`
+
+
