@@ -14,7 +14,7 @@ use crate::{
     geometry::{Rect, Vector},
 };
 
-use super::{PdfMessage, worker::CachedTile};
+use super::{PdfMessage, worker::{CachedTile, PageInfo}, link_extraction::{LinkInfo, LinkType}};
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -35,6 +35,8 @@ pub struct PageViewer<'a> {
     scale: f32,
     invert_colors: bool,
     text_selection_rect: Option<Rect<f32>>,
+    link_hitboxes: Option<&'a Vec<LinkInfo>>,
+    page_info: Option<PageInfo>,
 }
 
 impl<'a> PageViewer<'a> {
@@ -50,6 +52,8 @@ impl<'a> PageViewer<'a> {
             scale: 1.0,
             invert_colors: false,
             text_selection_rect: None,
+            link_hitboxes: None,
+            page_info: None,
         }
     }
     /// Sets the width of the [`Image`] boundaries.
@@ -98,6 +102,16 @@ impl<'a> PageViewer<'a> {
         self.text_selection_rect = rect;
         self
     }
+
+    pub fn link_hitboxes(mut self, links: Option<&'a Vec<LinkInfo>>) -> Self {
+        self.link_hitboxes = links;
+        self
+    }
+
+    pub fn page_info(mut self, page_info: Option<PageInfo>) -> Self {
+        self.page_info = page_info;
+        self
+    }
 }
 
 impl<Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PageViewer<'_>
@@ -142,10 +156,13 @@ where
             for (_, v) in self.cache.iter() {
                 let tile_bounds: Rect<f32> = v.bounds.into();
                 let viewport_bounds = layout.bounds();
+                let translation_vector = -self.translation.scaled(self.scale) + viewport_bounds.center().into()
+                    - tile_bounds.size().scaled(0.5);
+                
+
+                
                 renderer.with_translation(
-                    (-self.translation.scaled(self.scale) + viewport_bounds.center().into()
-                        - tile_bounds.size().scaled(0.5))
-                    .into(),
+                    translation_vector.into(),
                     |renderer: &mut Renderer| {
                         renderer.draw_image(
                             image::Image {
@@ -194,9 +211,157 @@ where
             }
         };
 
+        let draw_link_hitboxes = |renderer: &mut Renderer| {
+            if let Some(links) = self.link_hitboxes {
+                let viewport_bounds = layout.bounds();
+                
+                // Debug: Draw viewport center and bounds info
+                let viewport_center: Vector<f32> = viewport_bounds.center().into();
+                
+                // Draw a small cross at viewport center for debugging
+                let cross_size = 10.0;
+                renderer.fill_quad(
+                    Quad {
+                        bounds: iced::Rectangle::new(
+                            iced::Point::new(viewport_center.x - cross_size/2.0, viewport_center.y - 1.0),
+                            iced::Size::new(cross_size, 2.0)
+                        ),
+                        ..Default::default()
+                    },
+                    iced::Color::from_rgb(1.0, 0.0, 0.0), // Red horizontal line
+                );
+                renderer.fill_quad(
+                    Quad {
+                        bounds: iced::Rectangle::new(
+                            iced::Point::new(viewport_center.x - 1.0, viewport_center.y - cross_size/2.0),
+                            iced::Size::new(2.0, cross_size)
+                        ),
+                        ..Default::default()
+                    },
+                    iced::Color::from_rgb(1.0, 0.0, 0.0), // Red vertical line
+                );
+                
+                for (link_idx, link) in links.iter().enumerate() {
+                    let doc_rect = link.bounds;
+                    
+                    // Calculate the exact same translation that tiles use
+                    // From the tile rendering code: -self.translation.scaled(self.scale) + viewport_center - tile_bounds.size().scaled(0.5)
+                    // We need to match this exactly
+                    
+                    // For links, we don't have tile_bounds.size(), but we can use the page info
+                    let tile_translation = if let Some(page) = self.page_info {
+                        // Calculate page positioning the same way tiles do
+                        let scaled_page_size = Vector::new(
+                            page.size.x * self.scale,
+                            page.size.y * self.scale,
+                        );
+                        
+                        // The PDF is centered in the viewport
+                        let pdf_top_left = Vector::new(
+                            (viewport_bounds.width - scaled_page_size.x) / 2.0,
+                            (viewport_bounds.height - scaled_page_size.y) / 2.0,
+                        );
+                        
+                        // This is the translation that positions document (0,0) at the correct screen position
+                        pdf_top_left - self.translation.scaled(self.scale)
+                    } else {
+                        // Fallback: use the same calculation as tiles but estimate tile size
+                        let estimated_tile_size = Vector::new(614.0, 426.0); // Common tile size
+                        -self.translation.scaled(self.scale) + viewport_center - estimated_tile_size.scaled(0.5)
+                    };
+                    
+                    // Transform document coordinates to screen coordinates
+                    let doc_top_left_scaled = doc_rect.x0.scaled(self.scale);
+                    let doc_bottom_right_scaled = doc_rect.x1.scaled(self.scale);
+                    
+                    let screen_top_left = doc_top_left_scaled + tile_translation;
+                    let screen_bottom_right = doc_bottom_right_scaled + tile_translation;
+                    
+                    let screen_rect = Rect::from_points(screen_top_left, screen_bottom_right);
+                    
+                    // Debug: Log coordinate transformations for first few links
+                    if link_idx < 3 {
+                        tracing::debug!(
+                            "Link {}: doc_rect={:?}, scale={}, translation={:?}",
+                            link_idx, doc_rect, self.scale, self.translation
+                        );
+                        tracing::debug!(
+                            "  viewport_center={:?}, tile_translation={:?}",
+                            viewport_center, tile_translation
+                        );
+                        tracing::debug!(
+                            "  doc_scaled={:?} -> {:?}, screen_rect={:?}",
+                            doc_top_left_scaled, doc_bottom_right_scaled, screen_rect
+                        );
+                        if let Some(page) = self.page_info {
+                            tracing::debug!(
+                                "  page_size={:?}, scaled_page_size={:?}",
+                                page.size, Vector::new(page.size.x * self.scale, page.size.y * self.scale)
+                            );
+                        }
+                    }
+                    
+                    // Choose color based on link type
+                    let (border_color, fill_color) = match link.link_type {
+                        LinkType::ExternalUrl => (
+                            iced::Color::from_rgb(0.0, 0.4, 1.0),      // Blue border
+                            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.2) // Semi-transparent blue fill
+                        ),
+                        LinkType::InternalPage(_) => (
+                            iced::Color::from_rgb(0.0, 0.8, 0.0),      // Green border
+                            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.2) // Semi-transparent green fill
+                        ),
+                        LinkType::Email => (
+                            iced::Color::from_rgb(1.0, 0.6, 0.0),      // Orange border
+                            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.2) // Semi-transparent orange fill
+                        ),
+                        LinkType::Other => (
+                            iced::Color::from_rgb(0.5, 0.5, 0.5),      // Gray border
+                            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.2) // Semi-transparent gray fill
+                        ),
+                    };
+                    
+                    // Draw the link hitbox
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: screen_rect.into(),
+                            border: Border {
+                                color: border_color,
+                                width: 2.0,
+                                radius: Radius::from(2.0),
+                            },
+                            shadow: Shadow::default(),
+                        },
+                        fill_color,
+                    );
+                    
+                    // Debug: Draw a small number label for each link
+                    if link_idx < 10 {
+                        let label_pos = screen_rect.x0 + Vector::new(2.0, 2.0);
+                        renderer.fill_quad(
+                            Quad {
+                                bounds: iced::Rectangle::new(
+                                    iced::Point::new(label_pos.x, label_pos.y),
+                                    iced::Size::new(12.0, 12.0)
+                                ),
+                                border: Border {
+                                    color: iced::Color::WHITE,
+                                    width: 1.0,
+                                    radius: Radius::from(2.0),
+                                },
+                                ..Default::default()
+                            },
+                            iced::Color::from_rgb(0.0, 0.0, 0.0),
+                        );
+                    }
+                }
+            }
+        };
+
         renderer.with_layer(img_bounds, cross_hair);
         renderer.with_layer(img_bounds, render);
         renderer.with_layer(img_bounds, draw_selection);
+        renderer.with_layer(img_bounds, draw_link_hitboxes);
     }
 
     fn on_event(

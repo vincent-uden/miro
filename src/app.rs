@@ -389,12 +389,16 @@ impl App {
                         AppMessage::PdfMessage(PdfMessage::ZoomFit),
                         cfg.get_binding_for_msg(BindableMessage::ZoomFit)
                     ))
-                    (menu_button(
-                        if self.sidebar_showing { "Close sidebar" } else { "Open sidebar" },
-                        AppMessage::ToggleSidebar,
-                        cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
-                    ))
-                ))
+                     (menu_button(
+                         if self.sidebar_showing { "Close sidebar" } else { "Open sidebar" },
+                         AppMessage::ToggleSidebar,
+                         cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
+                     ))
+                     (menu_button(
+                         "Debug Link Coordinates",
+                         AppMessage::PdfMessage(PdfMessage::DebugLinkCoordinates),
+                         None
+                     ))                ))
             ))
             .draw_path(menu::DrawPath::Backdrop)
             .style(

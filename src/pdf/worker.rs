@@ -8,6 +8,7 @@ use tracing::{error, info};
 
 use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
 use super::text_extraction::{TextExtractor, TextSelection};
+use super::link_extraction::{LinkExtractor, LinkInfo};
 
 /// A unique identifier for a complete render request (e.g., for a specific view).
 pub type RequestId = u64;
@@ -27,6 +28,8 @@ pub enum WorkerCommand {
     RefreshFile,
     /// Extract text from a rectangular selection on the current page
     ExtractText(MupdfRect),
+    /// Extract all links from the current page
+    ExtractLinks,
 }
 
 /// Requests sent from the ui thread to the worker thread
@@ -52,6 +55,7 @@ pub enum WorkerResponse {
     SetPage(PageInfo),
     Refreshed(PathBuf, DocumentInfo),
     ExtractedText(TextSelection),
+    ExtractedLinks(Vec<LinkInfo>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -129,6 +133,15 @@ impl PdfWorker {
         if let Some(ref page) = self.current_page {
             let extractor = TextExtractor::new(page);
             extractor.extract_text_in_rect(selection_rect)
+        } else {
+            Err(anyhow!("No page set"))
+        }
+    }
+
+    pub fn extract_links(&self) -> Result<Vec<LinkInfo>> {
+        if let Some(ref page) = self.current_page {
+            let extractor = LinkExtractor::new(page);
+            extractor.extract_all_links()
         } else {
             Err(anyhow!("No page set"))
         }
@@ -261,6 +274,14 @@ pub async fn worker_main(
                     .unwrap(),
                 Err(e) => {
                     error!("Text extraction failed: {}", e);
+                }
+            },
+            WorkerCommand::ExtractLinks => match worker.extract_links() {
+                Ok(links) => result_tx
+                    .send(WorkerResponse::ExtractedLinks(links))
+                    .unwrap(),
+                Err(e) => {
+                    error!("Link extraction failed: {}", e);
                 }
             },
         }

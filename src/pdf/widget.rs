@@ -2,7 +2,7 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::error;
+use tracing::{error, info};
 
 use crate::geometry::{Rect, Vector};
 
@@ -13,6 +13,7 @@ use super::{
         CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
         worker_main,
     },
+    link_extraction::LinkInfo,
 };
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
@@ -40,8 +41,9 @@ pub struct PdfViewer {
     current_center_tile: Vector<i32>,
     generation: Arc<std::sync::Mutex<usize>>,
     text_selection_rect: Option<Rect<f32>>,
-
     selected_text: Option<String>,
+    link_hitboxes: Vec<LinkInfo>,
+    show_link_hitboxes: bool,
 }
 
 impl Default for PdfViewer {
@@ -87,8 +89,9 @@ impl PdfViewer {
             current_center_tile: Vector::zero(),
             generation: Arc::new(std::sync::Mutex::new(0)),
             text_selection_rect: None,
-
             selected_text: None,
+            link_hitboxes: Vec::new(),
+            show_link_hitboxes: false,
         }
     }
 
@@ -188,6 +191,49 @@ impl PdfViewer {
                 }
             }
             PdfMessage::MouseRightUp => {}
+            PdfMessage::ToggleLinkHitboxes => {
+                self.show_link_hitboxes = !self.show_link_hitboxes;
+            }
+            PdfMessage::DebugLinkCoordinates => {
+                if !self.link_hitboxes.is_empty() {
+                    tracing::info!("=== LINK COORDINATE DEBUG ===");
+                    tracing::info!("Current scale: {}, translation: {:?}", self.shown_scale, self.translation);
+                    tracing::info!("Viewport bounds: {:?}", self.inner_state.bounds);
+                    
+                    if let Some(page) = self.page_info {
+                        tracing::info!("Page size: {:?}", page.size);
+                        let scaled_page_size = Vector::new(
+                            page.size.x * self.shown_scale,
+                            page.size.y * self.shown_scale,
+                        );
+                        tracing::info!("Scaled page size: {:?}", scaled_page_size);
+                        
+                        let viewport_size = self.inner_state.bounds.size();
+                        let pdf_top_left = Vector::new(
+                            (viewport_size.x - scaled_page_size.x) / 2.0,
+                            (viewport_size.y - scaled_page_size.y) / 2.0,
+                        );
+                        tracing::info!("PDF top-left offset: {:?}", pdf_top_left);
+                    }
+                    
+                    for (i, link) in self.link_hitboxes.iter().enumerate() {
+                        tracing::info!("Link {}: {:?} at {:?}", i, link.uri, link.bounds);
+                        
+                        // Show the coordinate transformation step by step
+                        let doc_coords = link.bounds.x0;
+                        let scaled_coords = doc_coords.scaled(self.shown_scale);
+                        let translated_coords = (doc_coords - self.translation).scaled(self.shown_scale);
+                        
+                        tracing::info!("  Doc coords: {:?}", doc_coords);
+                        tracing::info!("  Scaled: {:?}", scaled_coords);
+                        tracing::info!("  Translated+scaled: {:?}", translated_coords);
+                        
+                        // Calculate screen coordinates using the same method as rendering
+                        let screen_coords = self.document_to_screen_coords(doc_coords);
+                        tracing::info!("  Final screen coords: {:?}", screen_coords);
+                    }
+                }
+            }
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
                     let current_generation = *self.generation.lock().unwrap();
@@ -215,6 +261,10 @@ impl PdfViewer {
                     if self.inner_state.bounds.size() != Vector::zero() {
                         self.force_invalidate_cache();
                     }
+                    // Extract links for the new page
+                    if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
+                        error!("Failed to send link extraction command: {}", e);
+                    }
                 }
                 WorkerResponse::Refreshed(_, document_info) => {
                     self.document_info = Some(document_info);
@@ -228,6 +278,10 @@ impl PdfViewer {
                         }
                     }
                 }
+                WorkerResponse::ExtractedLinks(links) => {
+                    self.link_hitboxes = links;
+                    info!("Extracted {} links from current page", self.link_hitboxes.len());
+                }
             },
         }
         iced::Task::none()
@@ -239,6 +293,8 @@ impl PdfViewer {
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
             .text_selection(self.text_selection_rect)
+            .link_hitboxes(if self.show_link_hitboxes { Some(&self.link_hitboxes) } else { None })
+            .page_info(self.page_info)
             .into()
     }
 
@@ -421,6 +477,37 @@ impl PdfViewer {
             let viewport_center = self.inner_state.bounds.center();
             let relative_pos = screen_pos - viewport_center;
             relative_pos.scaled(1.0 / self.shown_scale) + self.translation
+        }
+    }
+
+    fn document_to_screen_coords(&self, doc_pos: Vector<f32>) -> Vector<f32> {
+        if let Some(page) = self.page_info {
+            // Reverse of screen_to_document_coords
+            // Start with document coordinates, subtract translation, then scale
+            let pdf_relative = (doc_pos - self.translation).scaled(self.shown_scale);
+            
+            // Calculate where the PDF page is positioned within the viewport
+            let scaled_page_size = Vector::new(
+                page.size.x * self.shown_scale,
+                page.size.y * self.shown_scale,
+            );
+
+            let viewport_size = self.inner_state.bounds.size();
+            let pdf_top_left = Vector::new(
+                (viewport_size.x - scaled_page_size.x) / 2.0,
+                (viewport_size.y - scaled_page_size.y) / 2.0,
+            );
+
+            // Convert PDF-relative to viewport-relative
+            let viewport_relative = pdf_relative + pdf_top_left;
+
+            // Convert to screen coordinates
+            viewport_relative + self.inner_state.bounds.x0
+        } else {
+            // Fallback method
+            let viewport_center = self.inner_state.bounds.center();
+            let relative_pos = (doc_pos - self.translation).scaled(self.shown_scale);
+            relative_pos + viewport_center.into()
         }
     }
 }
