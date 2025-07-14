@@ -32,7 +32,6 @@ pub enum PdfMessage {
     MouseLeftUp(bool), // bool indicates if Ctrl is pressed
     MouseRightUp,
     ToggleLinkHitboxes,
-    DebugLinkCoordinates,
     #[strum(disabled)]
     #[serde(skip)]
     WorkerResponse(WorkerResponse),

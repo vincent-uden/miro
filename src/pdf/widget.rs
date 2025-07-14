@@ -194,46 +194,6 @@ impl PdfViewer {
             PdfMessage::ToggleLinkHitboxes => {
                 self.show_link_hitboxes = !self.show_link_hitboxes;
             }
-            PdfMessage::DebugLinkCoordinates => {
-                if !self.link_hitboxes.is_empty() {
-                    tracing::info!("=== LINK COORDINATE DEBUG ===");
-                    tracing::info!("Current scale: {}, translation: {:?}", self.shown_scale, self.translation);
-                    tracing::info!("Viewport bounds: {:?}", self.inner_state.bounds);
-                    
-                    if let Some(page) = self.page_info {
-                        tracing::info!("Page size: {:?}", page.size);
-                        let scaled_page_size = Vector::new(
-                            page.size.x * self.shown_scale,
-                            page.size.y * self.shown_scale,
-                        );
-                        tracing::info!("Scaled page size: {:?}", scaled_page_size);
-                        
-                        let viewport_size = self.inner_state.bounds.size();
-                        let pdf_top_left = Vector::new(
-                            (viewport_size.x - scaled_page_size.x) / 2.0,
-                            (viewport_size.y - scaled_page_size.y) / 2.0,
-                        );
-                        tracing::info!("PDF top-left offset: {:?}", pdf_top_left);
-                    }
-                    
-                    for (i, link) in self.link_hitboxes.iter().enumerate() {
-                        tracing::info!("Link {}: {:?} at {:?}", i, link.uri, link.bounds);
-                        
-                        // Show the coordinate transformation step by step
-                        let doc_coords = link.bounds.x0;
-                        let scaled_coords = doc_coords.scaled(self.shown_scale);
-                        let translated_coords = (doc_coords - self.translation).scaled(self.shown_scale);
-                        
-                        tracing::info!("  Doc coords: {:?}", doc_coords);
-                        tracing::info!("  Scaled: {:?}", scaled_coords);
-                        tracing::info!("  Translated+scaled: {:?}", translated_coords);
-                        
-                        // Calculate screen coordinates using the same method as rendering
-                        let screen_coords = self.document_to_screen_coords(doc_coords);
-                        tracing::info!("  Final screen coords: {:?}", screen_coords);
-                    }
-                }
-            }
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
                     let current_generation = *self.generation.lock().unwrap();
