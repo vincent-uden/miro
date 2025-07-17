@@ -14,7 +14,11 @@ use crate::{
     geometry::{Rect, Vector},
 };
 
-use super::{PdfMessage, worker::{CachedTile, PageInfo}, link_extraction::{LinkInfo, LinkType}};
+use super::{
+    PdfMessage,
+    link_extraction::{LinkInfo, LinkType},
+    worker::{CachedTile, PageInfo},
+};
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -152,47 +156,28 @@ where
         _viewport: &iced::Rectangle,
     ) {
         let img_bounds = layout.bounds();
-        let render = |renderer: &mut Renderer| {
+        let pdf_cache = |renderer: &mut Renderer| {
             for (_, v) in self.cache.iter() {
                 let tile_bounds: Rect<f32> = v.bounds.into();
                 let viewport_bounds = layout.bounds();
-                let translation_vector = -self.translation.scaled(self.scale) + viewport_bounds.center().into()
+                let translation_vector = -self.translation.scaled(self.scale)
+                    + viewport_bounds.center().into()
                     - tile_bounds.size().scaled(0.5);
-                
 
-                
-                renderer.with_translation(
-                    translation_vector.into(),
-                    |renderer: &mut Renderer| {
-                        renderer.draw_image(
-                            image::Image {
-                                handle: v.image_handle.clone(),
-                                filter_method: self.filter_method,
-                                rotation: iced::Radians::from(0.0),
-                                opacity: 1.0,
-                                snap: true,
-                            },
-                            tile_bounds.into(),
-                        );
-                    },
-                );
+                renderer.with_translation(translation_vector.into(), |renderer: &mut Renderer| {
+                    renderer.draw_image(
+                        image::Image {
+                            handle: v.image_handle.clone(),
+                            filter_method: self.filter_method,
+                            rotation: iced::Radians::from(0.0),
+                            opacity: 1.0,
+                            snap: true,
+                        },
+                        tile_bounds.into(),
+                    );
+                });
             }
         };
-        let cross_hair = |renderer: &mut Renderer| {
-            let viewport_bounds = layout.bounds();
-            renderer.fill_quad(
-                Quad {
-                    bounds: viewport_bounds,
-                    ..Default::default()
-                },
-                if self.invert_colors {
-                    DARK_THEME.extended_palette().background.base.color
-                } else {
-                    LIGHT_THEME.extended_palette().background.base.color
-                },
-            );
-        };
-
         let draw_selection = |renderer: &mut Renderer| {
             if let Some(rect) = self.text_selection_rect {
                 // Draw selection rectangle with semi-transparent blue fill and blue border
@@ -213,81 +198,56 @@ where
 
         let draw_link_hitboxes = |renderer: &mut Renderer| {
             if let Some(links) = self.link_hitboxes {
-                let viewport_bounds = layout.bounds();
-                
                 for link in links {
                     let doc_rect = link.bounds;
-                    
-                    // Calculate the same translation that tiles use
-                    let tile_translation = if let Some(page) = self.page_info {
-                        // Calculate page positioning the same way tiles do
-                        let scaled_page_size = Vector::new(
-                            page.size.x * self.scale,
-                            page.size.y * self.scale,
+                    if let Some(page) = self.page_info {
+                        let scaled_page_size = page.size.scaled(self.scale);
+                        let pdf_center = Vector::new(
+                            (img_bounds.width - scaled_page_size.x) / 2.0,
+                            (img_bounds.height - scaled_page_size.y) / 2.0,
                         );
-                        
-                        // The PDF is centered in the viewport
-                        let pdf_top_left = Vector::new(
-                            (viewport_bounds.width - scaled_page_size.x) / 2.0,
-                            (viewport_bounds.height - scaled_page_size.y) / 2.0,
-                        );
-                        
-                        // This is the translation that positions document (0,0) at the correct screen position
-                        pdf_top_left - self.translation.scaled(self.scale)
-                    } else {
-                        // Fallback: use the same calculation as tiles but estimate tile size
-                        let viewport_center: Vector<f32> = viewport_bounds.center().into();
-                        let estimated_tile_size = Vector::new(614.0, 426.0);
-                        -self.translation.scaled(self.scale) + viewport_center - estimated_tile_size.scaled(0.5)
-                    };
-                    
-                    // Transform document coordinates to screen coordinates
-                    let doc_top_left_scaled = doc_rect.x0.scaled(self.scale);
-                    let doc_bottom_right_scaled = doc_rect.x1.scaled(self.scale);
-                    
-                    let screen_top_left = doc_top_left_scaled + tile_translation;
-                    let screen_bottom_right = doc_bottom_right_scaled + tile_translation;
-                    
-                    let screen_rect = Rect::from_points(screen_top_left, screen_bottom_right);
-                    
-                    // Choose color based on link type
-                    let (border_color, fill_color) = match link.link_type {
-                        LinkType::ExternalUrl => (
-                            iced::Color::from_rgb(0.0, 0.4, 1.0),      // Blue border
-                            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1) // Semi-transparent blue fill
-                        ),
-                        LinkType::InternalPage(_) => (
-                            iced::Color::from_rgb(0.0, 0.8, 0.0),      // Green border
-                            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1) // Semi-transparent green fill
-                        ),
-                        LinkType::Email => (
-                            iced::Color::from_rgb(1.0, 0.6, 0.0),      // Orange border
-                            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1) // Semi-transparent orange fill
-                        ),
-                        LinkType::Other => (
-                            iced::Color::from_rgb(0.5, 0.5, 0.5),      // Gray border
-                            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1) // Semi-transparent gray fill
-                        ),
-                    };
-                    
-                    renderer.fill_quad(
-                        Quad {
-                            bounds: screen_rect.into(),
-                            border: Border {
-                                color: border_color,
-                                width: 1.5,
-                                radius: Radius::from(2.0),
+
+                        let offset = pdf_center - self.translation.scaled(self.scale);
+                        let mut link_bounds = doc_rect.scaled(self.scale);
+                        link_bounds.translate(offset);
+
+                        let (border_color, fill_color) = match link.link_type {
+                            LinkType::ExternalUrl => (
+                                iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
+                                iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
+                            ),
+                            LinkType::InternalPage(_) => (
+                                iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
+                                iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
+                            ),
+                            LinkType::Email => (
+                                iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
+                                iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
+                            ),
+                            LinkType::Other => (
+                                iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
+                                iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
+                            ),
+                        };
+
+                        renderer.fill_quad(
+                            Quad {
+                                bounds: link_bounds.into(),
+                                border: Border {
+                                    color: border_color,
+                                    width: 1.5,
+                                    radius: Radius::from(2.0),
+                                },
+                                shadow: Shadow::default(),
                             },
-                            shadow: Shadow::default(),
-                        },
-                        fill_color,
-                    );
+                            fill_color,
+                        );
+                    }
                 }
             }
         };
 
-        renderer.with_layer(img_bounds, cross_hair);
-        renderer.with_layer(img_bounds, render);
+        renderer.with_layer(img_bounds, pdf_cache);
         renderer.with_layer(img_bounds, draw_selection);
         renderer.with_layer(img_bounds, draw_link_hitboxes);
     }
