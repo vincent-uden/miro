@@ -201,6 +201,8 @@ where
                 for link in links {
                     let doc_rect = link.bounds;
                     if let Some(page) = self.page_info {
+                        // I accidentally changed some drawing logic here, scaling no longer works
+                        // TODO: Fix
                         let scaled_page_size = page.size.scaled(self.scale);
                         let pdf_center = Vector::new(
                             (img_bounds.width - scaled_page_size.x) / 2.0,
