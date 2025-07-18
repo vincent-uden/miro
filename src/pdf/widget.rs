@@ -2,9 +2,12 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::error;
+use tracing::{debug, error};
 
-use crate::geometry::{Rect, Vector};
+use crate::{
+    geometry::{Rect, Vector},
+    pdf::link_extraction::LinkType,
+};
 
 use super::{
     PdfMessage,
@@ -258,12 +261,25 @@ impl PdfViewer {
                         .last_mouse_pos
                         .map(|p| self.screen_to_document_coords(p))
                     {
-                        for link in &self.link_hitboxes {
-                            if link.bounds.contains(pos)
-                                && let Ok(mut clipboard) = arboard::Clipboard::new()
-                                && let Err(e) = clipboard.set_text(&link.uri)
-                            {
-                                error!("Failed to copy link to clipboard: {}", e);
+                        if let Some(link) = self
+                            .link_hitboxes
+                            .iter()
+                            .find(|link| link.bounds.contains(pos))
+                        {
+                            debug!("{link:?}");
+                            match link.link_type {
+                                LinkType::InternalPage(page) => {
+                                    if self.set_page(page as i32).is_err() {
+                                        error!("Couldn't jump to page {page}");
+                                    }
+                                }
+                                _ => {
+                                    if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                        && let Err(e) = clipboard.set_text(&link.uri)
+                                    {
+                                        error!("Failed to copy link to clipboard: {}", e);
+                                    }
+                                }
                             }
                         }
                     }

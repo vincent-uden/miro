@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::{Mutex, mpsc};
 
-
 use crate::{
     CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
@@ -104,9 +103,13 @@ impl App {
         let (mut ps, p) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
         });
-        if let Some((_, split)) = ps.split(pane_grid::Axis::Vertical, p, Pane {
-            pane_type: PaneType::Sidebar,
-        }) {
+        if let Some((_, split)) = ps.split(
+            pane_grid::Axis::Vertical,
+            p,
+            Pane {
+                pane_type: PaneType::Sidebar,
+            },
+        ) {
             ps.resize(split, 0.7);
         }
         Self {
@@ -177,7 +180,11 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::PreviousTab => {
-                self.pdf_idx = (self.pdf_idx - 1).max(0);
+                self.pdf_idx = if self.pdf_idx == 0 {
+                    0
+                } else {
+                    self.pdf_idx - 1
+                };
                 iced::Task::none()
             }
             AppMessage::NextTab => {
@@ -223,7 +230,8 @@ impl App {
             }
             AppMessage::MouseLeftDown => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftDown(self.ctrl_pressed));
+                    let _ = self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::MouseLeftDown(self.ctrl_pressed));
                 }
                 iced::Task::none()
             }
@@ -235,7 +243,8 @@ impl App {
             }
             AppMessage::MouseLeftUp => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp(self.ctrl_pressed));
+                    let _ =
+                        self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp(self.ctrl_pressed));
                 }
                 iced::Task::none()
             }
@@ -483,9 +492,10 @@ impl App {
                     // Handle other keyboard events for keybinds
                     let mut config = CONFIG.write().unwrap();
                     match status {
-                        iced::event::Status::Ignored => {
-                            config.keyboard.dispatch(keyboard_event).map(|x| (*x).into())
-                        }
+                        iced::event::Status::Ignored => config
+                            .keyboard
+                            .dispatch(keyboard_event)
+                            .map(|x| (*x).into()),
                         iced::event::Status::Captured => None,
                     }
                 }
@@ -511,7 +521,8 @@ impl App {
                     _ => None,
                 },
                 iced::mouse::Event::WheelScrolled { delta } => match delta {
-                    iced::mouse::ScrollDelta::Lines { x: _, y } | iced::mouse::ScrollDelta::Pixels { x: _, y } => {
+                    iced::mouse::ScrollDelta::Lines { x: _, y }
+                    | iced::mouse::ScrollDelta::Pixels { x: _, y } => {
                         if y > 0.0 {
                             Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
                         } else if y < 0.0 {
@@ -709,10 +720,12 @@ pub fn file_tab_style(theme: &Theme, status: button::Status) -> button::Style {
     let base = styled(palette.secondary.base);
 
     match status {
-        button::Status::Active | button::Status::Pressed | button::Status::Hovered => button::Style {
-            background: None,
-            ..base
-        },
+        button::Status::Active | button::Status::Pressed | button::Status::Hovered => {
+            button::Style {
+                background: None,
+                ..base
+            }
+        }
         button::Status::Disabled => disabled(&base),
     }
 }

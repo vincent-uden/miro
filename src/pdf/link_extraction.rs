@@ -1,5 +1,6 @@
 use anyhow::Result;
-use mupdf::Page;
+use mupdf::{Link, Page};
+use tracing::debug;
 
 use crate::geometry::{Rect, Vector};
 
@@ -39,9 +40,7 @@ impl<'a> LinkExtractor<'a> {
                 Vector::new(link.bounds.x0, link.bounds.y0),
                 Vector::new(link.bounds.x1, link.bounds.y1),
             );
-
-            let link_type = categorize_link(&link.uri);
-
+            let link_type = categorize_link(&link);
             links.push(LinkInfo {
                 bounds,
                 uri: link.uri,
@@ -53,22 +52,15 @@ impl<'a> LinkExtractor<'a> {
     }
 }
 
-fn categorize_link(uri: &str) -> LinkType {
-    if uri.starts_with("http://") || uri.starts_with("https://") {
+fn categorize_link(link: &Link) -> LinkType {
+    if link.uri.starts_with("http://") || link.uri.starts_with("https://") {
         LinkType::ExternalUrl
-    } else if uri.starts_with("mailto:") {
+    } else if link.uri.starts_with("mailto:") {
         LinkType::Email
-    } else if uri.starts_with("#page=") {
-        // Parse page number from internal page reference
-        if let Some(page_str) = uri.strip_prefix("#page=")
-            && let Ok(page_num) = page_str.parse::<u32>()
-        {
-            return LinkType::InternalPage(page_num);
-        }
-        LinkType::Other
-    } else if uri.chars().all(|c| c.is_ascii_digit()) {
-        // Sometimes page references are just numbers
-        if let Ok(page_num) = uri.parse::<u32>() {
+    } else if link.uri.starts_with("#page=") || link.uri.starts_with("#nameddest=") {
+        return LinkType::InternalPage(link.page);
+    } else if link.uri.chars().all(|c| c.is_ascii_digit()) {
+        if let Ok(page_num) = link.uri.parse::<u32>() {
             LinkType::InternalPage(page_num)
         } else {
             LinkType::Other
