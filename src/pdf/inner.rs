@@ -201,8 +201,6 @@ where
                 for link in links {
                     let doc_rect = link.bounds;
                     if let Some(page) = self.page_info {
-                        // I accidentally changed some drawing logic here, scaling no longer works
-                        // TODO: Fix
                         let scaled_page_size = page.size.scaled(self.scale);
                         let pdf_center = Vector::new(
                             (img_bounds.width - scaled_page_size.x) / 2.0,
@@ -210,7 +208,10 @@ where
                         );
 
                         let offset = pdf_center - self.translation.scaled(self.scale);
-                        let mut link_bounds = doc_rect.scaled(self.scale);
+                        let mut link_bounds = Rect::from_points(
+                            doc_rect.x0.scaled(self.scale),
+                            doc_rect.x1.scaled(self.scale),
+                        );
                         link_bounds.translate(offset);
 
                         let (border_color, fill_color) = match link.link_type {
