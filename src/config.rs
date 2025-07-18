@@ -36,6 +36,7 @@ pub enum BindableMessage {
     ToggleDarkModePdf,
     // TODO: ToggleDarkModeUi
     ToggleSidebar,
+    ToggleLinkHitboxes,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -61,6 +62,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
             BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
             BindableMessage::ToggleSidebar => AppMessage::ToggleSidebar,
+            BindableMessage::ToggleLinkHitboxes => AppMessage::PdfMessage(PdfMessage::ToggleLinkHitboxes),
         }
     }
 }
@@ -139,6 +141,10 @@ impl Default for Config {
                     KeyInput::from_str("Ctrl+b").unwrap(),
                     BindableMessage::ToggleSidebar,
                 ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+l").unwrap(),
+                    BindableMessage::ToggleLinkHitboxes,
+                ),
             ]),
             rpc_enabled: false,
             rpc_port: 7890,
@@ -199,7 +205,7 @@ impl FromStr for Config {
                 Ok(Token::ArgDelim) => {
                     expecting_statement = false;
                 }
-                Err(e) => panic!("{:?}", e),
+                Err(e) => panic!("{e:?}"),
             }
         }
         Ok(out)

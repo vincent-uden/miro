@@ -2,13 +2,17 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::error;
+use tracing::{debug, error};
 
-use crate::geometry::{Rect, Vector};
+use crate::{
+    geometry::{Rect, Vector},
+    pdf::link_extraction::LinkType,
+};
 
 use super::{
     PdfMessage,
     inner::{self, PageViewer},
+    link_extraction::LinkInfo,
     worker::{
         CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
         worker_main,
@@ -16,6 +20,8 @@ use super::{
 };
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
+
+const MIN_SELECTION: f32 = 5.0;
 
 #[derive(Debug)]
 pub struct PdfViewer {
@@ -26,6 +32,8 @@ pub struct PdfViewer {
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     inner_state: inner::State,
+    /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
+    /// corner of the screen, it must account for that offset.
     last_mouse_pos: Option<Vector<f32>>,
     panning: bool,
     command_tx: mpsc::UnboundedSender<WorkerCommand>,
@@ -40,8 +48,10 @@ pub struct PdfViewer {
     current_center_tile: Vector<i32>,
     generation: Arc<std::sync::Mutex<usize>>,
     text_selection_rect: Option<Rect<f32>>,
-
     selected_text: Option<String>,
+    link_hitboxes: Vec<LinkInfo>,
+    show_link_hitboxes: bool,
+    is_over_link: bool,
 }
 
 impl Default for PdfViewer {
@@ -87,8 +97,10 @@ impl PdfViewer {
             current_center_tile: Vector::zero(),
             generation: Arc::new(std::sync::Mutex::new(0)),
             text_selection_rect: None,
-
             selected_text: None,
+            link_hitboxes: Vec::new(),
+            show_link_hitboxes: false,
+            is_over_link: false,
         }
     }
 
@@ -140,13 +152,23 @@ impl PdfViewer {
                         self.invalidate_cache();
                     } else if let Some(rect) = self.text_selection_rect {
                         // Update text selection - extend rectangle to current mouse position
-                        let top_left = Vector::new(rect.x0.x.min(vector.x), rect.x0.y.min(vector.y));
-                        let bottom_right = Vector::new(rect.x0.x.max(vector.x), rect.x0.y.max(vector.y));
+                        let top_left =
+                            Vector::new(rect.x0.x.min(vector.x), rect.x0.y.min(vector.y));
+                        let bottom_right =
+                            Vector::new(rect.x0.x.max(vector.x), rect.x0.y.max(vector.y));
                         self.text_selection_rect = Some(Rect::from_points(top_left, bottom_right));
                     }
+                    
+                    // Check if mouse is over a link
+                    let doc_pos = self.screen_to_document_coords(vector);
+                    self.is_over_link = self.link_hitboxes
+                        .iter()
+                        .any(|link| link.bounds.contains(doc_pos));
+                    
                     self.last_mouse_pos = Some(vector);
                 } else {
                     self.last_mouse_pos = None;
+                    self.is_over_link = false;
                 }
             }
             PdfMessage::MouseLeftDown(ctrl_pressed) => {
@@ -179,15 +201,51 @@ impl PdfViewer {
                             Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
                         );
 
-                        // Send text extraction request to worker
-                        if let Err(e) = self.command_tx.send(WorkerCommand::ExtractText(selection_rect.into())) {
-                            error!("Failed to send text extraction command: {}", e);
+                        if selection_rect.width() > MIN_SELECTION
+                            && selection_rect.height() > MIN_SELECTION
+                        {
+                            if let Err(e) = self
+                                .command_tx
+                                .send(WorkerCommand::ExtractText(selection_rect.into()))
+                            {
+                                error!("Failed to send text extraction command: {}", e);
+                            }
+                        } else {
+                            if let Some(pos) = self
+                                .last_mouse_pos
+                                .map(|p| self.screen_to_document_coords(p))
+                            {
+                                if let Some(link) = self
+                                    .link_hitboxes
+                                    .iter()
+                                    .find(|link| link.bounds.contains(pos))
+                                {
+                                    debug!("{link:?}");
+                                    match link.link_type {
+                                        LinkType::InternalPage(page) => {
+                                            if self.set_page(page as i32).is_err() {
+                                                error!("Couldn't jump to page {page}");
+                                            }
+                                        }
+                                        _ => {
+                                            if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                                && let Err(e) = clipboard.set_text(&link.uri)
+                                            {
+                                                error!("Failed to copy link to clipboard: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     self.text_selection_rect = None;
                 }
             }
             PdfMessage::MouseRightUp => {}
+            PdfMessage::ToggleLinkHitboxes => {
+                self.show_link_hitboxes = !self.show_link_hitboxes;
+            }
             PdfMessage::WorkerResponse(worker_response) => match worker_response {
                 WorkerResponse::RenderedTile(cached_tile) => {
                     let current_generation = *self.generation.lock().unwrap();
@@ -215,6 +273,9 @@ impl PdfViewer {
                     if self.inner_state.bounds.size() != Vector::zero() {
                         self.force_invalidate_cache();
                     }
+                    if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
+                        error!("Failed to send link extraction command: {}", e);
+                    }
                 }
                 WorkerResponse::Refreshed(_, document_info) => {
                     self.document_info = Some(document_info);
@@ -222,11 +283,14 @@ impl PdfViewer {
                 }
                 WorkerResponse::ExtractedText(text_selection) => {
                     self.selected_text = Some(text_selection.text.clone());
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        if let Err(e) = clipboard.set_text(&text_selection.text) {
-                            error!("Failed to copy text to clipboard: {}", e);
-                        }
+                    if let Ok(mut clipboard) = arboard::Clipboard::new()
+                        && let Err(e) = clipboard.set_text(&text_selection.text)
+                    {
+                        error!("Failed to copy text to clipboard: {}", e);
                     }
+                }
+                WorkerResponse::ExtractedLinks(links) => {
+                    self.link_hitboxes = links;
                 }
             },
         }
@@ -239,6 +303,13 @@ impl PdfViewer {
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
             .text_selection(self.text_selection_rect)
+            .link_hitboxes(if self.show_link_hitboxes {
+                Some(&self.link_hitboxes)
+            } else {
+                None
+            })
+            .page_info(self.page_info)
+            .is_over_link(self.is_over_link)
             .into()
     }
 
@@ -258,8 +329,6 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         self.path = path.to_path_buf();
-
-
 
         self.command_tx.send(WorkerCommand::LoadDocument(path))?;
         Ok(())
@@ -393,29 +462,14 @@ impl PdfViewer {
         Ok(())
     }
 
-    fn screen_to_document_coords(&self, screen_pos: Vector<f32>) -> Vector<f32> {
+    fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
         if let Some(page) = self.page_info {
-            // Calculate where the PDF page is positioned within the viewport
-            // The PDF is centered in the viewport
-            let scaled_page_size = Vector::new(
-                page.size.x * self.shown_scale,
-                page.size.y * self.shown_scale,
-            );
-
-            let viewport_size = self.inner_state.bounds.size();
-            let pdf_top_left = Vector::new(
-                (viewport_size.x - scaled_page_size.x) / 2.0,
-                (viewport_size.y - scaled_page_size.y) / 2.0,
-            );
-
-            // Convert screen position to viewport-relative position
-            let viewport_relative = screen_pos - self.inner_state.bounds.x0;
-
-            // Convert to PDF-relative position (relative to PDF's top-left corner)
-            let pdf_relative = viewport_relative - pdf_top_left;
-
-            // Convert to document coordinates by scaling and adding translation
-            pdf_relative.scaled(1.0 / self.shown_scale) + self.translation
+            screen_pos += self.inner_state.bounds.x0;
+            screen_pos -= self.inner_state.bounds.center();
+            screen_pos.scale(1.0 / self.shown_scale);
+            screen_pos += self.translation;
+            screen_pos += page.size.scaled(0.5);
+            screen_pos
         } else {
             // Fallback to old method if no page info
             let viewport_center = self.inner_state.bounds.center();

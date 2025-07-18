@@ -35,11 +35,10 @@ impl<'a> TextExtractor<'a> {
                             y1: char_quad.lr.y,
                         };
 
-                        if rectangles_intersect(selection_rect, char_rect) {
-                            if let Some(c) = ch.char() {
+                        if rectangles_intersect(selection_rect, char_rect)
+                            && let Some(c) = ch.char() {
                                 selected_text.push(c);
                             }
-                        }
                     }
                     selected_text.push('\n');
                 }
@@ -188,10 +187,10 @@ mod tests {
         let translation = crate::geometry::Vector::new(0.0, 0.0); // No panning
         let scale = 1.0; // No zoom
 
-        println!("Viewport bounds: {:?}", viewport_bounds);
-        println!("Page size: {:?}", page_size);
-        println!("Translation: {:?}", translation);
-        println!("Scale: {}", scale);
+        println!("Viewport bounds: {viewport_bounds:?}");
+        println!("Page size: {page_size:?}");
+        println!("Translation: {translation:?}");
+        println!("Scale: {scale}");
 
         // Calculate PDF offset (same as in the fixed coordinate conversion)
         let pdf_offset = crate::geometry::Vector::new(
@@ -199,7 +198,7 @@ mod tests {
             -(viewport_bounds.height() - page_size.y * scale) / 2.0,
         );
 
-        println!("PDF offset: {:?}", pdf_offset);
+        println!("PDF offset: {pdf_offset:?}");
 
         for (screen_x, screen_y) in screen_positions {
             let screen_pos = crate::geometry::Vector::new(screen_x, screen_y);

@@ -11,6 +11,7 @@ pub mod worker;
 
 
 mod text_extraction;
+mod link_extraction;
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PdfMessage {
@@ -30,6 +31,7 @@ pub enum PdfMessage {
     MouseRightDown,
     MouseLeftUp(bool), // bool indicates if Ctrl is pressed
     MouseRightUp,
+    ToggleLinkHitboxes,
     #[strum(disabled)]
     #[serde(skip)]
     WorkerResponse(WorkerResponse),

@@ -39,7 +39,7 @@ pub fn rpc_server() -> impl Stream<Item = AppMessage> {
         let app = Router::new()
             .route("/", post(root_handler))
             .with_state(AppState { tx: output });
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
             .await
             .unwrap();
         axum::serve(listener, app).await.unwrap();

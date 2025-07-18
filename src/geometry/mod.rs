@@ -196,6 +196,7 @@ where
         self.x1 += offset;
     }
 
+    /// Scales the rectangle around it's center point
     pub fn scale(&mut self, s: T) {
         let x0 = self.x0;
         let x1 = self.x1;
@@ -205,6 +206,7 @@ where
             .scaled(T::one() / (T::one() + T::one()));
     }
 
+    /// Returns a new rectangle scaled around its center point
     pub fn scaled(&self, s: T) -> Self {
         let mut out = *self;
         out.scale(s);
