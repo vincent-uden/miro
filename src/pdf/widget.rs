@@ -200,8 +200,33 @@ impl PdfViewer {
                             {
                                 error!("Failed to send text extraction command: {}", e);
                             }
-                        } else if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
-                            error!("Failed to send link extraction command: {}", e);
+                        } else {
+                            if let Some(pos) = self
+                                .last_mouse_pos
+                                .map(|p| self.screen_to_document_coords(p))
+                            {
+                                if let Some(link) = self
+                                    .link_hitboxes
+                                    .iter()
+                                    .find(|link| link.bounds.contains(pos))
+                                {
+                                    debug!("{link:?}");
+                                    match link.link_type {
+                                        LinkType::InternalPage(page) => {
+                                            if self.set_page(page as i32).is_err() {
+                                                error!("Couldn't jump to page {page}");
+                                            }
+                                        }
+                                        _ => {
+                                            if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                                && let Err(e) = clipboard.set_text(&link.uri)
+                                            {
+                                                error!("Failed to copy link to clipboard: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     self.text_selection_rect = None;
@@ -238,7 +263,6 @@ impl PdfViewer {
                     if self.inner_state.bounds.size() != Vector::zero() {
                         self.force_invalidate_cache();
                     }
-                    // Extract links for the new page
                     if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
                         error!("Failed to send link extraction command: {}", e);
                     }
@@ -257,32 +281,6 @@ impl PdfViewer {
                 }
                 WorkerResponse::ExtractedLinks(links) => {
                     self.link_hitboxes = links;
-                    if let Some(pos) = self
-                        .last_mouse_pos
-                        .map(|p| self.screen_to_document_coords(p))
-                    {
-                        if let Some(link) = self
-                            .link_hitboxes
-                            .iter()
-                            .find(|link| link.bounds.contains(pos))
-                        {
-                            debug!("{link:?}");
-                            match link.link_type {
-                                LinkType::InternalPage(page) => {
-                                    if self.set_page(page as i32).is_err() {
-                                        error!("Couldn't jump to page {page}");
-                                    }
-                                }
-                                _ => {
-                                    if let Ok(mut clipboard) = arboard::Clipboard::new()
-                                        && let Err(e) = clipboard.set_text(&link.uri)
-                                    {
-                                        error!("Failed to copy link to clipboard: {}", e);
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             },
         }
