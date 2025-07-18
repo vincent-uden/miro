@@ -5,6 +5,7 @@ use crate::geometry::Rect;
 
 #[derive(Debug, Clone)]
 pub struct LinkInfo {
+    /// The link bounds in document space
     pub bounds: Rect<f32>,
     pub uri: String,
     pub link_type: LinkType,
@@ -34,6 +35,7 @@ impl<'a> LinkExtractor<'a> {
         let link_iter = self.page.links()?;
 
         for link in link_iter {
+            // TODO: This could use some vector math
             let bounds = Rect::from_pos_size(
                 crate::geometry::Vector::new(link.bounds.x0, link.bounds.y0),
                 crate::geometry::Vector::new(
@@ -128,4 +130,3 @@ mod tests {
         assert!(matches!(categorize_link("file://local"), LinkType::Other));
     }
 }
-

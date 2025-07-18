@@ -2,7 +2,7 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::geometry::{Rect, Vector};
 
@@ -18,6 +18,8 @@ use super::{
 
 const TILE_CACHE_GRID_SIZE: i32 = 5;
 
+const MIN_SELECTION: f32 = 5.0;
+
 #[derive(Debug)]
 pub struct PdfViewer {
     pub name: String,
@@ -27,6 +29,8 @@ pub struct PdfViewer {
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     inner_state: inner::State,
+    /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
+    /// corner of the screen, it must account for that offset.
     last_mouse_pos: Option<Vector<f32>>,
     panning: bool,
     command_tx: mpsc::UnboundedSender<WorkerCommand>,
@@ -184,12 +188,19 @@ impl PdfViewer {
                             Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
                         );
 
-                        // Send text extraction request to worker
-                        if let Err(e) = self
-                            .command_tx
-                            .send(WorkerCommand::ExtractText(selection_rect.into()))
+                        if selection_rect.width() > MIN_SELECTION
+                            && selection_rect.height() > MIN_SELECTION
                         {
-                            error!("Failed to send text extraction command: {}", e);
+                            if let Err(e) = self
+                                .command_tx
+                                .send(WorkerCommand::ExtractText(selection_rect.into()))
+                            {
+                                error!("Failed to send text extraction command: {}", e);
+                            }
+                        } else {
+                            if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
+                                error!("Failed to send link extraction command: {}", e);
+                            }
                         }
                     }
                     self.text_selection_rect = None;
@@ -245,10 +256,20 @@ impl PdfViewer {
                 }
                 WorkerResponse::ExtractedLinks(links) => {
                     self.link_hitboxes = links;
-                    info!(
-                        "Extracted {} links from current page",
-                        self.link_hitboxes.len()
-                    );
+                    if let Some(pos) = self
+                        .last_mouse_pos
+                        .map(|p| self.screen_to_document_coords(p))
+                    {
+                        for link in &self.link_hitboxes {
+                            if link.bounds.contains(pos) {
+                                if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                    && let Err(e) = clipboard.set_text(&link.uri)
+                                {
+                                    error!("Failed to copy link to clipboard: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
             },
         }
@@ -419,29 +440,14 @@ impl PdfViewer {
         Ok(())
     }
 
-    fn screen_to_document_coords(&self, screen_pos: Vector<f32>) -> Vector<f32> {
+    fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
         if let Some(page) = self.page_info {
-            // Calculate where the PDF page is positioned within the viewport
-            // The PDF is centered in the viewport
-            let scaled_page_size = Vector::new(
-                page.size.x * self.shown_scale,
-                page.size.y * self.shown_scale,
-            );
-
-            let viewport_size = self.inner_state.bounds.size();
-            let pdf_top_left = Vector::new(
-                (viewport_size.x - scaled_page_size.x) / 2.0,
-                (viewport_size.y - scaled_page_size.y) / 2.0,
-            );
-
-            // Convert screen position to viewport-relative position
-            let viewport_relative = screen_pos - self.inner_state.bounds.x0;
-
-            // Convert to PDF-relative position (relative to PDF's top-left corner)
-            let pdf_relative = viewport_relative - pdf_top_left;
-
-            // Convert to document coordinates by scaling and adding translation
-            pdf_relative.scaled(1.0 / self.shown_scale) + self.translation
+            screen_pos += self.inner_state.bounds.x0;
+            screen_pos -= self.inner_state.bounds.center();
+            screen_pos.scale(1.0 / self.shown_scale);
+            screen_pos += self.translation;
+            screen_pos += page.size.scaled(0.5);
+            screen_pos
         } else {
             // Fallback to old method if no page info
             let viewport_center = self.inner_state.bounds.center();
