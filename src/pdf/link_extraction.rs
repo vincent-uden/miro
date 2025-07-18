@@ -1,7 +1,7 @@
 use anyhow::Result;
 use mupdf::Page;
 
-use crate::geometry::Rect;
+use crate::geometry::{Rect, Vector};
 
 #[derive(Debug, Clone)]
 pub struct LinkInfo {
@@ -35,13 +35,9 @@ impl<'a> LinkExtractor<'a> {
         let link_iter = self.page.links()?;
 
         for link in link_iter {
-            // TODO: This could use some vector math
-            let bounds = Rect::from_pos_size(
-                crate::geometry::Vector::new(link.bounds.x0, link.bounds.y0),
-                crate::geometry::Vector::new(
-                    link.bounds.x1 - link.bounds.x0,
-                    link.bounds.y1 - link.bounds.y0,
-                ),
+            let bounds = Rect::from_points(
+                Vector::new(link.bounds.x0, link.bounds.y0),
+                Vector::new(link.bounds.x1, link.bounds.y1),
             );
 
             let link_type = categorize_link(&link.uri);
@@ -65,9 +61,10 @@ fn categorize_link(uri: &str) -> LinkType {
     } else if uri.starts_with("#page=") {
         // Parse page number from internal page reference
         if let Some(page_str) = uri.strip_prefix("#page=")
-            && let Ok(page_num) = page_str.parse::<u32>() {
-                return LinkType::InternalPage(page_num);
-            }
+            && let Ok(page_num) = page_str.parse::<u32>()
+        {
+            return LinkType::InternalPage(page_num);
+        }
         LinkType::Other
     } else if uri.chars().all(|c| c.is_ascii_digit()) {
         // Sometimes page references are just numbers
