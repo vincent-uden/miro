@@ -51,6 +51,7 @@ pub struct PdfViewer {
     selected_text: Option<String>,
     link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
+    is_over_link: bool,
 }
 
 impl Default for PdfViewer {
@@ -99,6 +100,7 @@ impl PdfViewer {
             selected_text: None,
             link_hitboxes: Vec::new(),
             show_link_hitboxes: false,
+            is_over_link: false,
         }
     }
 
@@ -156,9 +158,17 @@ impl PdfViewer {
                             Vector::new(rect.x0.x.max(vector.x), rect.x0.y.max(vector.y));
                         self.text_selection_rect = Some(Rect::from_points(top_left, bottom_right));
                     }
+                    
+                    // Check if mouse is over a link
+                    let doc_pos = self.screen_to_document_coords(vector);
+                    self.is_over_link = self.link_hitboxes
+                        .iter()
+                        .any(|link| link.bounds.contains(doc_pos));
+                    
                     self.last_mouse_pos = Some(vector);
                 } else {
                     self.last_mouse_pos = None;
+                    self.is_over_link = false;
                 }
             }
             PdfMessage::MouseLeftDown(ctrl_pressed) => {
@@ -299,6 +309,7 @@ impl PdfViewer {
                 None
             })
             .page_info(self.page_info)
+            .is_over_link(self.is_over_link)
             .into()
     }
 

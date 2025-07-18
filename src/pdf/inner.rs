@@ -40,6 +40,7 @@ pub struct PageViewer<'a> {
     text_selection_rect: Option<Rect<f32>>,
     link_hitboxes: Option<&'a Vec<LinkInfo>>,
     page_info: Option<PageInfo>,
+    is_over_link: bool,
 }
 
 impl<'a> PageViewer<'a> {
@@ -57,6 +58,7 @@ impl<'a> PageViewer<'a> {
             text_selection_rect: None,
             link_hitboxes: None,
             page_info: None,
+            is_over_link: false,
         }
     }
     /// Sets the width of the [`Image`] boundaries.
@@ -113,6 +115,11 @@ impl<'a> PageViewer<'a> {
 
     pub fn page_info(mut self, page_info: Option<PageInfo>) -> Self {
         self.page_info = page_info;
+        self
+    }
+
+    pub fn is_over_link(mut self, is_over_link: bool) -> Self {
+        self.is_over_link = is_over_link;
         self
     }
 }
@@ -284,6 +291,21 @@ where
             shell.publish(PdfMessage::UpdateBounds(bounds.into()));
         }
         iced::event::Status::Ignored
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &Tree,
+        layout: Layout<'_>,
+        cursor: iced::mouse::Cursor,
+        _viewport: &iced::Rectangle,
+        _renderer: &Renderer,
+    ) -> iced::mouse::Interaction {
+        if cursor.is_over(layout.bounds()) && self.is_over_link {
+            iced::mouse::Interaction::Pointer
+        } else {
+            iced::mouse::Interaction::default()
+        }
     }
 }
 
