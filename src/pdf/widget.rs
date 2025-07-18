@@ -2,7 +2,7 @@ use anyhow::Result;
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::{debug, error, info};
+use tracing::error;
 
 use crate::geometry::{Rect, Vector};
 
@@ -197,10 +197,8 @@ impl PdfViewer {
                             {
                                 error!("Failed to send text extraction command: {}", e);
                             }
-                        } else {
-                            if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
-                                error!("Failed to send link extraction command: {}", e);
-                            }
+                        } else if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
+                            error!("Failed to send link extraction command: {}", e);
                         }
                     }
                     self.text_selection_rect = None;
@@ -261,12 +259,11 @@ impl PdfViewer {
                         .map(|p| self.screen_to_document_coords(p))
                     {
                         for link in &self.link_hitboxes {
-                            if link.bounds.contains(pos) {
-                                if let Ok(mut clipboard) = arboard::Clipboard::new()
-                                    && let Err(e) = clipboard.set_text(&link.uri)
-                                {
-                                    error!("Failed to copy link to clipboard: {}", e);
-                                }
+                            if link.bounds.contains(pos)
+                                && let Ok(mut clipboard) = arboard::Clipboard::new()
+                                && let Err(e) = clipboard.set_text(&link.uri)
+                            {
+                                error!("Failed to copy link to clipboard: {}", e);
                             }
                         }
                     }

@@ -205,7 +205,7 @@ impl FromStr for Config {
                 Ok(Token::ArgDelim) => {
                     expecting_statement = false;
                 }
-                Err(e) => panic!("{:?}", e),
+                Err(e) => panic!("{e:?}"),
             }
         }
         Ok(out)

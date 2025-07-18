@@ -64,11 +64,10 @@ fn categorize_link(uri: &str) -> LinkType {
         LinkType::Email
     } else if uri.starts_with("#page=") {
         // Parse page number from internal page reference
-        if let Some(page_str) = uri.strip_prefix("#page=") {
-            if let Ok(page_num) = page_str.parse::<u32>() {
+        if let Some(page_str) = uri.strip_prefix("#page=")
+            && let Ok(page_num) = page_str.parse::<u32>() {
                 return LinkType::InternalPage(page_num);
             }
-        }
         LinkType::Other
     } else if uri.chars().all(|c| c.is_ascii_digit()) {
         // Sometimes page references are just numbers

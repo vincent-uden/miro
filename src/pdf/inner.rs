@@ -10,7 +10,6 @@ use iced::{
 use mupdf::Pixmap;
 
 use crate::{
-    DARK_THEME, LIGHT_THEME,
     geometry::{Rect, Vector},
 };
 

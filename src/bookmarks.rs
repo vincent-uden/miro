@@ -102,8 +102,7 @@ impl BookmarkStore {
                 self.pending_name = s;
                 iced::Task::none()
             }
-            BookmarkMessage::GoTo { path: _, page: _ } => panic!("Should be handled by app"),
-            BookmarkMessage::RequestNewBookmark { name: _ } => panic!("Should be handled by app"),
+            BookmarkMessage::GoTo { path: _, page: _ } | BookmarkMessage::RequestNewBookmark { name: _ } => panic!("Should be handled by app"),
             BookmarkMessage::None => iced::Task::none(),
         }
     }

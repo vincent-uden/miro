@@ -274,12 +274,12 @@ impl App {
                     ),
                     _ => (self.pdf_idx, iced::Task::none()),
                 };
-                if !self.pdfs.is_empty() {
+                if self.pdfs.is_empty() {
+                    iced::Task::none()
+                } else {
                     self.pdfs[self.pdf_idx]
                         .update(PdfMessage::WorkerResponse(worker_response))
                         .map(AppMessage::PdfMessage)
-                } else {
-                    iced::Task::none()
                 }
                 .chain(on_response)
             }
@@ -419,10 +419,10 @@ impl App {
             ..Default::default()
         });
 
-        let _image: Element<'_, AppMessage> = if !self.pdfs.is_empty() {
-            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-        } else {
+        let _image: Element<'_, AppMessage> = if self.pdfs.is_empty() {
             vertical_space().into()
+        } else {
+            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
         };
 
         let mut command_bar = widget::Row::new();
@@ -446,16 +446,14 @@ impl App {
                         self.bookmark_store.view().map(AppMessage::BookmarkMessage)
                     }
                     PaneType::Pdf => {
-                        if !self.pdfs.is_empty() {
-                            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-                        } else {
+                        if self.pdfs.is_empty() {
                             vertical_space().into()
+                        } else {
+                            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
                         }
                     }
                 }))
-                .style(|_theme: &Theme| container::Style {
-                    ..Default::default()
-                })
+                .style(|_theme: &Theme| Default::default())
             })
             .on_resize(10, AppMessage::PaneResize);
 
@@ -468,10 +466,10 @@ impl App {
     }
 
     fn view_pdf(&self) -> Element<'_, AppMessage> {
-        if !self.pdfs.is_empty() {
-            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-        } else {
+        if self.pdfs.is_empty() {
             vertical_space().into()
+        } else {
+            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
         }
     }
 
@@ -499,32 +497,21 @@ impl App {
                 iced::mouse::Event::ButtonPressed(button) => match button {
                     iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown),
                     iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
-                    iced::mouse::Button::Middle => None,
+                    iced::mouse::Button::Middle | iced::mouse::Button::Other(_) => None,
                     iced::mouse::Button::Back => {
                         Some(AppMessage::PdfMessage(PdfMessage::PreviousPage))
                     }
                     iced::mouse::Button::Forward => {
                         Some(AppMessage::PdfMessage(PdfMessage::NextPage))
                     }
-                    iced::mouse::Button::Other(_) => None,
                 },
                 iced::mouse::Event::ButtonReleased(button) => match button {
                     iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp),
                     iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
-                    iced::mouse::Button::Middle => None,
                     _ => None,
                 },
                 iced::mouse::Event::WheelScrolled { delta } => match delta {
-                    iced::mouse::ScrollDelta::Lines { x: _, y } => {
-                        if y > 0.0 {
-                            Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
-                        } else if y < 0.0 {
-                            Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
-                        } else {
-                            None
-                        }
-                    }
-                    iced::mouse::ScrollDelta::Pixels { x: _, y } => {
+                    iced::mouse::ScrollDelta::Lines { x: _, y } | iced::mouse::ScrollDelta::Pixels { x: _, y } => {
                         if y > 0.0 {
                             Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
                         } else if y < 0.0 {
@@ -546,7 +533,7 @@ impl App {
         ];
 
         // Add worker response subscriptions for each PDF
-        for pdf in self.pdfs.iter() {
+        for pdf in &self.pdfs {
             let rx = pdf.result_rx.clone();
             subs.push(
                 Subscription::run_with_id(
@@ -568,7 +555,7 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        self.bookmark_store.save().unwrap()
+        self.bookmark_store.save().unwrap();
     }
 }
 
@@ -604,25 +591,24 @@ fn base_button<'a>(
 fn labeled_button(
     label: &str,
     msg: AppMessage,
-) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
+) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
     base_button(text(label).align_y(alignment::Vertical::Center), msg)
 }
 
 #[allow(dead_code)]
-fn debug_button(label: &str) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
+fn debug_button(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
     labeled_button(label, AppMessage::Debug(label.into())).width(Length::Fill)
 }
 
-fn debug_button_s(label: &str) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
+fn debug_button_s(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
     labeled_button(label, AppMessage::Debug(label.into()))
         .width(Length::Shrink)
         .style(move |theme, status| {
             let palette = theme.extended_palette();
             let pair = match status {
                 button::Status::Active => palette.secondary.base,
-                button::Status::Hovered => palette.secondary.weak,
+                button::Status::Hovered | button::Status::Disabled => palette.secondary.weak,
                 button::Status::Pressed => palette.secondary.strong,
-                button::Status::Disabled => palette.secondary.weak,
             };
             button::Style {
                 text_color: pair.text,
@@ -633,7 +619,7 @@ fn debug_button_s(label: &str) -> button::Button<AppMessage, iced::Theme, iced::
 }
 
 fn format_key_sequence(seq: &KeySeq) -> String {
-    let parts = seq.as_slice().iter().map(|inp| format!("{} ", inp));
+    let parts = seq.as_slice().iter().map(|inp| format!("{inp} "));
     let mut out = String::from("(");
     for p in parts {
         out.push_str(&p);
@@ -647,7 +633,7 @@ fn menu_button(
     label: &str,
     msg: AppMessage,
     binding: Option<Keybind<BindableMessage>>,
-) -> button::Button<AppMessage, iced::Theme, iced::Renderer> {
+) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
     let txt = format!(
         " {}",
         binding.map_or(String::new(), |b| format_key_sequence(&b.seq))
@@ -723,15 +709,11 @@ pub fn file_tab_style(theme: &Theme, status: button::Status) -> button::Style {
     let base = styled(palette.secondary.base);
 
     match status {
-        button::Status::Active | button::Status::Pressed => button::Style {
+        button::Status::Active | button::Status::Pressed | button::Status::Hovered => button::Style {
             background: None,
             ..base
         },
-        button::Status::Hovered => button::Style {
-            background: None,
-            ..base
-        },
-        button::Status::Disabled => disabled(base),
+        button::Status::Disabled => disabled(&base),
     }
 }
 
@@ -744,12 +726,12 @@ fn styled(pair: palette::Pair) -> button::Style {
     }
 }
 
-fn disabled(style: button::Style) -> button::Style {
+fn disabled(style: &button::Style) -> button::Style {
     button::Style {
         background: style
             .background
             .map(|background| background.scale_alpha(0.5)),
         text_color: style.text_color.scale_alpha(0.5),
-        ..style
+        ..*style
     }
 }
