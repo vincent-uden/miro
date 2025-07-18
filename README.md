@@ -16,6 +16,7 @@ A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybin
 - Internal links (such as a table of contents)
 - External links (email, webisites, etc. copies on click)
 - Bookmarks
+- Optional RPC server to control the viewer from another program
 
 ## Configuration
 An example configuration file is shown at `/assets/default.conf` which contains all the default bindings for the program. Refer to this file both for configuration syntax and to see the default keybindings.
