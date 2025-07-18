@@ -12,6 +12,10 @@ A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybin
 - Multiple pdfs in tabs
 - Cli arg for opening pdfs from the terminal
 - Automatic hot-reloading of any viewed pdf (especially useful when writing anything that compiles into pdfs like Latex/Typst/etc.)
+- Text copying in documents
+- Internal links (such as a table of contents)
+- External links (email, webisites, etc. copies on click)
+- Bookmarks
 
 ## Configuration
 An example configuration file is shown at `/assets/default.conf` which contains all the default bindings for the program. Refer to this file both for configuration syntax and to see the default keybindings.
