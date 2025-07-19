@@ -88,6 +88,7 @@ pub enum AppMessage {
     PdfMessage(PdfMessage),
     OpenTab(usize),
     CloseTab(usize),
+    CloseActiveTab,
     PreviousTab,
     NextTab,
     #[strum(disabled)]
@@ -274,8 +275,8 @@ impl App {
             AppMessage::MouseRightDown => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseRight) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, true));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
                 }
                 iced::Task::none()
@@ -283,24 +284,24 @@ impl App {
             AppMessage::MouseMiddleDown => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseMiddle) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, true));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
                 }
                 iced::Task::none()
             }
             AppMessage::MouseLeftUp => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx]
-                        .update(PdfMessage::MouseLeftUp(self.shift_pressed));
+                    let _ =
+                        self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp(self.shift_pressed));
                 }
                 iced::Task::none()
             }
             AppMessage::MouseRightUp => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseRight) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, false));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
                 }
                 iced::Task::none()
@@ -308,8 +309,8 @@ impl App {
             AppMessage::MouseMiddleUp => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseMiddle) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, false));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
                 }
                 iced::Task::none()
@@ -317,8 +318,8 @@ impl App {
             AppMessage::MouseBackDown => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseBack) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, true));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
                 }
                 iced::Task::none()
@@ -326,8 +327,8 @@ impl App {
             AppMessage::MouseBackUp => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseBack) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, false));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
                 }
                 iced::Task::none()
@@ -335,8 +336,8 @@ impl App {
             AppMessage::MouseForwardDown => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseForward) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, true));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
                 }
                 iced::Task::none()
@@ -344,8 +345,8 @@ impl App {
             AppMessage::MouseForwardUp => {
                 if !self.pdfs.is_empty() {
                     if let Some(action) = self.get_mouse_action(MouseButton::MouseForward) {
-                        let _ = self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::MouseAction(action, false));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
                 }
                 iced::Task::none()
@@ -450,6 +451,7 @@ impl App {
                     iced::Task::none()
                 }
             }
+            AppMessage::CloseActiveTab => iced::Task::done(AppMessage::CloseTab(self.pdf_idx)),
         }
     }
 
@@ -464,7 +466,7 @@ impl App {
                 menu_tpl_1(menu_items!((menu_button(
                     "Open",
                     AppMessage::OpenNewFileFinder,
-                    None,
+                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
                 ))(menu_button(
                     "Close",
                     AppMessage::CloseTab(self.pdf_idx),
@@ -480,7 +482,7 @@ impl App {
                             "Dark Interface"
                         },
                         AppMessage::ToggleDarkModeUi,
-                        None
+                        cfg.get_binding_for_msg(BindableMessage::ToggleDarkModeUi)
                     ))
                     (menu_button(
                         if self.invert_pdf {

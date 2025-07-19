@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use std::{fs, path::PathBuf, str::FromStr};
 
-use keybinds::{KeyInput, Keybind, Keybinds};
+use keybinds::{KeyInput, KeySeq, Keybind, Keybinds};
 use logos::Logos;
 use strum::EnumString;
 
@@ -100,9 +100,11 @@ pub enum BindableMessage {
     NextTab,
     PreviousTab,
     ToggleDarkModePdf,
-    // TODO: ToggleDarkModeUi
+    ToggleDarkModeUi,
     ToggleSidebar,
     ToggleLinkHitboxes,
+    OpenFileFinder,
+    CloseTab,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -127,10 +129,13 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::NextTab => AppMessage::NextTab,
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
             BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
+            BindableMessage::ToggleDarkModeUi => AppMessage::ToggleDarkModeUi,
             BindableMessage::ToggleSidebar => AppMessage::ToggleSidebar,
             BindableMessage::ToggleLinkHitboxes => {
                 AppMessage::PdfMessage(PdfMessage::ToggleLinkHitboxes)
             }
+            BindableMessage::OpenFileFinder => AppMessage::OpenNewFileFinder,
+            BindableMessage::CloseTab => AppMessage::CloseActiveTab,
         }
     }
 }
@@ -219,6 +224,10 @@ impl Default for Config {
                     BindableMessage::ToggleDarkModePdf,
                 ),
                 Keybind::new(
+                    KeyInput::from_str("Ctrl+i").unwrap(),
+                    BindableMessage::ToggleDarkModeUi,
+                ),
+                Keybind::new(
                     KeyInput::from_str("Ctrl+b").unwrap(),
                     BindableMessage::ToggleSidebar,
                 ),
@@ -226,6 +235,11 @@ impl Default for Config {
                     KeyInput::from_str("Ctrl+l").unwrap(),
                     BindableMessage::ToggleLinkHitboxes,
                 ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+o").unwrap(),
+                    BindableMessage::OpenFileFinder,
+                ),
+                Keybind::new(KeySeq::from_str("Z Z").unwrap(), BindableMessage::CloseTab),
             ]),
             mouse: vec![
                 (
@@ -311,7 +325,7 @@ impl FromStr for Config {
         // TODO: Count the line number to give error messages for each invalid line
         for token in lexer {
             match token {
-                Ok(Token::String(s)) => {
+                Ok(Token::String(s)) | Ok(Token::QuotedString(s)) => {
                     if expecting_statement {
                         cmd_name = Some(s);
                     } else {
@@ -377,7 +391,10 @@ enum Token {
     #[token("\n")]
     StatementDelim,
 
-    #[regex("[^ \n]+", |lex| lex.slice().to_owned())]
+    #[regex(r#""[^"]*""#, |lex| lex.slice()[1..lex.slice().len()-1].to_owned())]
+    QuotedString(String),
+
+    #[regex(r#"[^ \n"]+"#, |lex| lex.slice().to_owned())]
     String(String),
 }
 
