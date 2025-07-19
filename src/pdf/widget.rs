@@ -53,7 +53,7 @@ pub struct PdfViewer {
     shown_tile_cache: HashMap<(i32, i32), CachedTile>,
     current_center_tile: Vector<i32>,
     generation: Arc<std::sync::Mutex<usize>>,
-    text_selection_rect: Option<Rect<f32>>,
+    text_selection_start: Option<Vector<f32>>,
     selected_text: Option<String>,
     link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
@@ -104,7 +104,7 @@ impl PdfViewer {
             shown_tile_cache: HashMap::new(),
             current_center_tile: Vector::zero(),
             generation: Arc::new(std::sync::Mutex::new(0)),
-            text_selection_rect: None,
+            text_selection_start: None,
             selected_text: None,
             link_hitboxes: Vec::new(),
             show_link_hitboxes: false,
@@ -159,16 +159,7 @@ impl PdfViewer {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
                         self.invalidate_cache();
-                    } else if let Some(rect) = self.text_selection_rect {
-                        // Update text selection - extend rectangle to current mouse position
-                        let top_left =
-                            Vector::new(rect.x0.x.min(vector.x), rect.x0.y.min(vector.y));
-                        let bottom_right =
-                            Vector::new(rect.x0.x.max(vector.x), rect.x0.y.max(vector.y));
-                        self.text_selection_rect = Some(Rect::from_points(top_left, bottom_right));
                     }
-
-                    // Check if mouse is over a link
                     let doc_pos = self.screen_to_document_coords(vector);
                     self.is_over_link = self
                         .link_hitboxes
@@ -186,9 +177,9 @@ impl PdfViewer {
                 self.mouse_down_pos = self.last_mouse_pos;
 
                 if shift_pressed {
-                    // Start text selection with a zero-size rectangle at mouse position
+                    // Start text selection at mouse position
                     if let Some(pos) = self.last_mouse_pos {
-                        self.text_selection_rect = Some(Rect::from_points(pos, pos));
+                        self.text_selection_start = Some(pos);
                     }
                 } else {
                     // Don't start panning if we're close enough to the edge that a pane resizing might happen
@@ -205,9 +196,11 @@ impl PdfViewer {
 
             PdfMessage::MouseLeftUp(shift_pressed) => {
                 if shift_pressed {
-                    if let Some(screen_rect) = self.text_selection_rect {
-                        let doc_start = self.screen_to_document_coords(screen_rect.x0);
-                        let doc_end = self.screen_to_document_coords(screen_rect.x1);
+                    if let (Some(start_pos), Some(end_pos)) =
+                        (self.text_selection_start, self.last_mouse_pos)
+                    {
+                        let doc_start = self.screen_to_document_coords(start_pos);
+                        let doc_end = self.screen_to_document_coords(end_pos);
 
                         let selection_rect = Rect::from_points(
                             Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
@@ -225,7 +218,7 @@ impl PdfViewer {
                             }
                         }
                     }
-                    self.text_selection_rect = None;
+                    self.text_selection_start = None;
                 } else {
                     // Handle link clicks only if mouse didn't move significantly (click vs pan)
                     let is_click = if let (Some(down_pos), Some(up_pos)) =
@@ -285,13 +278,15 @@ impl PdfViewer {
                 }
                 (MouseAction::Selection, true) => {
                     if let Some(pos) = self.last_mouse_pos {
-                        self.text_selection_rect = Some(Rect::from_points(pos, pos));
+                        self.text_selection_start = Some(pos);
                     }
                 }
                 (MouseAction::Selection, false) => {
-                    if let Some(screen_rect) = self.text_selection_rect {
-                        let doc_start = self.screen_to_document_coords(screen_rect.x0);
-                        let doc_end = self.screen_to_document_coords(screen_rect.x1);
+                    if let (Some(start_pos), Some(end_pos)) =
+                        (self.text_selection_start, self.last_mouse_pos)
+                    {
+                        let doc_start = self.screen_to_document_coords(start_pos);
+                        let doc_end = self.screen_to_document_coords(end_pos);
 
                         let selection_rect = Rect::from_points(
                             Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
@@ -307,10 +302,9 @@ impl PdfViewer {
                             {
                                 error!("Failed to send text extraction command: {}", e);
                             }
-                        } else {
                         }
                     }
-                    self.text_selection_rect = None;
+                    self.text_selection_start = None;
                 }
                 (MouseAction::NextPage, true) => {
                     let _ = self.set_page(self.cur_page_idx + 1);
@@ -386,7 +380,7 @@ impl PdfViewer {
             .translation(self.translation)
             .scale(self.shown_scale)
             .invert_colors(self.invert_colors)
-            .text_selection(self.text_selection_rect)
+            .text_selection(self.current_selection_rect())
             .link_hitboxes(if self.show_link_hitboxes {
                 Some(&self.link_hitboxes)
             } else {
@@ -569,6 +563,24 @@ impl PdfViewer {
 
     pub fn get_outline(&self) -> Option<&Vec<OutlineItem>> {
         self.document_outline.as_ref()
+    }
+
+    fn current_selection_rect(&self) -> Option<Rect<f32>> {
+        if let (Some(start_pos), Some(current_pos)) =
+            (self.text_selection_start, self.last_mouse_pos)
+        {
+            let top_left = Vector::new(
+                start_pos.x.min(current_pos.x),
+                start_pos.y.min(current_pos.y),
+            );
+            let bottom_right = Vector::new(
+                start_pos.x.max(current_pos.x),
+                start_pos.y.max(current_pos.y),
+            );
+            Some(Rect::from_points(top_left, bottom_right))
+        } else {
+            None
+        }
     }
 }
 
