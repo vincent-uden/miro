@@ -20,7 +20,7 @@ A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybin
 
 ## Configuration
 
-The configuration file is located at `~/.config/miro-pdf/miro.conf` (or .`.config/miro-pdf/miro.conf` in the home directory of your operating system). An example configuration file is located at `/assets/default.conf` which contains all the default bindings for the program.
+The configuration file is located at `~/.config/miro-pdf/miro.conf` (or `.config/miro-pdf/miro.conf` in the home directory of your operating system). An example configuration file is located at `/assets/default.conf` which contains all the default bindings for the program.
 
 ### Configuration File Format
 
