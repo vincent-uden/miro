@@ -60,7 +60,7 @@ struct Pane {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default)]
-enum SidebarTab {
+pub enum SidebarTab {
     #[default]
     Outline,
     Bookmark,
@@ -136,7 +136,7 @@ impl App {
             pdf_idx: 0,
             file_watcher: None,
             dark_mode: true,
-            invert_pdf: true,
+            invert_pdf: false,
             bookmark_store,
             pane_state: ps,
             sidebar_showing: false,
@@ -525,11 +525,7 @@ impl App {
 
         let contents: Element<'_, AppMessage> = match self.sidebar_tab {
             SidebarTab::Outline => self.view_outline(),
-            SidebarTab::Bookmark => self
-                .bookmark_store
-                .view()
-                .map(AppMessage::BookmarkMessage)
-                .into(),
+            SidebarTab::Bookmark => self.bookmark_store.view().map(AppMessage::BookmarkMessage),
         };
 
         widget::column![
@@ -563,7 +559,7 @@ impl App {
                     }
                 }));
             } else {
-                let outline_content = self.view_outline_items(outline, 0);
+                let outline_content = view_outline_items(outline, 0);
                 col = col.push(widget::scrollable(outline_content));
             }
         } else {
@@ -576,63 +572,6 @@ impl App {
         }
 
         container(col).height(Length::Fill).into()
-    }
-
-    fn view_outline_items<'a>(&self, items: &'a [OutlineItem], level: u32) -> widget::Column<'a, AppMessage> {
-        let mut col = widget::column![];
-        
-        for item in items {
-            let indent = level * 16; // 16 pixels per level
-            
-            let item_button = if let Some(page) = item.page {
-                button(
-                    container(
-                        text(&item.title)
-                            .style(|theme: &Theme| {
-                                let palette = theme.extended_palette();
-                                text::Style {
-                                    color: Some(palette.primary.base.color),
-                                }
-                            })
-                    )
-                    .padding(Padding::default().left(indent as f32))
-                )
-                .style(|_: &Theme, _| widget::button::Style {
-                    background: None,
-                    ..Default::default()
-                })
-                .width(Length::Fill)
-                .on_press(AppMessage::OutlineGoToPage(page))
-            } else {
-                button(
-                    container(
-                        text(&item.title)
-                            .style(|theme: &Theme| {
-                                let palette = theme.extended_palette();
-                                text::Style {
-                                    color: Some(palette.background.weak.color),
-                                }
-                            })
-                    )
-                    .padding(Padding::default().left(indent as f32))
-                )
-                .style(|_: &Theme, _| widget::button::Style {
-                    background: None,
-                    ..Default::default()
-                })
-                .width(Length::Fill)
-            };
-            
-            col = col.push(item_button);
-            
-            // Recursively add children
-            if !item.children.is_empty() {
-                let children_col = self.view_outline_items(&item.children, level + 1);
-                col = col.push(children_col);
-            }
-        }
-        
-        col
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
@@ -721,6 +660,57 @@ impl Drop for App {
     fn drop(&mut self) {
         self.bookmark_store.save().unwrap();
     }
+}
+
+fn view_outline_items<'a>(items: &'a [OutlineItem], level: u32) -> widget::Column<'a, AppMessage> {
+    let mut col = widget::column![];
+
+    for item in items {
+        let indent = level * 16; // 16 pixels per level
+
+        let item_button = if let Some(page) = item.page {
+            button(
+                container(text(&item.title).style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    text::Style {
+                        color: Some(palette.primary.base.color),
+                    }
+                }))
+                .padding(Padding::default().left(indent as f32)),
+            )
+            .style(|_: &Theme, _| widget::button::Style {
+                background: None,
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .on_press(AppMessage::OutlineGoToPage(page))
+        } else {
+            button(
+                container(text(&item.title).style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    text::Style {
+                        color: Some(palette.background.weak.color),
+                    }
+                }))
+                .padding(Padding::default().left(indent as f32)),
+            )
+            .style(|_: &Theme, _| widget::button::Style {
+                background: None,
+                ..Default::default()
+            })
+            .width(Length::Fill)
+        };
+
+        col = col.push(item_button);
+
+        // Recursively add children
+        if !item.children.is_empty() {
+            let children_col = view_outline_items(&item.children, level + 1);
+            col = col.push(children_col);
+        }
+    }
+
+    col
 }
 
 fn worker_responder_single(
@@ -826,24 +816,6 @@ fn menu_button(
         button::Style {
             text_color: pair.text,
             background: Some(Background::Color(pair.color)),
-            ..Default::default()
-        }
-    })
-}
-
-fn subtle_button<'a>(
-    content: impl Into<Element<'a, AppMessage>>,
-) -> button::Button<'a, AppMessage, iced::Theme, iced::Renderer> {
-    widget::button(content).style(|theme: &Theme, status| {
-        let palette = theme.extended_palette();
-        button::Style {
-            background: None,
-            text_color: match status {
-                button::Status::Active => palette.background.base.text,
-                button::Status::Hovered => palette.primary.weak.color,
-                button::Status::Pressed => palette.primary.strong.color,
-                button::Status::Disabled => palette.background.strong.color,
-            },
             ..Default::default()
         }
     })

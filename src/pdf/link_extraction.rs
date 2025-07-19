@@ -57,7 +57,7 @@ fn categorize_link(link: &Link) -> LinkType {
     } else if link.uri.starts_with("mailto:") {
         LinkType::Email
     } else if link.uri.starts_with("#page=") || link.uri.starts_with("#nameddest=") {
-        return LinkType::InternalPage(link.page);
+        LinkType::InternalPage(link.page)
     } else if link.uri.chars().all(|c| c.is_ascii_digit()) {
         if let Ok(page_num) = link.uri.parse::<u32>() {
             LinkType::InternalPage(page_num)
@@ -117,16 +117,10 @@ mod tests {
         ));
 
         let http_link = create_mock_link("http://example.com", 0);
-        assert!(matches!(
-            categorize_link(&http_link),
-            LinkType::ExternalUrl
-        ));
+        assert!(matches!(categorize_link(&http_link), LinkType::ExternalUrl));
 
         let email_link = create_mock_link("mailto:test@example.com", 0);
-        assert!(matches!(
-            categorize_link(&email_link),
-            LinkType::Email
-        ));
+        assert!(matches!(categorize_link(&email_link), LinkType::Email));
 
         let page_link = create_mock_link("#page=5", 5);
         assert!(matches!(
@@ -135,7 +129,10 @@ mod tests {
         ));
 
         let numeric_link = create_mock_link("42", 42);
-        assert!(matches!(categorize_link(&numeric_link), LinkType::InternalPage(42)));
+        assert!(matches!(
+            categorize_link(&numeric_link),
+            LinkType::InternalPage(42)
+        ));
 
         let other_link = create_mock_link("file://local", 0);
         assert!(matches!(categorize_link(&other_link), LinkType::Other));

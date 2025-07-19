@@ -118,7 +118,7 @@ impl<'a> PageViewer<'a> {
         self
     }
 
-    pub fn is_over_link(mut self, is_over_link: bool) -> Self {
+    pub fn over_link(mut self, is_over_link: bool) -> Self {
         self.is_over_link = is_over_link;
         self
     }

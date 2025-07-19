@@ -161,13 +161,14 @@ impl PdfViewer {
                             Vector::new(rect.x0.x.max(vector.x), rect.x0.y.max(vector.y));
                         self.text_selection_rect = Some(Rect::from_points(top_left, bottom_right));
                     }
-                    
+
                     // Check if mouse is over a link
                     let doc_pos = self.screen_to_document_coords(vector);
-                    self.is_over_link = self.link_hitboxes
+                    self.is_over_link = self
+                        .link_hitboxes
                         .iter()
                         .any(|link| link.bounds.contains(doc_pos));
-                    
+
                     self.last_mouse_pos = Some(vector);
                 } else {
                     self.last_mouse_pos = None;
@@ -213,30 +214,26 @@ impl PdfViewer {
                             {
                                 error!("Failed to send text extraction command: {}", e);
                             }
-                        } else {
-                            if let Some(pos) = self
-                                .last_mouse_pos
-                                .map(|p| self.screen_to_document_coords(p))
-                            {
-                                if let Some(link) = self
-                                    .link_hitboxes
-                                    .iter()
-                                    .find(|link| link.bounds.contains(pos))
-                                {
-                                    debug!("{link:?}");
-                                    match link.link_type {
-                                        LinkType::InternalPage(page) => {
-                                            if self.set_page(page as i32).is_err() {
-                                                error!("Couldn't jump to page {page}");
-                                            }
-                                        }
-                                        _ => {
-                                            if let Ok(mut clipboard) = arboard::Clipboard::new()
-                                                && let Err(e) = clipboard.set_text(&link.uri)
-                                            {
-                                                error!("Failed to copy link to clipboard: {}", e);
-                                            }
-                                        }
+                        } else if let Some(pos) = self
+                            .last_mouse_pos
+                            .map(|p| self.screen_to_document_coords(p))
+                            && let Some(link) = self
+                                .link_hitboxes
+                                .iter()
+                                .find(|link| link.bounds.contains(pos))
+                        {
+                            debug!("{link:?}");
+                            match link.link_type {
+                                LinkType::InternalPage(page) => {
+                                    if self.set_page(page as i32).is_err() {
+                                        error!("Couldn't jump to page {page}");
+                                    }
+                                }
+                                _ => {
+                                    if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                        && let Err(e) = clipboard.set_text(&link.uri)
+                                    {
+                                        error!("Failed to copy link to clipboard: {}", e);
                                     }
                                 }
                             }
@@ -318,7 +315,7 @@ impl PdfViewer {
                 None
             })
             .page_info(self.page_info)
-            .is_over_link(self.is_over_link)
+            .over_link(self.is_over_link)
             .into()
     }
 
@@ -434,24 +431,29 @@ impl PdfViewer {
 
     fn tile_bounds(&self, coord: Vector<i32>) -> Option<mupdf::IRect> {
         if let Some(page) = self.page_info {
-            let mut out_box = self.inner_state.bounds;
-            out_box.translate(Vector::new(
+            let centered_offset = Vector::new(
                 -(self.inner_state.bounds.width() - page.size.x * self.pending_scale) / 2.0,
                 -(self.inner_state.bounds.height() - page.size.y * self.pending_scale) / 2.0,
-            ));
+            );
+
+            let mut out_box = self.inner_state.bounds;
+            out_box.translate(centered_offset);
             out_box.scale(0.6);
-            for _ in 0..coord.x.abs() {
-                out_box.translate(Vector {
-                    x: out_box.width() * (coord.x.signum() as f32),
-                    y: 0.0,
-                });
-            }
-            for _ in 0..coord.y.abs() {
-                out_box.translate(Vector {
-                    x: 0.0,
-                    y: out_box.height() * (coord.y.signum() as f32),
-                });
-            }
+
+            let tile_width = out_box.width();
+            let tile_height = out_box.height();
+            let tile_offset = Vector {
+                x: tile_width * coord.x as f32,
+                y: tile_height * coord.y as f32,
+            };
+            out_box.translate(tile_offset);
+
+            // Snap to pixel boundaries to ensure perfect tile alignment
+            out_box.x0.x = out_box.x0.x.floor();
+            out_box.x0.y = out_box.x0.y.floor();
+            out_box.x1.x = out_box.x0.x + tile_width.ceil();
+            out_box.x1.y = out_box.x0.y + tile_height.ceil();
+
             Some(out_box.into())
         } else {
             None
