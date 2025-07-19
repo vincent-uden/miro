@@ -1,6 +1,5 @@
 use anyhow::Result;
 use mupdf::{Link, Page};
-use tracing::debug;
 
 use crate::geometry::{Rect, Vector};
 
@@ -73,7 +72,20 @@ fn categorize_link(link: &Link) -> LinkType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mupdf::Document;
+    use mupdf::{Document, Link, Rect as MupdfRect};
+
+    fn create_mock_link(uri: &str, page: u32) -> Link {
+        Link {
+            bounds: MupdfRect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 20.0,
+            },
+            uri: uri.to_string(),
+            page,
+        }
+    }
 
     #[test]
     fn test_links_pdf_extraction() -> Result<()> {
@@ -98,23 +110,34 @@ mod tests {
 
     #[test]
     fn test_link_categorization() {
+        let external_link = create_mock_link("https://example.com", 0);
         assert!(matches!(
-            categorize_link("https://example.com"),
+            categorize_link(&external_link),
             LinkType::ExternalUrl
         ));
+
+        let http_link = create_mock_link("http://example.com", 0);
         assert!(matches!(
-            categorize_link("http://example.com"),
+            categorize_link(&http_link),
             LinkType::ExternalUrl
         ));
+
+        let email_link = create_mock_link("mailto:test@example.com", 0);
         assert!(matches!(
-            categorize_link("mailto:test@example.com"),
+            categorize_link(&email_link),
             LinkType::Email
         ));
+
+        let page_link = create_mock_link("#page=5", 5);
         assert!(matches!(
-            categorize_link("#page=5"),
+            categorize_link(&page_link),
             LinkType::InternalPage(5)
         ));
-        assert!(matches!(categorize_link("42"), LinkType::InternalPage(42)));
-        assert!(matches!(categorize_link("file://local"), LinkType::Other));
+
+        let numeric_link = create_mock_link("42", 42);
+        assert!(matches!(categorize_link(&numeric_link), LinkType::InternalPage(42)));
+
+        let other_link = create_mock_link("file://local", 0);
+        assert!(matches!(categorize_link(&other_link), LinkType::Other));
     }
 }

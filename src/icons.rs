@@ -4,9 +4,19 @@ use iced::{
 };
 
 const SVG_DELETE: &[u8] = include_bytes!("../assets/icons/delete.svg");
+const SVG_TABLE_OF_CONTENTS: &[u8] = include_bytes!("../assets/icons/table_of_contents.svg");
+const SVG_BOOKMARK: &[u8] = include_bytes!("../assets/icons/bookmark.svg");
 
 pub fn delete() -> svg::Handle {
     svg::Handle::from_memory(SVG_DELETE)
+}
+
+pub fn table_of_contents() -> svg::Handle {
+    svg::Handle::from_memory(SVG_TABLE_OF_CONTENTS)
+}
+
+pub fn bookmark() -> svg::Handle {
+    svg::Handle::from_memory(SVG_BOOKMARK)
 }
 
 #[allow(unused)]
@@ -21,7 +31,7 @@ pub fn icon_button<'a, T>(
     handle: svg::Handle,
     variant: ButtonVariant,
 ) -> iced::widget::Button<'a, T> {
-    const BTN_SIZE: f32 = 14.0;
+    const BTN_SIZE: f32 = 18.0;
     widget::button(widget::svg(handle).width(BTN_SIZE).height(BTN_SIZE).style(
         move |theme: &Theme, _| {
             let palette = theme.extended_palette();
@@ -35,7 +45,7 @@ pub fn icon_button<'a, T>(
         },
     ))
     .width(Length::Shrink)
-    .width(Length::Shrink)
+    .padding(4.0)
     .style(move |theme: &Theme, status| {
         let palette = theme.extended_palette();
         widget::button::Style {
@@ -68,6 +78,10 @@ pub fn icon_button<'a, T>(
                     .into(),
                 ),
                 _ => None,
+            },
+            border: iced::Border {
+                radius: 4.0.into(),
+                ..Default::default()
             },
             ..Default::default()
         }

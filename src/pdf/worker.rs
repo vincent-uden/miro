@@ -9,6 +9,7 @@ use tracing::{error, info};
 use crate::{DARK_THEME, LIGHT_THEME, geometry::Vector, pdf::inner::cpu_pdf_dark_mode_shader};
 use super::text_extraction::{TextExtractor, TextSelection};
 use super::link_extraction::{LinkExtractor, LinkInfo};
+use super::outline_extraction::{OutlineExtractor, OutlineItem};
 
 /// A unique identifier for a complete render request (e.g., for a specific view).
 pub type RequestId = u64;
@@ -30,6 +31,8 @@ pub enum WorkerCommand {
     ExtractText(MupdfRect),
     /// Extract all links from the current page
     ExtractLinks,
+    /// Extract document outline/table of contents
+    ExtractOutline,
 }
 
 /// Requests sent from the ui thread to the worker thread
@@ -56,6 +59,7 @@ pub enum WorkerResponse {
     Refreshed(PathBuf, DocumentInfo),
     ExtractedText(TextSelection),
     ExtractedLinks(Vec<LinkInfo>),
+    ExtractedOutline(Vec<OutlineItem>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -144,6 +148,15 @@ impl PdfWorker {
             extractor.extract_all_links()
         } else {
             Err(anyhow!("No page set"))
+        }
+    }
+
+    pub fn extract_outline(&self) -> Result<Vec<OutlineItem>> {
+        if let Some(ref document) = self.document {
+            let extractor = OutlineExtractor::new(document);
+            extractor.extract_outline()
+        } else {
+            Err(anyhow!("No document loaded"))
         }
     }
 
@@ -282,6 +295,14 @@ pub async fn worker_main(
                     .unwrap(),
                 Err(e) => {
                     error!("Link extraction failed: {}", e);
+                }
+            },
+            WorkerCommand::ExtractOutline => match worker.extract_outline() {
+                Ok(outline) => result_tx
+                    .send(WorkerResponse::ExtractedOutline(outline))
+                    .unwrap(),
+                Err(e) => {
+                    error!("Outline extraction failed: {}", e);
                 }
             },
         }

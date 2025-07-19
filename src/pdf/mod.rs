@@ -12,6 +12,7 @@ pub mod worker;
 
 mod text_extraction;
 mod link_extraction;
+pub mod outline_extraction;
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PdfMessage {
