@@ -19,7 +19,44 @@ A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybin
 - Optional RPC server to control the viewer from another program
 
 ## Configuration
-An example configuration file is shown at `/assets/default.conf` which contains all the default bindings for the program. Refer to this file both for configuration syntax and to see the default keybindings.
+
+The configuration file is located at `~/.config/miro-pdf/miro.conf` (or .`.config/miro-pdf/miro.conf` in the home directory of your operating system). An example configuration file is located at `/assets/default.conf` which contains all the default bindings for the program.
+
+### Configuration File Format
+
+The configuration file uses a simple text format with three types of commands:
+
+#### Key Bindings
+```
+Bind <key_sequence> <action>
+```
+
+Key sequences can be:
+- Single keys: `j`, `k`, `h`, `l`
+- Modified keys: `Ctrl+r`, `Shift+Tab`
+- Key chords (multiple keys): `"Z Z"` (quotes required for sequences with spaces)
+
+All available actions are bound in the example config file.
+
+#### Mouse Bindings
+```
+MouseBind <mouse_input> <action>
+```
+
+Mouse inputs can be:
+- Basic buttons: `MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseBack`, `MouseForward`
+- With modifiers: `Ctrl+MouseLeft`, `Shift+MouseRight`
+
+All available actions are bound in the example config file.
+
+#### Settings
+```
+Set <setting> <value>
+```
+
+Available settings:
+- `Rpc <True|False>` - Enable/disable RPC server
+- `RpcPort <number>` - Set RPC server port
 
 ## Installation
 
