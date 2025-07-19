@@ -1,5 +1,5 @@
 use std::{
-    io,
+    fs, io,
     path::PathBuf,
     sync::{LazyLock, RwLock},
 };
@@ -41,7 +41,11 @@ fn main() -> iced::Result {
 
     let args = Args::parse();
 
-
+    match home::home_dir() {
+        Some(path) => fs::create_dir_all(path.join(".config/miro-pdf"))
+            .expect("Couldn't create the required config directory"),
+        None => eprintln!("Couldn't find home directory"),
+    }
 
     if let Ok(cfg) = Config::system_config() {
         let mut config = CONFIG.write().unwrap();
@@ -65,10 +69,13 @@ fn main() -> iced::Result {
         .window(settings())
         .run_with(move || {
             let state = App::new(BookmarkStore::system_store().unwrap_or_default());
-            (state, match args.path {
-                Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
-                None => iced::Task::none(),
-            })
+            (
+                state,
+                match args.path {
+                    Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
+                    None => iced::Task::none(),
+                },
+            )
         })
 }
 
