@@ -29,7 +29,7 @@ use iced_aw::{
 };
 use iced_fonts::required::{RequiredIcons, icon_to_string};
 use keybinds::{KeySeq, Keybind};
-use rfd::FileDialog;
+use rfd::AsyncFileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::{Mutex, mpsc};
@@ -84,6 +84,9 @@ pub enum AppMessage {
     OpenFile(PathBuf),
     CloseFile(PathBuf),
     OpenNewFileFinder,
+    #[strum(disabled)]
+    #[serde(skip)]
+    FileDialogResult(Option<PathBuf>),
     Debug(String),
     PdfMessage(PdfMessage),
     OpenTab(usize),
@@ -195,7 +198,19 @@ impl App {
                 .update(msg)
                 .map(AppMessage::PdfMessage),
             AppMessage::OpenNewFileFinder => {
-                if let Some(path_buf) = FileDialog::new().add_filter("Pdf", &["pdf"]).pick_file() {
+                iced::Task::perform(
+                    async {
+                        AsyncFileDialog::new()
+                            .add_filter("Pdf", &["pdf"])
+                            .pick_file()
+                            .await
+                            .map(|file_handle| file_handle.path().to_path_buf())
+                    },
+                    AppMessage::FileDialogResult,
+                )
+            }
+            AppMessage::FileDialogResult(path_buf_opt) => {
+                if let Some(path_buf) = path_buf_opt {
                     self.pdfs.push(PdfViewer::new());
                     self.pdf_idx = self.pdfs.len() - 1;
                     iced::Task::done(AppMessage::OpenFile(path_buf))
