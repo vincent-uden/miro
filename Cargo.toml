@@ -15,6 +15,7 @@ arboard = { version = "3.6.0", features = ["wayland-data-control"] }
 async-watcher = "0.3.0"
 axum = "0.8.4"
 clap = {version = "4.5.32", features = ["derive"] }
+colored = "2.1.0"
 colorgrad = "0.7.1"
 home = "0.5.11"
 iced = {version = "0.13.1", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg"] }

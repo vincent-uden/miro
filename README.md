@@ -26,6 +26,14 @@ The configuration file is located at `~/.config/miro-pdf/miro.conf` (or `.config
 
 The configuration file uses a simple text format with three types of commands:
 
+#### Comments and Empty Lines
+```
+# This is a comment
+# Comments start with # and are ignored during parsing
+
+# Empty lines are also ignored
+```
+
 #### Key Bindings
 ```
 Bind <key_sequence> <action>
@@ -57,6 +65,18 @@ Set <setting> <value>
 Available settings:
 - `Rpc <True|False>` - Enable/disable RPC server
 - `RpcPort <number>` - Set RPC server port
+
+#### Error Handling
+
+The configuration parser provides detailed error messages with line numbers when parsing fails. Errors on one line don't prevent parsing of other lines
+
+Example error output:
+```
+Configuration parsing errors:
+  Line 3: Unknown command: InvalidCommand
+  Line 5: Unknown action: InvalidAction
+  Line 7: Invalid port number: 'not_a_number'. Must be a valid integer
+```
 
 ## Installation
 

@@ -1,13 +1,75 @@
 use anyhow::{Result, anyhow};
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{fs, path::PathBuf, str::FromStr, fmt};
 
+use colored::Colorize;
 use keybinds::{KeyInput, KeySeq, Keybind, Keybinds};
-use logos::Logos;
 use strum::EnumString;
 
 use crate::{app::AppMessage, pdf::PdfMessage};
 
 const MOVE_STEP: f32 = 40.0;
+
+#[derive(Debug, Clone)]
+pub struct ConfigError {
+    pub line_number: usize,
+    pub message: String,
+}
+
+impl ConfigError {
+    pub fn new(line_number: usize, message: String) -> Self {
+        Self {
+            line_number,
+            message,
+        }
+    }
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {}: {}",
+            "Line".bright_blue(),
+            self.line_number.to_string().bright_yellow(),
+            self.message.bright_red()
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct ConfigParseResult {
+    pub config: Config,
+    pub errors: Vec<ConfigError>,
+}
+
+impl ConfigParseResult {
+    pub fn new() -> Self {
+        Self {
+            config: Config::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    pub fn add_error(&mut self, line_number: usize, message: String) {
+        self.errors.push(ConfigError::new(line_number, message));
+    }
+
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    pub fn format_errors(&self) -> String {
+        if self.errors.is_empty() {
+            return String::new();
+        }
+
+        let mut output = format!("{}\n", "Configuration parsing errors:".bright_red().bold());
+        for error in &self.errors {
+            output.push_str(&format!("  {}\n", error));
+        }
+        output
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString)]
 pub enum MouseButton {
@@ -171,10 +233,153 @@ impl Config {
 
     pub fn system_config() -> Result<Self> {
         let config_path = Self::system_config_path()?;
-        Ok(Self::merge_configs(
-            Self::default(),
-            &Config::from_str(&fs::read_to_string(config_path)?)?,
-        ))
+        let content = fs::read_to_string(config_path)?;
+        let parse_result = Self::parse_with_errors(&content);
+
+        if parse_result.has_errors() {
+            eprintln!("{}", parse_result.format_errors());
+        }
+
+        Ok(Self::merge_configs(Self::default(), &parse_result.config))
+    }
+
+    pub fn parse_with_errors(s: &str) -> ConfigParseResult {
+        let mut result = ConfigParseResult::new();
+        let lines: Vec<&str> = s.lines().collect();
+
+        for (line_number, line) in lines.iter().enumerate() {
+            let line_num = line_number + 1; // 1-based line numbers
+            let trimmed = line.trim();
+
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            if let Err(error) = Self::parse_line(trimmed, &mut result.config) {
+                result.add_error(line_num, error);
+            }
+        }
+
+        result
+    }
+
+    fn parse_line(line: &str, config: &mut Config) -> Result<(), String> {
+        let parts = Self::parse_line_parts(line)?;
+        if parts.is_empty() {
+            return Ok(());
+        }
+
+        let command = match Command::from_str(&parts[0]) {
+            Ok(cmd) => cmd,
+            Err(_) => return Err(format!("Unknown command: {}", parts[0])),
+        };
+
+        match command {
+            Command::Bind => {
+                if parts.len() != 3 {
+                    return Err(
+                        "Bind command requires exactly 2 arguments: <key> <action>".to_string()
+                    );
+                }
+
+                let key_str = &parts[1];
+                let action_str = &parts[2];
+
+                let action = BindableMessage::from_str(action_str)
+                    .map_err(|_| format!("Unknown action: {}", action_str))?;
+
+                config
+                    .keyboard
+                    .bind(key_str, action)
+                    .map_err(|e| format!("Failed to bind key '{}': {}", key_str, e))?;
+            }
+            Command::MouseBind => {
+                if parts.len() != 3 {
+                    return Err(
+                        "MouseBind command requires exactly 2 arguments: <mouse_input> <action>"
+                            .to_string(),
+                    );
+                }
+
+                let mouse_input_str = &parts[1];
+                let action_str = &parts[2];
+
+                let mouse_input = MouseInput::from_str(mouse_input_str)
+                    .map_err(|e| format!("Invalid mouse input '{}': {}", mouse_input_str, e))?;
+
+                let mouse_action = MouseAction::from_str(action_str)
+                    .map_err(|_| format!("Unknown mouse action: {}", action_str))?;
+
+                config.mouse.push((mouse_input, mouse_action));
+            }
+            Command::Set => {
+                if parts.len() != 3 {
+                    return Err(
+                        "Set command requires exactly 2 arguments: <setting> <value>".to_string(),
+                    );
+                }
+
+                let setting = &parts[1];
+                let value = &parts[2];
+
+                match setting.as_str() {
+                    "Rpc" => {
+                        config.rpc_enabled = match value.as_str() {
+                            "True" | "true" | "1" => true,
+                            "False" | "false" | "0" => false,
+                            _ => {
+                                return Err(format!(
+                                    "Invalid boolean value for Rpc: '{}'. Use True/False",
+                                    value
+                                ));
+                            }
+                        };
+                    }
+                    "RpcPort" => {
+                        config.rpc_port = value.parse::<u32>().map_err(|_| {
+                            format!("Invalid port number: '{}'. Must be a valid integer", value)
+                        })?;
+                    }
+                    _ => return Err(format!("Unknown setting: {}", setting)),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn parse_line_parts(line: &str) -> Result<Vec<String>, String> {
+        let mut parts = Vec::new();
+        let mut current_part = String::new();
+        let mut in_quotes = false;
+        let mut chars = line.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '"' => {
+                    in_quotes = !in_quotes;
+                }
+                ' ' | '\t' if !in_quotes => {
+                    if !current_part.is_empty() {
+                        parts.push(current_part.clone());
+                        current_part.clear();
+                    }
+                }
+                _ => {
+                    current_part.push(ch);
+                }
+            }
+        }
+
+        if in_quotes {
+            return Err("Unterminated quoted string".to_string());
+        }
+
+        if !current_part.is_empty() {
+            parts.push(current_part);
+        }
+
+        Ok(parts)
     }
 
     pub fn system_config_path() -> Result<PathBuf> {
@@ -313,89 +518,14 @@ impl FromStr for Config {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let lexer = Token::lexer(s);
+        let parse_result = Self::parse_with_errors(s);
 
-        let mut expecting_statement = true;
-
-        let mut cmd_name = None;
-        let mut args: Vec<String> = vec![];
-
-        let mut out = Config::new();
-
-        // TODO: Count the line number to give error messages for each invalid line
-        for token in lexer {
-            match token {
-                Ok(Token::String(s)) | Ok(Token::QuotedString(s)) => {
-                    if expecting_statement {
-                        cmd_name = Some(s);
-                    } else {
-                        args.push(s);
-                    }
-                }
-                Ok(Token::StatementDelim) => {
-                    // Skip empty lines
-                    if cmd_name.is_none() {
-                        continue;
-                    }
-
-                    if let Some(Some(cmd)) = cmd_name.clone().map(|s| Command::from_str(&s).ok()) {
-                        match cmd {
-                            Command::Bind => {
-                                assert!(args.len() == 2, "Bind requires two arguments");
-                                out.keyboard
-                                    .bind(&args[0], BindableMessage::from_str(&args[1]).unwrap())
-                                    .unwrap();
-                            }
-                            Command::MouseBind => {
-                                assert!(args.len() == 2, "MouseBind requires two arguments");
-                                let mouse_input = MouseInput::from_str(&args[0]).unwrap();
-                                let mouse_action = MouseAction::from_str(&args[1]).unwrap();
-                                out.mouse.push((mouse_input, mouse_action));
-                            }
-                            Command::Set => {
-                                assert!(args.len() == 2, "Set requires two arguments");
-                                if args[0] == "Rpc" {
-                                    out.rpc_enabled = args[1] == "True";
-                                } else if args[0] == "RpcPort" {
-                                    if let Ok(port) = args[1].parse::<u32>() {
-                                        out.rpc_port = port;
-                                    }
-                                } else {
-                                    todo!("Error handling for config parsing")
-                                }
-                            }
-                        }
-                    } else {
-                        todo!("Error handling for config parsing");
-                    }
-                    expecting_statement = true;
-                    cmd_name = None;
-                    args.clear();
-                }
-                Ok(Token::ArgDelim) => {
-                    expecting_statement = false;
-                }
-                Err(e) => panic!("{e:?}"),
-            }
+        if parse_result.has_errors() {
+            return Err(anyhow!("{}", parse_result.format_errors()));
         }
-        Ok(out)
+
+        Ok(parse_result.config)
     }
-}
-
-/// Represents valid tokens in a configuration file.
-#[derive(Debug, Logos)]
-enum Token {
-    #[regex(" +")]
-    ArgDelim,
-
-    #[token("\n")]
-    StatementDelim,
-
-    #[regex(r#""[^"]*""#, |lex| lex.slice()[1..lex.slice().len()-1].to_owned())]
-    QuotedString(String),
-
-    #[regex(r#"[^ \n"]+"#, |lex| lex.slice().to_owned())]
-    String(String),
 }
 
 #[derive(Debug, EnumString)]
@@ -517,4 +647,168 @@ mod tests {
         };
         assert_eq!(config.get_mouse_action(input), None);
     }
-}
+
+    #[test]
+    pub fn error_handling_unknown_command() {
+        let config_str = "UnknownCommand arg1 arg2";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].line_number, 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown command: UnknownCommand")
+        );
+    }
+
+    #[test]
+    pub fn error_handling_invalid_bind_args() {
+        let config_str = "Bind j";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].line_number, 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Bind command requires exactly 2 arguments")
+        );
+    }
+
+    #[test]
+    pub fn error_handling_invalid_action() {
+        let config_str = "Bind j InvalidAction";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].line_number, 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown action: InvalidAction")
+        );
+    }
+
+    #[test]
+    pub fn error_handling_invalid_mouse_input() {
+        let config_str = "MouseBind InvalidMouse Panning";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].line_number, 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid mouse input 'InvalidMouse'")
+        );
+    }
+
+    #[test]
+    pub fn error_handling_invalid_set_value() {
+        let config_str = "Set RpcPort invalid_port";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].line_number, 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid port number: 'invalid_port'")
+        );
+    }
+
+    #[test]
+    pub fn error_handling_multiple_errors() {
+        let config_str = r#"
+Bind j InvalidAction
+UnknownCommand arg1
+Set RpcPort invalid_port
+Bind k MoveUp
+MouseBind InvalidMouse Panning
+"#;
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 4);
+
+        // Check that valid lines are still processed
+        assert!(!result.config.keyboard.as_slice().is_empty());
+    }
+
+    #[test]
+    pub fn error_handling_unterminated_quotes() {
+        let config_str = r#"Bind "unterminated quote MoveUp"#;
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].line_number, 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unterminated quoted string")
+        );
+    }
+
+    #[test]
+    pub fn error_handling_skips_comments_and_empty_lines() {
+        let config_str = r#"
+# This is a comment
+Bind j MoveDown
+
+# Another comment
+Bind k MoveUp
+"#;
+        let result = Config::parse_with_errors(config_str);
+        
+        assert!(!result.has_errors());
+        assert_eq!(result.config.keyboard.as_slice().len(), 2);
+    }
+
+    #[test]
+    pub fn demonstrate_colored_error_output() {
+        let config_str = r#"
+Bind j InvalidAction
+UnknownCommand arg1
+Set RpcPort invalid_port
+"#;
+        let result = Config::parse_with_errors(config_str);
+        
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 3);
+        
+        // Print the colored output for manual verification
+        // This won't show colors in test output, but demonstrates the functionality
+        let formatted = result.format_errors();
+        println!("\n{}", formatted);
+        
+        // Verify the content is correct
+        assert!(formatted.contains("Configuration parsing errors:"));
+        assert!(formatted.contains("Line 2"));
+        assert!(formatted.contains("Line 3"));
+        assert!(formatted.contains("Line 4"));
+    }
+
+    #[test]
+    pub fn test_config_file_with_errors() {
+        use std::fs;
+        
+        let config_content = fs::read_to_string("test_config_with_errors.conf");
+        if let Ok(content) = config_content {
+            let result = Config::parse_with_errors(&content);
+            
+            if result.has_errors() {
+                // This will show colored output when run with --nocapture
+                eprintln!("{}", result.format_errors());
+            }
+            
+            // Should still parse valid lines
+            assert!(!result.config.keyboard.as_slice().is_empty());
+        }
+    }}
