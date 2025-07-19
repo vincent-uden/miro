@@ -6,10 +6,7 @@ use std::{
 use anyhow::{Result, anyhow};
 use iced::{
     Length, Padding, Theme,
-    widget::{
-        self, button, container, horizontal_rule, hover, text, text_input,
-        vertical_space,
-    },
+    widget::{self, button, container, horizontal_rule, hover, text, text_input, vertical_space},
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -102,7 +99,8 @@ impl BookmarkStore {
                 self.pending_name = s;
                 iced::Task::none()
             }
-            BookmarkMessage::GoTo { path: _, page: _ } | BookmarkMessage::RequestNewBookmark { name: _ } => panic!("Should be handled by app"),
+            BookmarkMessage::GoTo { path: _, page: _ }
+            | BookmarkMessage::RequestNewBookmark { name: _ } => panic!("Should be handled by app"),
             BookmarkMessage::None => iced::Task::none(),
         }
     }
@@ -124,7 +122,7 @@ impl BookmarkStore {
             col = col.push(self.view_bookmark_set(set));
         }
 
-        container(col).height(Length::Fill).padding(8.0).into()
+        container(col).height(Length::Fill).into()
     }
 
     fn view_bookmark_set<'a>(&self, set: &'a BookmarkSet) -> iced::Element<'a, BookmarkMessage> {

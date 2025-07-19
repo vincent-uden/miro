@@ -1,17 +1,26 @@
 use std::{fs::canonicalize, path::PathBuf, sync::Arc};
 
 use iced::{
-    Background, Border, Element, Event, Length, Shadow, Subscription, Theme, alignment,
+    alignment,
     border::{self, Radius},
     event::listen_with,
     futures::{SinkExt, Stream},
     stream,
     theme::palette,
     widget::{
-        self, PaneGrid, button, container, pane_grid, responsive, row, scrollable,
+        self,
+        button,
+        container,
+        pane_grid,
+        responsive,
+        row,
+        scrollable, // This comment is here to avoid import granularity formatting breaking the imports
         scrollable::{Direction, Scrollbar},
-        text, vertical_space,
+        text,
+        vertical_space,
+        PaneGrid,
     },
+    Alignment, Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
 use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
 use iced_aw::{
@@ -26,12 +35,13 @@ use strum::EnumString;
 use tokio::sync::{Mutex, mpsc};
 
 use crate::{
-    CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
     config::BindableMessage,
     geometry::Vector,
-    pdf::{PdfMessage, worker::WorkerResponse},
+    icons,
+    pdf::{worker::WorkerResponse, PdfMessage},
     rpc::rpc_server,
+    CONFIG,
 };
 use crate::{
     pdf::widget::PdfViewer,
@@ -49,6 +59,13 @@ struct Pane {
     pane_type: PaneType,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default)]
+enum SidebarTab {
+    #[default]
+    Outline,
+    Bookmark,
+}
+
 #[derive(Debug)]
 pub struct App {
     pub pdfs: Vec<PdfViewer>,
@@ -58,8 +75,8 @@ pub struct App {
     pub invert_pdf: bool,
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
-
     sidebar_showing: bool,
+    sidebar_tab: SidebarTab,
     waiting_for_worker: Vec<AppMessage>,
     ctrl_pressed: bool,
 }
@@ -94,6 +111,7 @@ pub enum AppMessage {
     #[serde(skip)]
     PaneResize(pane_grid::ResizeEvent),
     ToggleSidebar,
+    SetSidebar(SidebarTab),
     #[default]
     None,
 }
@@ -116,12 +134,12 @@ impl App {
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
-            dark_mode: false,
-            invert_pdf: false,
+            dark_mode: true,
+            invert_pdf: true,
             bookmark_store,
             pane_state: ps,
-
             sidebar_showing: false,
+            sidebar_tab: SidebarTab::Outline,
             waiting_for_worker: vec![],
             ctrl_pressed: false,
         }
@@ -337,6 +355,10 @@ impl App {
                 self.sidebar_showing = !self.sidebar_showing;
                 iced::Task::none()
             }
+            AppMessage::SetSidebar(sidebar_tab) => {
+                self.sidebar_tab = sidebar_tab;
+                iced::Task::none()
+            }
         }
     }
 
@@ -451,9 +473,7 @@ impl App {
         let c = if self.sidebar_showing {
             let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
                 pane_grid::Content::new(responsive(move |_size| match pane.pane_type {
-                    PaneType::Sidebar => {
-                        self.bookmark_store.view().map(AppMessage::BookmarkMessage)
-                    }
+                    PaneType::Sidebar => self.view_sidebar(),
                     PaneType::Pdf => {
                         if self.pdfs.is_empty() {
                             vertical_space().into()
@@ -480,6 +500,35 @@ impl App {
         } else {
             self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
         }
+    }
+
+    fn view_sidebar(&self) -> Element<'_, AppMessage> {
+        let sidebar_picker = widget::row![
+            icons::icon_button(icons::table_of_contents(), icons::ButtonVariant::Primary)
+                .on_press(AppMessage::SetSidebar(SidebarTab::Outline)),
+            icons::icon_button(icons::bookmark(), icons::ButtonVariant::Primary)
+                .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark)),
+        ]
+        .height(Length::Shrink)
+        .spacing(4.0)
+        .padding(Padding::default().top(4.0).bottom(4.0));
+
+        let contents: Element<'_, AppMessage> = match self.sidebar_tab {
+            SidebarTab::Outline => widget::text("Outline").into(),
+            SidebarTab::Bookmark => self
+                .bookmark_store
+                .view()
+                .map(AppMessage::BookmarkMessage)
+                .into(),
+        };
+
+        widget::column![
+            sidebar_picker,
+            widget::vertical_space().height(8.0),
+            contents,
+        ]
+        .padding(8.0)
+        .into()
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
@@ -673,6 +722,24 @@ fn menu_button(
         button::Style {
             text_color: pair.text,
             background: Some(Background::Color(pair.color)),
+            ..Default::default()
+        }
+    })
+}
+
+fn subtle_button<'a>(
+    content: impl Into<Element<'a, AppMessage>>,
+) -> button::Button<'a, AppMessage, iced::Theme, iced::Renderer> {
+    widget::button(content).style(|theme: &Theme, status| {
+        let palette = theme.extended_palette();
+        button::Style {
+            background: None,
+            text_color: match status {
+                button::Status::Active => palette.background.base.text,
+                button::Status::Hovered => palette.primary.weak.color,
+                button::Status::Pressed => palette.primary.strong.color,
+                button::Status::Disabled => palette.background.strong.color,
+            },
             ..Default::default()
         }
     })
