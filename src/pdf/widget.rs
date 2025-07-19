@@ -7,6 +7,7 @@ use tracing::{debug, error};
 use crate::{
     geometry::{Rect, Vector},
     pdf::link_extraction::LinkType,
+    config::MouseAction,
 };
 
 use super::{
@@ -24,6 +25,8 @@ const TILE_CACHE_GRID_SIZE: i32 = 5;
 
 const MIN_SELECTION: f32 = 5.0;
 
+const MIN_CLICK_DISTANCE: f32 = 5.0;
+
 #[derive(Debug)]
 pub struct PdfViewer {
     pub name: String,
@@ -36,6 +39,8 @@ pub struct PdfViewer {
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
     /// corner of the screen, it must account for that offset.
     last_mouse_pos: Option<Vector<f32>>,
+    /// Position where the mouse was pressed down, used to detect clicks vs pans
+    mouse_down_pos: Option<Vector<f32>>,
     panning: bool,
     command_tx: mpsc::UnboundedSender<WorkerCommand>,
     pub result_rx: Arc<Mutex<mpsc::UnboundedReceiver<WorkerResponse>>>,
@@ -88,6 +93,7 @@ impl PdfViewer {
             invert_colors: false,
             inner_state: inner::State::default(),
             last_mouse_pos: None,
+            mouse_down_pos: None,
             panning: false,
             command_tx,
             result_rx: Arc::new(Mutex::new(result_rx)),
@@ -175,8 +181,16 @@ impl PdfViewer {
                     self.is_over_link = false;
                 }
             }
-            PdfMessage::MouseLeftDown(ctrl_pressed) => {
-                if ctrl_pressed {
+            PdfMessage::MouseLeftDown(shift_pressed) => {
+                // Store the initial mouse position for click vs pan detection
+                self.mouse_down_pos = self.last_mouse_pos;
+
+                if shift_pressed {
+                    // Start text selection with a zero-size rectangle at mouse position
+                    if let Some(pos) = self.last_mouse_pos {
+                        self.text_selection_rect = Some(Rect::from_points(pos, pos));
+                    }
+                } else {
                     // Don't start panning if we're close enough to the edge that a pane resizing might happen
                     if let Some(mp) = self.last_mouse_pos {
                         let mut padded_bounds = self.inner_state.bounds;
@@ -186,16 +200,11 @@ impl PdfViewer {
                             self.panning = true;
                         }
                     }
-                } else if let Some(pos) = self.last_mouse_pos {
-                    // Start text selection with a zero-size rectangle at mouse position
-                    self.text_selection_rect = Some(Rect::from_points(pos, pos));
                 }
             }
-            PdfMessage::MouseRightDown => {}
-            PdfMessage::MouseLeftUp(ctrl_pressed) => {
-                if ctrl_pressed {
-                    self.panning = false;
-                } else {
+
+            PdfMessage::MouseLeftUp(shift_pressed) => {
+                if shift_pressed {
                     if let Some(screen_rect) = self.text_selection_rect {
                         let doc_start = self.screen_to_document_coords(screen_rect.x0);
                         let doc_end = self.screen_to_document_coords(screen_rect.x1);
@@ -214,7 +223,23 @@ impl PdfViewer {
                             {
                                 error!("Failed to send text extraction command: {}", e);
                             }
-                        } else if let Some(pos) = self
+                        }
+                    }
+                    self.text_selection_rect = None;
+                } else {
+                    // Handle link clicks only if mouse didn't move significantly (click vs pan)
+                    let is_click = if let (Some(down_pos), Some(up_pos)) =
+                        (self.mouse_down_pos, self.last_mouse_pos)
+                    {
+                        let delta = up_pos - down_pos;
+                        let distance = (delta.x * delta.x + delta.y * delta.y).sqrt();
+                        distance < MIN_CLICK_DISTANCE
+                    } else {
+                        false
+                    };
+
+                    if is_click {
+                        if let Some(pos) = self
                             .last_mouse_pos
                             .map(|p| self.screen_to_document_coords(p))
                             && let Some(link) = self
@@ -239,10 +264,63 @@ impl PdfViewer {
                             }
                         }
                     }
-                    self.text_selection_rect = None;
+                    self.panning = false;
+                    self.mouse_down_pos = None;
                 }
             }
-            PdfMessage::MouseRightUp => {}
+
+            PdfMessage::MouseAction(action, pressed) => match (action, pressed) {
+                (MouseAction::Panning, true) => {
+                    if let Some(mp) = self.last_mouse_pos {
+                        let mut padded_bounds = self.inner_state.bounds;
+                        padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
+                        padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
+                        if padded_bounds.contains(mp) {
+                            self.panning = true;
+                        }
+                    }
+                }
+                (MouseAction::Panning, false) => {
+                    self.panning = false;
+                }
+                (MouseAction::Selection, true) => {
+                    if let Some(pos) = self.last_mouse_pos {
+                        self.text_selection_rect = Some(Rect::from_points(pos, pos));
+                    }
+                }
+                (MouseAction::Selection, false) => {
+                    if let Some(screen_rect) = self.text_selection_rect {
+                        let doc_start = self.screen_to_document_coords(screen_rect.x0);
+                        let doc_end = self.screen_to_document_coords(screen_rect.x1);
+
+                        let selection_rect = Rect::from_points(
+                            Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
+                            Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
+                        );
+
+                        if selection_rect.width() > MIN_SELECTION
+                            && selection_rect.height() > MIN_SELECTION
+                        {
+                            if let Err(e) = self
+                                .command_tx
+                                .send(WorkerCommand::ExtractText(selection_rect.into()))
+                            {
+                                error!("Failed to send text extraction command: {}", e);
+                            }
+                        } else {
+                        }
+                    }
+                    self.text_selection_rect = None;
+                }
+                (MouseAction::NextPage, true) => {
+                    let _ = self.set_page(self.cur_page_idx + 1);
+                }
+                (MouseAction::NextPage, false) => {}
+                (MouseAction::PreviousPage, true) => {
+                    let _ = self.set_page(self.cur_page_idx - 1);
+                }
+                (MouseAction::PreviousPage, false) => {}
+            },
             PdfMessage::ToggleLinkHitboxes => {
                 self.show_link_hitboxes = !self.show_link_hitboxes;
             }

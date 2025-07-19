@@ -1,9 +1,5 @@
 use anyhow::{Result, anyhow};
-use std::{
-    fs,
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{fs, path::PathBuf, str::FromStr};
 
 use keybinds::{KeyInput, Keybind, Keybinds};
 use logos::Logos;
@@ -12,6 +8,76 @@ use strum::EnumString;
 use crate::{app::AppMessage, pdf::PdfMessage};
 
 const MOVE_STEP: f32 = 40.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString)]
+pub enum MouseButton {
+    MouseLeft,
+    MouseMiddle,
+    MouseRight,
+    MouseBack,
+    MouseForward,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MouseModifiers {
+    pub ctrl: bool,
+    pub shift: bool,
+}
+
+impl Default for MouseModifiers {
+    fn default() -> Self {
+        Self {
+            ctrl: false,
+            shift: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MouseInput {
+    pub button: MouseButton,
+    pub modifiers: MouseModifiers,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, EnumString, Default, serde::Serialize, serde::Deserialize,
+)]
+pub enum MouseAction {
+    #[default]
+    Panning,
+    Selection,
+    NextPage,
+    PreviousPage,
+}
+
+pub type MouseBinding = (MouseInput, MouseAction);
+
+impl FromStr for MouseInput {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('+').collect();
+
+        let mut modifiers = MouseModifiers::default();
+        let mut button_str = s;
+
+        // Parse modifiers
+        if parts.len() > 1 {
+            button_str = parts.last().unwrap();
+            for part in &parts[..parts.len() - 1] {
+                match *part {
+                    "Ctrl" => modifiers.ctrl = true,
+                    "Shift" => modifiers.shift = true,
+                    _ => return Err(anyhow!("Unknown modifier: {}", part)),
+                }
+            }
+        }
+
+        let button = MouseButton::from_str(button_str)?;
+
+        Ok(MouseInput { button, modifiers })
+    }
+}
 
 // Showing keybindings in menus
 //
@@ -62,7 +128,9 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
             BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
             BindableMessage::ToggleSidebar => AppMessage::ToggleSidebar,
-            BindableMessage::ToggleLinkHitboxes => AppMessage::PdfMessage(PdfMessage::ToggleLinkHitboxes),
+            BindableMessage::ToggleLinkHitboxes => {
+                AppMessage::PdfMessage(PdfMessage::ToggleLinkHitboxes)
+            }
         }
     }
 }
@@ -70,6 +138,7 @@ impl From<BindableMessage> for AppMessage {
 #[derive(Debug)]
 pub struct Config {
     pub keyboard: Keybinds<BindableMessage>,
+    pub mouse: Vec<MouseBinding>,
     pub rpc_enabled: bool,
     pub rpc_port: u32,
 }
@@ -78,6 +147,7 @@ impl Config {
     pub fn new() -> Self {
         Config {
             keyboard: Keybinds::new(vec![]),
+            mouse: Vec::new(),
             ..Default::default()
         }
     }
@@ -85,6 +155,13 @@ impl Config {
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
         let binds = self.keyboard.as_slice();
         binds.iter().find(|b| b.action == msg).cloned()
+    }
+
+    pub fn get_mouse_action(&self, input: MouseInput) -> Option<MouseAction> {
+        self.mouse
+            .iter()
+            .find(|(mouse_input, _)| *mouse_input == input)
+            .map(|(_, action)| *action)
     }
 
     pub fn system_config() -> Result<Self> {
@@ -104,6 +181,10 @@ impl Config {
     fn merge_configs(mut base: Config, overrider: &Config) -> Config {
         for binding in overrider.keyboard.as_slice() {
             base.keyboard.push(binding.clone());
+        }
+        for binding in &overrider.mouse {
+            println!("{binding:?}");
+            base.mouse.push(*binding);
         }
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
@@ -146,6 +227,68 @@ impl Default for Config {
                     BindableMessage::ToggleLinkHitboxes,
                 ),
             ]),
+            mouse: vec![
+                (
+                    MouseInput {
+                        button: MouseButton::MouseLeft,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::Panning,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::MouseLeft,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: true,
+                        },
+                    },
+                    MouseAction::Selection,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::MouseMiddle,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::Panning,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::MouseRight,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::Selection,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::MouseForward,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::NextPage,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::MouseBack,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::PreviousPage,
+                ),
+            ],
             rpc_enabled: false,
             rpc_port: 7890,
         }
@@ -161,7 +304,7 @@ impl FromStr for Config {
         let mut expecting_statement = true;
 
         let mut cmd_name = None;
-        let mut args = vec![];
+        let mut args: Vec<String> = vec![];
 
         let mut out = Config::new();
 
@@ -176,6 +319,11 @@ impl FromStr for Config {
                     }
                 }
                 Ok(Token::StatementDelim) => {
+                    // Skip empty lines
+                    if cmd_name.is_none() {
+                        continue;
+                    }
+
                     if let Some(Some(cmd)) = cmd_name.clone().map(|s| Command::from_str(&s).ok()) {
                         match cmd {
                             Command::Bind => {
@@ -184,19 +332,27 @@ impl FromStr for Config {
                                     .bind(&args[0], BindableMessage::from_str(&args[1]).unwrap())
                                     .unwrap();
                             }
+                            Command::MouseBind => {
+                                assert!(args.len() == 2, "MouseBind requires two arguments");
+                                let mouse_input = MouseInput::from_str(&args[0]).unwrap();
+                                let mouse_action = MouseAction::from_str(&args[1]).unwrap();
+                                out.mouse.push((mouse_input, mouse_action));
+                            }
                             Command::Set => {
                                 assert!(args.len() == 2, "Set requires two arguments");
                                 if args[0] == "Rpc" {
-                                out.rpc_enabled = args[1] == "True";                                } else if args[0] == "RpcPort" {
-                                if let Ok(port) = args[1].parse::<u32>() {
-                                    out.rpc_port = port;
-                                }                                } else {
+                                    out.rpc_enabled = args[1] == "True";
+                                } else if args[0] == "RpcPort" {
+                                    if let Ok(port) = args[1].parse::<u32>() {
+                                        out.rpc_port = port;
+                                    }
+                                } else {
                                     todo!("Error handling for config parsing")
                                 }
                             }
                         }
                     } else {
-                        todo!("Error handling for config parsing")
+                        todo!("Error handling for config parsing");
                     }
                     expecting_statement = true;
                     cmd_name = None;
@@ -228,6 +384,7 @@ enum Token {
 #[derive(Debug, EnumString)]
 enum Command {
     Bind,
+    MouseBind,
     Set,
 }
 
@@ -252,6 +409,7 @@ mod tests {
                     BindableMessage::NextTab,
                 ),
             ]),
+            mouse: Vec::new(),
             rpc_enabled: false,
             rpc_port: 7890,
         };
@@ -269,5 +427,77 @@ mod tests {
             assert_eq!(b1.seq, b2.seq);
             assert_eq!(b1.action, b2.action);
         }
+
+        // Check mouse bindings
+        assert_eq!(config.mouse.len(), default_cfg.mouse.len());
+        for (b1, b2) in config.mouse.iter().zip(default_cfg.mouse.iter()) {
+            assert_eq!(b1.0, b2.0); // MouseInput
+            assert_eq!(b1.1, b2.1); // MouseAction
+        }
+    }
+
+    #[test]
+    pub fn can_parse_mouse_input() {
+        // Test basic mouse buttons
+        let input = MouseInput::from_str("MouseLeft").unwrap();
+        assert_eq!(input.button, MouseButton::MouseLeft);
+        assert_eq!(input.modifiers, MouseModifiers::default());
+
+        let input = MouseInput::from_str("MouseMiddle").unwrap();
+        assert_eq!(input.button, MouseButton::MouseMiddle);
+
+        let input = MouseInput::from_str("MouseRight").unwrap();
+        assert_eq!(input.button, MouseButton::MouseRight);
+
+        // Test with modifiers
+        let input = MouseInput::from_str("Ctrl+MouseLeft").unwrap();
+        assert_eq!(input.button, MouseButton::MouseLeft);
+        assert_eq!(input.modifiers.ctrl, true);
+        assert_eq!(input.modifiers.shift, false);
+
+        let input = MouseInput::from_str("Shift+MouseRight").unwrap();
+        assert_eq!(input.button, MouseButton::MouseRight);
+        assert_eq!(input.modifiers.ctrl, false);
+        assert_eq!(input.modifiers.shift, true);
+
+        let input = MouseInput::from_str("Ctrl+Shift+MouseMiddle").unwrap();
+        assert_eq!(input.button, MouseButton::MouseMiddle);
+        assert_eq!(input.modifiers.ctrl, true);
+        assert_eq!(input.modifiers.shift, true);
+    }
+
+    #[test]
+    pub fn can_get_mouse_action() {
+        let config = Config::default();
+
+        let input = MouseInput {
+            button: MouseButton::MouseLeft,
+            modifiers: MouseModifiers::default(),
+        };
+        assert_eq!(config.get_mouse_action(input), Some(MouseAction::Panning));
+
+        let input = MouseInput {
+            button: MouseButton::MouseLeft,
+            modifiers: MouseModifiers {
+                ctrl: false,
+                shift: true,
+            },
+        };
+        assert_eq!(config.get_mouse_action(input), Some(MouseAction::Selection));
+
+        let input = MouseInput {
+            button: MouseButton::MouseMiddle,
+            modifiers: MouseModifiers::default(),
+        };
+        assert_eq!(config.get_mouse_action(input), Some(MouseAction::Panning));
+
+        let input = MouseInput {
+            button: MouseButton::MouseRight,
+            modifiers: MouseModifiers {
+                ctrl: true,
+                shift: false,
+            },
+        };
+        assert_eq!(config.get_mouse_action(input), None);
     }
 }

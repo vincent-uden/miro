@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::geometry::{Rect, Vector};
+use crate::{geometry::{Rect, Vector}, config::MouseAction};
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use worker::WorkerResponse;
@@ -28,10 +28,9 @@ pub enum PdfMessage {
     MoveVertical(f32),
     UpdateBounds(Rect<f32>),
     MouseMoved(Vector<f32>),
-    MouseLeftDown(bool), // bool indicates if Ctrl is pressed
-    MouseRightDown,
-    MouseLeftUp(bool), // bool indicates if Ctrl is pressed
-    MouseRightUp,
+    MouseLeftDown(bool), // bool indicates if Shift is pressed
+    MouseLeftUp(bool), // bool indicates if Shift is pressed
+    MouseAction(MouseAction, bool), // action and whether it's pressed (true) or released (false)
     ToggleLinkHitboxes,
     #[strum(disabled)]
     #[serde(skip)]

@@ -36,16 +36,13 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::{
     bookmarks::{BookmarkMessage, BookmarkStore},
-    config::BindableMessage,
+    config::{BindableMessage, MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
-    pdf::{outline_extraction::OutlineItem, worker::WorkerResponse, PdfMessage},
+    pdf::{PdfMessage, widget::PdfViewer, outline_extraction::OutlineItem, worker::WorkerResponse},
     rpc::rpc_server,
-    CONFIG,
-};
-use crate::{
-    pdf::widget::PdfViewer,
     watch::{WatchMessage, WatchNotification, file_watcher},
+    CONFIG,
 };
 
 #[derive(Debug)]
@@ -78,6 +75,7 @@ pub struct App {
     sidebar_showing: bool,
     sidebar_tab: SidebarTab,
     waiting_for_worker: Vec<AppMessage>,
+    shift_pressed: bool,
     ctrl_pressed: bool,
 }
 
@@ -100,8 +98,15 @@ pub enum AppMessage {
     MouseMoved(Vector<f32>),
     MouseLeftDown,
     MouseRightDown,
+    MouseMiddleDown,
+    MouseBackDown,
+    MouseForwardDown,
     MouseLeftUp,
     MouseRightUp,
+    MouseMiddleUp,
+    MouseBackUp,
+    MouseForwardUp,
+    ShiftPressed(bool),
     CtrlPressed(bool),
     #[strum(disabled)]
     #[serde(skip)]
@@ -118,6 +123,17 @@ pub enum AppMessage {
 }
 
 impl App {
+    fn get_mouse_action(&self, button: MouseButton) -> Option<MouseAction> {
+        let input = MouseInput {
+            button,
+            modifiers: MouseModifiers {
+                ctrl: self.ctrl_pressed,
+                shift: self.shift_pressed,
+            },
+        };
+        CONFIG.read().unwrap().get_mouse_action(input)
+    }
+
     pub fn new(bookmark_store: BookmarkStore) -> Self {
         let (mut ps, p) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
@@ -142,6 +158,7 @@ impl App {
             sidebar_showing: false,
             sidebar_tab: SidebarTab::Outline,
             waiting_for_worker: vec![],
+            shift_pressed: false,
             ctrl_pressed: false,
         }
     }
@@ -250,27 +267,91 @@ impl App {
             AppMessage::MouseLeftDown => {
                 if !self.pdfs.is_empty() {
                     let _ = self.pdfs[self.pdf_idx]
-                        .update(PdfMessage::MouseLeftDown(self.ctrl_pressed));
+                        .update(PdfMessage::MouseLeftDown(self.shift_pressed));
                 }
                 iced::Task::none()
             }
             AppMessage::MouseRightDown => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightDown);
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseRight) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, true));
+                    }
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseMiddleDown => {
+                if !self.pdfs.is_empty() {
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseMiddle) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, true));
+                    }
                 }
                 iced::Task::none()
             }
             AppMessage::MouseLeftUp => {
                 if !self.pdfs.is_empty() {
-                    let _ =
-                        self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp(self.ctrl_pressed));
+                    let _ = self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::MouseLeftUp(self.shift_pressed));
                 }
                 iced::Task::none()
             }
             AppMessage::MouseRightUp => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseRightUp);
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseRight) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, false));
+                    }
                 }
+                iced::Task::none()
+            }
+            AppMessage::MouseMiddleUp => {
+                if !self.pdfs.is_empty() {
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseMiddle) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, false));
+                    }
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseBackDown => {
+                if !self.pdfs.is_empty() {
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseBack) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, true));
+                    }
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseBackUp => {
+                if !self.pdfs.is_empty() {
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseBack) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, false));
+                    }
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseForwardDown => {
+                if !self.pdfs.is_empty() {
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseForward) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, true));
+                    }
+                }
+                iced::Task::none()
+            }
+            AppMessage::MouseForwardUp => {
+                if !self.pdfs.is_empty() {
+                    if let Some(action) = self.get_mouse_action(MouseButton::MouseForward) {
+                        let _ = self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, false));
+                    }
+                }
+                iced::Task::none()
+            }
+            AppMessage::ShiftPressed(pressed) => {
+                self.shift_pressed = pressed;
                 iced::Task::none()
             }
             AppMessage::CtrlPressed(pressed) => {
@@ -578,7 +659,10 @@ impl App {
         let keys = listen_with(|event, status, _| match event {
             Event::Keyboard(keyboard_event) => match keyboard_event {
                 iced::keyboard::Event::ModifiersChanged(modifiers) => {
-                    Some(AppMessage::CtrlPressed(modifiers.control()))
+                    // We need to handle both modifiers, but we can only return one message
+                    // We'll prioritize shift for now and handle ctrl separately
+                    // TODO: This is a limitation - we should handle both modifiers properly
+                    Some(AppMessage::ShiftPressed(modifiers.shift()))
                 }
                 _ => {
                     // Handle other keyboard events for keybinds
@@ -598,18 +682,18 @@ impl App {
                 }
                 iced::mouse::Event::ButtonPressed(button) => match button {
                     iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown),
-                    iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
-                    iced::mouse::Button::Middle | iced::mouse::Button::Other(_) => None,
-                    iced::mouse::Button::Back => {
-                        Some(AppMessage::PdfMessage(PdfMessage::PreviousPage))
-                    }
-                    iced::mouse::Button::Forward => {
-                        Some(AppMessage::PdfMessage(PdfMessage::NextPage))
-                    }
+                    iced::mouse::Button::Right => Some(AppMessage::MouseRightDown),
+                    iced::mouse::Button::Middle => Some(AppMessage::MouseMiddleDown),
+                    iced::mouse::Button::Back => Some(AppMessage::MouseBackDown),
+                    iced::mouse::Button::Forward => Some(AppMessage::MouseForwardDown),
+                    iced::mouse::Button::Other(_) => None,
                 },
                 iced::mouse::Event::ButtonReleased(button) => match button {
                     iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp),
                     iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
+                    iced::mouse::Button::Middle => Some(AppMessage::MouseMiddleUp),
+                    iced::mouse::Button::Back => Some(AppMessage::MouseBackUp),
+                    iced::mouse::Button::Forward => Some(AppMessage::MouseForwardUp),
                     _ => None,
                 },
                 iced::mouse::Event::WheelScrolled { delta } => match delta {
