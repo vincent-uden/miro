@@ -23,3 +23,7 @@
 - Use `tokio::sync` primitives for async communication
 - Structure modules with `mod.rs` files for organization
 - Use the `debug!`, `info!` and `error!` from `tracing` for printing and logging
+
+## Development Process Guidelines
+- Don't run the graphical application unless absolutely necessary. Prefer writing tests to answer your questions instead if possible
+- Prefer `cargo check` as a first layer of validating your code

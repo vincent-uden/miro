@@ -13,6 +13,7 @@ use super::{
     PdfMessage,
     inner::{self, PageViewer},
     link_extraction::LinkInfo,
+    outline_extraction::OutlineItem,
     worker::{
         CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
         worker_main,
@@ -52,6 +53,7 @@ pub struct PdfViewer {
     link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
     is_over_link: bool,
+    document_outline: Option<Vec<OutlineItem>>,
 }
 
 impl Default for PdfViewer {
@@ -101,6 +103,7 @@ impl PdfViewer {
             link_hitboxes: Vec::new(),
             show_link_hitboxes: false,
             is_over_link: false,
+            document_outline: None,
         }
     }
 
@@ -267,6 +270,9 @@ impl PdfViewer {
                     self.shown_tile_cache.clear();
                     self.document_info = Some(document_info);
                     self.set_page(0).unwrap();
+                    if let Err(e) = self.command_tx.send(WorkerCommand::ExtractOutline) {
+                        error!("Failed to send outline extraction command: {}", e);
+                    }
                 }
                 WorkerResponse::SetPage(page_info) => {
                     self.page_info = Some(page_info);
@@ -291,6 +297,9 @@ impl PdfViewer {
                 }
                 WorkerResponse::ExtractedLinks(links) => {
                     self.link_hitboxes = links;
+                }
+                WorkerResponse::ExtractedOutline(outline) => {
+                    self.document_outline = Some(outline);
                 }
             },
         }
@@ -476,6 +485,10 @@ impl PdfViewer {
             let relative_pos = screen_pos - viewport_center;
             relative_pos.scaled(1.0 / self.shown_scale) + self.translation
         }
+    }
+
+    pub fn get_outline(&self) -> Option<&Vec<OutlineItem>> {
+        self.document_outline.as_ref()
     }
 }
 

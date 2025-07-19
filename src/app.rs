@@ -20,7 +20,7 @@ use iced::{
         vertical_space,
         PaneGrid,
     },
-    Alignment, Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
+    Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
 use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
 use iced_aw::{
@@ -39,7 +39,7 @@ use crate::{
     config::BindableMessage,
     geometry::Vector,
     icons,
-    pdf::{worker::WorkerResponse, PdfMessage},
+    pdf::{outline_extraction::OutlineItem, worker::WorkerResponse, PdfMessage},
     rpc::rpc_server,
     CONFIG,
 };
@@ -112,6 +112,7 @@ pub enum AppMessage {
     PaneResize(pane_grid::ResizeEvent),
     ToggleSidebar,
     SetSidebar(SidebarTab),
+    OutlineGoToPage(u32),
     #[default]
     None,
 }
@@ -359,6 +360,15 @@ impl App {
                 self.sidebar_tab = sidebar_tab;
                 iced::Task::none()
             }
+            AppMessage::OutlineGoToPage(page) => {
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::SetPage(page as i32))
+                        .map(AppMessage::PdfMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
         }
     }
 
@@ -514,7 +524,7 @@ impl App {
         .padding(Padding::default().top(4.0).bottom(4.0));
 
         let contents: Element<'_, AppMessage> = match self.sidebar_tab {
-            SidebarTab::Outline => widget::text("Outline").into(),
+            SidebarTab::Outline => self.view_outline(),
             SidebarTab::Bookmark => self
                 .bookmark_store
                 .view()
@@ -529,6 +539,100 @@ impl App {
         ]
         .padding(8.0)
         .into()
+    }
+
+    fn view_outline(&self) -> Element<'_, AppMessage> {
+        let mut col = widget::column![
+            text("Document Outline").size(18.0),
+            vertical_space().height(8.0),
+        ];
+
+        if self.pdfs.is_empty() {
+            col = col.push(text("No document loaded").style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                text::Style {
+                    color: Some(palette.background.weak.color),
+                }
+            }));
+        } else if let Some(outline) = self.pdfs[self.pdf_idx].get_outline() {
+            if outline.is_empty() {
+                col = col.push(text("No outline available").style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    text::Style {
+                        color: Some(palette.background.weak.color),
+                    }
+                }));
+            } else {
+                let outline_content = self.view_outline_items(outline, 0);
+                col = col.push(widget::scrollable(outline_content));
+            }
+        } else {
+            col = col.push(text("Loading outline...").style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                text::Style {
+                    color: Some(palette.background.weak.color),
+                }
+            }));
+        }
+
+        container(col).height(Length::Fill).into()
+    }
+
+    fn view_outline_items<'a>(&self, items: &'a [OutlineItem], level: u32) -> widget::Column<'a, AppMessage> {
+        let mut col = widget::column![];
+        
+        for item in items {
+            let indent = level * 16; // 16 pixels per level
+            
+            let item_button = if let Some(page) = item.page {
+                button(
+                    container(
+                        text(&item.title)
+                            .style(|theme: &Theme| {
+                                let palette = theme.extended_palette();
+                                text::Style {
+                                    color: Some(palette.primary.base.color),
+                                }
+                            })
+                    )
+                    .padding(Padding::default().left(indent as f32))
+                )
+                .style(|_: &Theme, _| widget::button::Style {
+                    background: None,
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+                .on_press(AppMessage::OutlineGoToPage(page))
+            } else {
+                button(
+                    container(
+                        text(&item.title)
+                            .style(|theme: &Theme| {
+                                let palette = theme.extended_palette();
+                                text::Style {
+                                    color: Some(palette.background.weak.color),
+                                }
+                            })
+                    )
+                    .padding(Padding::default().left(indent as f32))
+                )
+                .style(|_: &Theme, _| widget::button::Style {
+                    background: None,
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+            };
+            
+            col = col.push(item_button);
+            
+            // Recursively add children
+            if !item.children.is_empty() {
+                let children_col = self.view_outline_items(&item.children, level + 1);
+                col = col.push(children_col);
+            }
+        }
+        
+        col
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
