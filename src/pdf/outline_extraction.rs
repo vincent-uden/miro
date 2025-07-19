@@ -27,7 +27,7 @@ impl<'a> OutlineExtractor<'a> {
                 } else {
                     let mut items = Vec::new();
                     for outline in &outlines {
-                        let converted_items = self.convert_outline_recursive(outline, 0)?;
+                        let converted_items = convert_outline_recursive(outline, 0)?;
                         items.extend(converted_items);
                     }
                     Ok(items)
@@ -36,21 +36,20 @@ impl<'a> OutlineExtractor<'a> {
             Err(e) => Err(e.into()),
         }
     }
-
-    fn convert_outline_recursive(&self, outline: &Outline, level: u32) -> Result<Vec<OutlineItem>> {
-        let mut items = Vec::new();
-        let mut current_item = OutlineItem {
-            title: outline.title.clone(),
-            page: outline.page,
-            level,
-            children: Vec::new(),
-        };
-        for child in &outline.down {
-            let child_items = self.convert_outline_recursive(child, level + 1)?;
-            current_item.children.extend(child_items);
-        }
-        items.push(current_item);
-        Ok(items)
-    }
 }
 
+fn convert_outline_recursive(outline: &Outline, level: u32) -> Result<Vec<OutlineItem>> {
+    let mut items = Vec::new();
+    let mut current_item = OutlineItem {
+        title: outline.title.clone(),
+        page: outline.page,
+        level,
+        children: Vec::new(),
+    };
+    for child in &outline.down {
+        let child_items = convert_outline_recursive(child, level + 1)?;
+        current_item.children.extend(child_items);
+    }
+    items.push(current_item);
+    Ok(items)
+}

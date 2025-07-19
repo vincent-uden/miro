@@ -98,8 +98,8 @@ where
 impl From<Vector<f32>> for Vector<i32> {
     fn from(value: Vector<f32>) -> Self {
         Vector {
-            x: value.x as i32,
-            y: value.y as i32,
+            x: value.x.round() as i32,
+            y: value.y.round() as i32,
         }
     }
 }
@@ -240,8 +240,14 @@ impl From<Rect<f32>> for mupdf::IRect {
 impl From<Rect<f32>> for Rect<i32> {
     fn from(val: Rect<f32>) -> Self {
         Rect {
-            x0: val.x0.into(),
-            x1: val.x1.into(),
+            x0: Vector {
+                x: val.x0.x.round() as i32,
+                y: val.x0.y.round() as i32,
+            },
+            x1: Vector {
+                x: val.x1.x.round() as i32,
+                y: val.x1.y.round() as i32,
+            },
         }
     }
 }
