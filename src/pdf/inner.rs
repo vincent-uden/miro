@@ -16,7 +16,6 @@ use crate::{
 use super::{
     PdfMessage,
     link_extraction::{LinkInfo, LinkType},
-    worker::{CachedTile, PageInfo},
 };
 
 #[derive(Debug, Default)]
@@ -26,27 +25,22 @@ pub struct State {
 
 #[derive(Debug)]
 pub struct PageViewer<'a> {
-    cache: &'a HashMap<(i32, i32), CachedTile>,
     state: &'a State,
-    // TODO: Maybe remove these?
     width: Length,
     height: Length,
     content_fit: ContentFit,
-    // ---
     filter_method: FilterMethod,
     translation: Vector<f32>,
     scale: f32,
     invert_colors: bool,
     text_selection_rect: Option<Rect<f32>>,
     link_hitboxes: Option<&'a Vec<LinkInfo>>,
-    page_info: Option<PageInfo>,
     is_over_link: bool,
 }
 
 impl<'a> PageViewer<'a> {
-    pub fn new(cache: &'a HashMap<(i32, i32), CachedTile>, state: &'a State) -> Self {
+    pub fn new(state: &'a State) -> Self {
         Self {
-            cache,
             state,
             width: Length::Fill,
             height: Length::Fill,
@@ -57,7 +51,6 @@ impl<'a> PageViewer<'a> {
             invert_colors: false,
             text_selection_rect: None,
             link_hitboxes: None,
-            page_info: None,
             is_over_link: false,
         }
     }
@@ -113,11 +106,6 @@ impl<'a> PageViewer<'a> {
         self
     }
 
-    pub fn page_info(mut self, page_info: Option<PageInfo>) -> Self {
-        self.page_info = page_info;
-        self
-    }
-
     pub fn over_link(mut self, is_over_link: bool) -> Self {
         self.is_over_link = is_over_link;
         self
@@ -162,28 +150,6 @@ where
         _viewport: &iced::Rectangle,
     ) {
         let img_bounds = layout.bounds();
-        let pdf_cache = |renderer: &mut Renderer| {
-            for (_, v) in self.cache.iter() {
-                let tile_bounds: Rect<f32> = v.bounds.into();
-                let viewport_bounds = layout.bounds();
-                let translation_vector = -self.translation.scaled(self.scale)
-                    + viewport_bounds.center().into()
-                    - tile_bounds.size().scaled(0.5);
-
-                renderer.with_translation(translation_vector.into(), |renderer: &mut Renderer| {
-                    renderer.draw_image(
-                        image::Image {
-                            handle: v.image_handle.clone(),
-                            filter_method: self.filter_method,
-                            rotation: iced::Radians::from(0.0),
-                            opacity: 1.0,
-                            snap: true,
-                        },
-                        tile_bounds.into(),
-                    );
-                });
-            }
-        };
         let draw_selection = |renderer: &mut Renderer| {
             if let Some(rect) = self.text_selection_rect {
                 // Draw selection rectangle with semi-transparent blue fill and blue border
@@ -205,8 +171,9 @@ where
         let draw_link_hitboxes = |renderer: &mut Renderer| {
             if let Some(links) = self.link_hitboxes {
                 for link in links {
+                    // TODO: Enable once we have access to page bounds
                     let doc_rect = link.bounds;
-                    if let Some(page) = self.page_info {
+                    /* if let Some(page) = self.page_info {
                         let scaled_page_size = page.size.scaled(self.scale);
                         let pdf_center = Vector::new(
                             (img_bounds.width - scaled_page_size.x) / 2.0,
@@ -251,12 +218,11 @@ where
                             },
                             fill_color,
                         );
-                    }
+                    } */
                 }
             }
         };
 
-        renderer.with_layer(img_bounds, pdf_cache);
         renderer.with_layer(img_bounds, draw_selection);
         renderer.with_layer(img_bounds, draw_link_hitboxes);
     }

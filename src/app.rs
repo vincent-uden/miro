@@ -39,7 +39,7 @@ use crate::{
     config::{BindableMessage, MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
-    pdf::{PdfMessage, widget::PdfViewer, outline_extraction::OutlineItem, worker::WorkerResponse},
+    pdf::{PdfMessage, widget::PdfViewer, outline_extraction::OutlineItem},
     rpc::rpc_server,
     watch::{WatchMessage, WatchNotification, file_watcher},
     CONFIG,
@@ -112,9 +112,6 @@ pub enum AppMessage {
     MouseForwardUp,
     ShiftPressed(bool),
     CtrlPressed(bool),
-    #[strum(disabled)]
-    #[serde(skip)]
-    WorkerResponse(WorkerResponse),
     BookmarkMessage(BookmarkMessage),
     #[strum(disabled)]
     #[serde(skip)]
@@ -197,18 +194,16 @@ impl App {
             AppMessage::PdfMessage(msg) => self.pdfs[self.pdf_idx]
                 .update(msg)
                 .map(AppMessage::PdfMessage),
-            AppMessage::OpenNewFileFinder => {
-                iced::Task::perform(
-                    async {
-                        AsyncFileDialog::new()
-                            .add_filter("Pdf", &["pdf"])
-                            .pick_file()
-                            .await
-                            .map(|file_handle| file_handle.path().to_path_buf())
-                    },
-                    AppMessage::FileDialogResult,
-                )
-            }
+            AppMessage::OpenNewFileFinder => iced::Task::perform(
+                async {
+                    AsyncFileDialog::new()
+                        .add_filter("Pdf", &["pdf"])
+                        .pick_file()
+                        .await
+                        .map(|file_handle| file_handle.path().to_path_buf())
+                },
+                AppMessage::FileDialogResult,
+            ),
             AppMessage::FileDialogResult(path_buf_opt) => {
                 if let Some(path_buf) = path_buf_opt {
                     self.pdfs.push(PdfViewer::new());
@@ -253,10 +248,7 @@ impl App {
                         self.file_watcher = Some(sender);
                     }
                     WatchNotification::Changed(path) => {
-                        // Find the PDF tab that matches this path and refresh it
-                        if let Some(pdf) = self.pdfs.iter_mut().find(|p| p.path == path) {
-                            let _ = pdf.refresh_file_worker();
-                        }
+                        todo!("Update pdf viewer")
                     }
                 }
                 iced::Task::none()
@@ -269,7 +261,6 @@ impl App {
                 self.invert_pdf = !self.invert_pdf;
                 for pdf in &mut self.pdfs {
                     pdf.invert_colors = self.invert_pdf;
-                    pdf.force_invalidate_cache();
                 }
                 iced::Task::none()
             }
@@ -373,40 +364,6 @@ impl App {
             AppMessage::CtrlPressed(pressed) => {
                 self.ctrl_pressed = pressed;
                 iced::Task::none()
-            }
-            AppMessage::WorkerResponse(worker_response) => {
-                let (_pdf_idx, on_response) = match &worker_response {
-                    WorkerResponse::Loaded(_) => {
-                        if let Some(idx) = self
-                            .waiting_for_worker
-                            .iter()
-                            .position(|msg| matches!(msg, AppMessage::BookmarkMessage(_)))
-                        {
-                            (
-                                self.pdf_idx,
-                                iced::Task::done(self.waiting_for_worker.remove(idx)),
-                            )
-                        } else {
-                            (self.pdf_idx, iced::Task::none())
-                        }
-                    }
-                    WorkerResponse::Refreshed(path, _doc) => (
-                        self.pdfs
-                            .iter()
-                            .position(|pdf| &pdf.path == path)
-                            .unwrap_or(self.pdf_idx),
-                        iced::Task::none(),
-                    ),
-                    _ => (self.pdf_idx, iced::Task::none()),
-                };
-                if self.pdfs.is_empty() {
-                    iced::Task::none()
-                } else {
-                    self.pdfs[self.pdf_idx]
-                        .update(PdfMessage::WorkerResponse(worker_response))
-                        .map(AppMessage::PdfMessage)
-                }
-                .chain(on_response)
             }
             AppMessage::BookmarkMessage(BookmarkMessage::RequestNewBookmark { name }) => {
                 let path = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.path.clone());
@@ -736,18 +693,6 @@ impl App {
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
         ];
 
-        // Add worker response subscriptions for each PDF
-        for pdf in &self.pdfs {
-            let rx = pdf.result_rx.clone();
-            subs.push(
-                Subscription::run_with_id(
-                    format!("worker_{}", pdf.path.to_str().unwrap()),
-                    worker_responder_single(rx),
-                )
-                .map(AppMessage::WorkerResponse),
-            );
-        }
-
         let config = CONFIG.read().unwrap();
         if config.rpc_enabled {
             subs.push(Subscription::run(rpc_server));
@@ -812,25 +757,6 @@ fn view_outline_items<'a>(items: &'a [OutlineItem], level: u32) -> widget::Colum
     }
 
     col
-}
-
-fn worker_responder_single(
-    rx: Arc<Mutex<mpsc::UnboundedReceiver<WorkerResponse>>>,
-) -> impl Stream<Item = WorkerResponse> {
-    stream::channel(100, |mut output| async move {
-        loop {
-            let msg = {
-                let mut receiver = rx.lock().await;
-                receiver.recv().await
-            };
-            match msg {
-                Some(msg) => {
-                    let _ = output.send(msg).await;
-                }
-                None => break, // Channel closed
-            }
-        }
-    })
 }
 
 fn base_button<'a>(
