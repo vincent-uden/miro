@@ -1,5 +1,6 @@
 use anyhow::Result;
-use mupdf::{Device, DisplayList, Document, IRect, Matrix, Page, Pixmap};
+use iced::advanced::image;
+use mupdf::{Colorspace, Device, DisplayList, Document, IRect, Matrix, Page, Pixmap};
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
@@ -64,7 +65,7 @@ impl PdfViewer {
         let list = DisplayList::new(bounds)?;
         let list_dev = Device::from_display_list(&list)?;
         let ctm = Matrix::IDENTITY;
-        list.run(&list_dev, &ctm, bounds)?;
+        page.run(&list_dev, &ctm)?;
 
         Ok(Self {
             scale: 1.0,
@@ -78,6 +79,7 @@ impl PdfViewer {
                 bounds: Rect::default(),
                 list,
                 pix: None,
+                img: None,
             },
             last_mouse_pos: None,
             mouse_down_pos: None,
@@ -118,8 +120,6 @@ impl PdfViewer {
                 self.translation.y += delta / self.scale;
             }
             PdfMessage::UpdateBounds(rectangle) => {
-                // TODO: The amount of wl_registrys that appear scale with the amount of resizing
-                // of the window that is done
                 self.inner_state.bounds = rectangle;
             }
             PdfMessage::None => {}
@@ -278,6 +278,7 @@ impl PdfViewer {
                 self.show_link_hitboxes = !self.show_link_hitboxes;
             }
         }
+        self.draw_pdf_to_pixmap().unwrap();
         iced::Task::none()
     }
 
@@ -298,6 +299,15 @@ impl PdfViewer {
 
     fn set_page(&mut self, idx: i32) -> Result<()> {
         self.cur_page_idx = idx.clamp(0, self.doc.page_count()? - 1);
+        self.page = self.doc.load_page(self.cur_page_idx)?;
+        let bounds = self.page.bounds()?;
+
+        // Regenerate DisplayList for the new page
+        self.inner_state.list = DisplayList::new(bounds)?;
+        let list_dev = Device::from_display_list(&self.inner_state.list)?;
+        let ctm = Matrix::IDENTITY;
+        self.page.run(&list_dev, &ctm)?;
+
         Ok(())
     }
 
@@ -346,5 +356,37 @@ impl PdfViewer {
         } else {
             None
         }
+    }
+
+    fn draw_pdf_to_pixmap(&mut self) -> Result<()> {
+        let mut ctm = Matrix::IDENTITY;
+        ctm.scale(self.scale, self.scale);
+        ctm.pre_translate(-self.translation.x, -self.translation.y);
+
+        if self.inner_state.pix.is_none() {
+            self.inner_state.pix = Some(
+                Pixmap::new_with_w_h(
+                    &Colorspace::device_rgb(),
+                    self.inner_state.bounds.width().round() as i32,
+                    self.inner_state.bounds.height().round() as i32,
+                    true,
+                )
+                .unwrap(),
+            );
+        }
+        let pix = self.inner_state.pix.as_mut().unwrap();
+        pix.clear_with(255)?;
+        let device = Device::from_pixmap(pix)?;
+        // Why are all the pixels just white?
+        self.inner_state
+            .list
+            .run(&device, &ctm, self.inner_state.bounds.into())?;
+        self.inner_state.img = Some(image::Handle::from_rgba(
+            pix.width(),
+            pix.height(),
+            pix.samples().to_vec(), // TODO: Avoid this copy if possible
+        ));
+
+        Ok(())
     }
 }

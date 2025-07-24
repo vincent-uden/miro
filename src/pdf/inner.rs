@@ -8,6 +8,7 @@ use iced::{
     widget::image::FilterMethod,
 };
 use mupdf::{DisplayList, Pixmap};
+use tracing::debug;
 
 use crate::{
     geometry::{Rect, Vector},
@@ -26,6 +27,7 @@ pub struct State {
     pub list: DisplayList,
     /// The pixmap can only be allocated once we know the bounds of the widget
     pub pix: Option<Pixmap>,
+    pub img: Option<image::Handle>,
 }
 
 #[derive(Debug)]
@@ -154,7 +156,22 @@ where
         _cursor: iced::advanced::mouse::Cursor,
         _viewport: &iced::Rectangle,
     ) {
-        let img_bounds = layout.bounds();
+        let viewport_bounds = layout.bounds();
+        let draw_pdf = |renderer: &mut Renderer| {
+            if let Some(img) = &self.state.img {
+                renderer.draw_image(
+                    image::Image {
+                        handle: img.clone(), // TODO: Can we avoid this clone?
+                        filter_method: FilterMethod::Nearest,
+                        rotation: iced::Radians::from(0.0),
+                        opacity: 1.0,
+                        snap: true,
+                    },
+                    viewport_bounds,
+                );
+            }
+        };
+
         let draw_selection = |renderer: &mut Renderer| {
             if let Some(rect) = self.text_selection_rect {
                 // Draw selection rectangle with semi-transparent blue fill and blue border
@@ -228,8 +245,9 @@ where
             }
         };
 
-        renderer.with_layer(img_bounds, draw_selection);
-        renderer.with_layer(img_bounds, draw_link_hitboxes);
+        renderer.with_layer(viewport_bounds, draw_pdf);
+        renderer.with_layer(viewport_bounds, draw_selection);
+        renderer.with_layer(viewport_bounds, draw_link_hitboxes);
     }
 
     fn on_event(
