@@ -21,6 +21,7 @@ use super::{
 /// Contains the state required to rasterize the currently shown page of a pdf.
 #[derive(Debug)]
 pub struct State {
+    /// The viewport bounds
     pub bounds: Rect<f32>,
     pub list: DisplayList,
     /// The pixmap can only be allocated once we know the bounds of the widget

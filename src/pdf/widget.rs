@@ -6,9 +6,9 @@ use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, error};
 
 use crate::{
-    geometry::{Rect, Vector},
-    pdf::link_extraction::LinkType,
     config::MouseAction,
+    geometry::{self, Rect, Vector},
+    pdf::link_extraction::LinkType,
 };
 
 use super::{
@@ -75,7 +75,7 @@ impl PdfViewer {
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: false,
             inner_state: inner::State {
-                bounds: bounds.into(),
+                bounds: Rect::default(),
                 list,
                 pix: None,
             },
@@ -96,7 +96,6 @@ impl PdfViewer {
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
         self.label = format!("{} {}/{}", self.name, self.cur_page_idx + 1, "?",);
         match message {
-            PdfMessage::OpenFile(path_buf) => self.load_file(path_buf).unwrap(),
             PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
             PdfMessage::SetPage(page) => self.set_page(page).unwrap(),
@@ -298,49 +297,33 @@ impl PdfViewer {
     }
 
     fn set_page(&mut self, idx: i32) -> Result<()> {
-        todo!("Enable once we have access to the document");
-        /* if let Some(doc) = self.document_info {
-            self.cur_page_idx = idx.clamp(0, doc.page_count - 1);
-        } */
+        self.cur_page_idx = idx.clamp(0, self.doc.page_count()? - 1);
         Ok(())
     }
 
-    fn load_file(&mut self, path: PathBuf) -> Result<()> {
-        Ok(())
-    }
-
-    fn refresh_file(&mut self) -> Result<()> {
+    pub fn refresh_file(&mut self) -> Result<()> {
         todo!("Re-render");
         Ok(())
     }
 
+    fn page_size(&self) -> Vector<f32> {
+        let page_bounds: geometry::Rect<f32> = self.page.bounds().unwrap().into();
+        page_bounds.size()
+    }
+
     fn zoom_fit_ratio(&mut self) -> Result<f32> {
-        todo!()
-        // if let Some(page) = &self.page_info {
-        //     let page_size = page.size;
-        //     let vertical_scale = self.inner_state.bounds.height() / page_size.y;
-        //     let horizontal_scale = self.inner_state.bounds.width() / page_size.x;
-        //     Ok(vertical_scale.min(horizontal_scale))
-        // } else {
-        //     Ok(1.0)
-        // }
+        let vertical_scale = self.inner_state.bounds.height() / self.page_size().y;
+        let horizontal_scale = self.inner_state.bounds.width() / self.page_size().x;
+        Ok(vertical_scale.min(horizontal_scale))
     }
 
     fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
-        todo!()
-        /* if let Some(page) = self.page_info {
-            screen_pos += self.inner_state.bounds.x0;
-            screen_pos -= self.inner_state.bounds.center();
-            screen_pos.scale(1.0 / self.shown_scale);
-            screen_pos += self.translation;
-            screen_pos += page.size.scaled(0.5);
-            screen_pos
-        } else {
-            // Fallback to old method if no page info
-            let viewport_center = self.inner_state.bounds.center();
-            let relative_pos = screen_pos - viewport_center;
-            relative_pos.scaled(1.0 / self.shown_scale) + self.translation
-        } */
+        screen_pos += self.inner_state.bounds.x0;
+        screen_pos -= self.inner_state.bounds.center();
+        screen_pos.scale(1.0 / self.scale);
+        screen_pos += self.translation;
+        screen_pos += self.page_size().scaled(0.5);
+        screen_pos
     }
 
     pub fn get_outline(&self) -> Option<&Vec<OutlineItem>> {

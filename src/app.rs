@@ -247,7 +247,10 @@ impl App {
                         self.file_watcher = Some(sender);
                     }
                     WatchNotification::Changed(path) => {
-                        todo!("Update pdf viewer")
+                        self.pdfs
+                            .iter_mut()
+                            .find(|pdf| pdf.path == path)
+                            .map(|viewer| viewer.refresh_file());
                     }
                 }
                 iced::Task::none()

@@ -15,7 +15,6 @@ pub mod widget;
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PdfMessage {
-    OpenFile(PathBuf),
     NextPage,
     PreviousPage,
     SetPage(i32),
