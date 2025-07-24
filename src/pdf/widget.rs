@@ -1,4 +1,5 @@
 use anyhow::Result;
+use mupdf::{Device, DisplayList, Document, IRect, Matrix, Page, Pixmap};
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
@@ -20,6 +21,7 @@ use super::{
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
 
+/// Renders a pdf document. Owns all information related to the document.
 #[derive(Debug)]
 pub struct PdfViewer {
     pub name: String,
@@ -35,34 +37,48 @@ pub struct PdfViewer {
     /// Position where the mouse was pressed down, used to detect clicks vs pans
     mouse_down_pos: Option<Vector<f32>>,
     panning: bool,
-    shown_scale: f32,
-    pending_scale: f32,
+    scale: f32,
     text_selection_start: Option<Vector<f32>>,
     selected_text: Option<String>,
     link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
     is_over_link: bool,
     document_outline: Option<Vec<OutlineItem>>,
-}
 
-impl Default for PdfViewer {
-    fn default() -> Self {
-        Self::new()
-    }
+    doc: Document,
+    page: Page,
 }
 
 impl PdfViewer {
-    pub fn new() -> Self {
-        Self {
-            shown_scale: 1.0,
-            pending_scale: 1.0,
-            name: String::new(),
-            path: PathBuf::new(),
+    pub fn from_path(path: PathBuf) -> Result<Self> {
+        let name = path
+            .file_name()
+            .expect("The pdf must have a file name")
+            .to_string_lossy()
+            .to_string();
+        let doc = Document::open(&path.to_str().unwrap())?;
+        let page = doc.load_page(0)?;
+        let bounds = page.bounds()?;
+        // All of these can be immutable since the mutability is actually hidden across the ffi
+        // boundary in the C structs.
+        let list = DisplayList::new(bounds)?;
+        let list_dev = Device::from_display_list(&list)?;
+        let ctm = Matrix::IDENTITY;
+        list.run(&list_dev, &ctm, bounds)?;
+
+        Ok(Self {
+            scale: 1.0,
+            name: name,
+            path: path,
             label: String::new(),
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: false,
-            inner_state: inner::State::default(),
+            inner_state: inner::State {
+                bounds: bounds.into(),
+                list,
+                pix: None,
+            },
             last_mouse_pos: None,
             mouse_down_pos: None,
             panning: false,
@@ -72,7 +88,9 @@ impl PdfViewer {
             show_link_hitboxes: false,
             is_over_link: false,
             document_outline: None,
-        }
+            doc,
+            page,
+        })
     }
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
@@ -83,22 +101,22 @@ impl PdfViewer {
             PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
             PdfMessage::SetPage(page) => self.set_page(page).unwrap(),
             PdfMessage::ZoomIn => {
-                self.pending_scale *= 1.2;
+                self.scale *= 1.2;
             }
             PdfMessage::ZoomOut => {
-                self.pending_scale /= 1.2;
+                self.scale /= 1.2;
             }
             PdfMessage::ZoomHome => {
-                self.pending_scale = 1.0;
+                self.scale = 1.0;
             }
             PdfMessage::ZoomFit => {
-                self.pending_scale = self.zoom_fit_ratio().unwrap_or(1.0);
+                self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
             }
             PdfMessage::MoveHorizontal(delta) => {
-                self.translation.x += delta / self.shown_scale;
+                self.translation.x += delta / self.scale;
             }
             PdfMessage::MoveVertical(delta) => {
-                self.translation.y += delta / self.shown_scale;
+                self.translation.y += delta / self.scale;
             }
             PdfMessage::UpdateBounds(rectangle) => {
                 // TODO: The amount of wl_registrys that appear scale with the amount of resizing
@@ -110,7 +128,7 @@ impl PdfViewer {
                 if self.inner_state.bounds.contains(vector) {
                     if self.panning && self.last_mouse_pos.is_some() {
                         self.translation +=
-                            (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
+                            (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
                     }
                     let doc_pos = self.screen_to_document_coords(vector);
                     self.is_over_link = self
@@ -267,7 +285,7 @@ impl PdfViewer {
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
         PageViewer::new(&self.inner_state)
             .translation(self.translation)
-            .scale(self.shown_scale)
+            .scale(self.scale)
             .invert_colors(self.invert_colors)
             .text_selection(self.current_selection_rect())
             .link_hitboxes(if self.show_link_hitboxes {
@@ -288,12 +306,6 @@ impl PdfViewer {
     }
 
     fn load_file(&mut self, path: PathBuf) -> Result<()> {
-        self.name = path
-            .file_name()
-            .expect("The pdf must have a file name")
-            .to_string_lossy()
-            .to_string();
-        self.path = path.to_path_buf();
         Ok(())
     }
 

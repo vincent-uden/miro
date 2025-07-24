@@ -33,6 +33,7 @@ use rfd::AsyncFileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::{Mutex, mpsc};
+use tracing::error;
 
 use crate::{
     bookmarks::{BookmarkMessage, BookmarkStore},
@@ -167,17 +168,20 @@ impl App {
         match message {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
-                if self.pdfs.is_empty() {
-                    self.pdfs.push(PdfViewer::new());
-                    self.pdf_idx = 0;
-                }
-                if let Some(sender) = &self.file_watcher {
-                    // We should never fill this up from here
+                match PdfViewer::from_path(path_buf.clone()) {
+                    Ok(viewer) => {
+                        self.pdfs.push(viewer);
+                        self.pdf_idx = 0;
+                    }
+                    Err(e) => {
+                        error!("Couldn't create pdf viewer or {path_buf:?} {e}");
+                    }
+                };
+                self.file_watcher.as_ref().map(|sender| {
+                    // We should never fill this up from here, thus blocking is allright
                     let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
-                }
-                self.pdfs[self.pdf_idx]
-                    .update(PdfMessage::OpenFile(path_buf))
-                    .map(AppMessage::PdfMessage)
+                });
+                iced::Task::none()
             }
             AppMessage::CloseFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
@@ -204,15 +208,10 @@ impl App {
                 },
                 AppMessage::FileDialogResult,
             ),
-            AppMessage::FileDialogResult(path_buf_opt) => {
-                if let Some(path_buf) = path_buf_opt {
-                    self.pdfs.push(PdfViewer::new());
-                    self.pdf_idx = self.pdfs.len() - 1;
+            AppMessage::FileDialogResult(path_buf_opt) => path_buf_opt
+                .map_or(iced::Task::none(), |path_buf| {
                     iced::Task::done(AppMessage::OpenFile(path_buf))
-                } else {
-                    iced::Task::none()
-                }
-            }
+                }),
             AppMessage::CloseTab(i) => {
                 if let Some(sender) = &self.file_watcher {
                     // We should never fill this up from here

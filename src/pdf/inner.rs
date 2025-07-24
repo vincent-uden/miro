@@ -7,7 +7,7 @@ use iced::{
     border::Radius,
     widget::image::FilterMethod,
 };
-use mupdf::Pixmap;
+use mupdf::{DisplayList, Pixmap};
 
 use crate::{
     geometry::{Rect, Vector},
@@ -18,9 +18,13 @@ use super::{
     link_extraction::{LinkInfo, LinkType},
 };
 
-#[derive(Debug, Default)]
+/// Contains the state required to rasterize the currently shown page of a pdf.
+#[derive(Debug)]
 pub struct State {
     pub bounds: Rect<f32>,
+    pub list: DisplayList,
+    /// The pixmap can only be allocated once we know the bounds of the widget
+    pub pix: Option<Pixmap>,
 }
 
 #[derive(Debug)]
