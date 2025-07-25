@@ -1,9 +1,12 @@
 use anyhow::Result;
 use mupdf::{Page, Rect as MupdfRect, TextPage, TextPageOptions};
 
+use crate::geometry::{Rect, Vector};
+
 #[derive(Debug, Clone)]
 pub struct TextSelection {
     pub text: String,
+    pub bounds: Rect<f32>,
 }
 
 #[derive(Debug)]
@@ -20,6 +23,7 @@ impl<'a> TextExtractor<'a> {
         let text_page = self.page.to_text_page(TextPageOptions::empty())?;
 
         let mut selected_text = String::new();
+        let mut bounds = Vec::new();
 
         for block in text_page.blocks() {
             for line in block.lines() {
@@ -36,17 +40,33 @@ impl<'a> TextExtractor<'a> {
                         };
 
                         if rectangles_intersect(selection_rect, char_rect)
-                            && let Some(c) = ch.char() {
-                                selected_text.push(c);
-                            }
+                            && let Some(c) = ch.char()
+                        {
+                            selected_text.push(c);
+                        }
                     }
                     selected_text.push('\n');
+                    bounds.push(line_bounds);
                 }
             }
         }
 
+        let total_bounds = bounds
+            .iter()
+            .fold(Rect::default(), |acc: Rect<f32>, r| Rect {
+                x0: Vector {
+                    x: acc.x0.x.min(r.x0),
+                    y: acc.x0.y.min(r.y0),
+                },
+                x1: Vector {
+                    x: acc.x1.x.max(r.x1),
+                    y: acc.x1.y.max(r.y1),
+                },
+            });
+
         Ok(TextSelection {
             text: selected_text.trim().to_string(),
+            bounds: total_bounds,
         })
     }
 
@@ -108,7 +128,7 @@ mod tests {
     #[test]
     fn test_multiple_pages() -> Result<()> {
         let document = Document::open("assets/text-copy-test.pdf")?;
-        
+
         let page_count = document.page_count()?;
         assert!(page_count > 1);
 
@@ -230,4 +250,3 @@ mod tests {
         Ok(())
     }
 }
-

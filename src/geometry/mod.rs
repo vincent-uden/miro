@@ -38,6 +38,13 @@ where
         out
     }
 
+    pub fn div_inverted(self) -> Self {
+        Self {
+            x: T::one() / self.x,
+            y: T::one() / self.y,
+        }
+    }
+
     pub fn zero() -> Vector<T> {
         Self {
             x: T::zero(),

@@ -245,7 +245,7 @@ impl PdfViewer {
                             let selection = extractor
                                 .extract_text_in_rect(selection_rect.into())
                                 .unwrap();
-                            info!("Copied: \"{}\"", selection.text);
+                            info!("Copied: \"{}\" at {:?}", selection.text, selection.bounds);
                             arboard::Clipboard::new().map_or_else(
                                 |e| error!("{e}"),
                                 |mut clipboard| {
@@ -324,10 +324,10 @@ impl PdfViewer {
     fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
         let centering_vector =
             (self.inner_state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
-        screen_pos -= centering_vector;
-        screen_pos += self.translation;
+        screen_pos -= self.inner_state.bounds.x0; // screen scale
+        screen_pos -= centering_vector; // screen scale
         screen_pos.scale(1.0 / self.scale);
-        // TODO: This is incomplete
+        screen_pos += self.translation;
         screen_pos
     }
 
@@ -355,11 +355,11 @@ impl PdfViewer {
 
     fn draw_pdf_to_pixmap(&mut self) -> Result<()> {
         let mut ctm = Matrix::IDENTITY;
-        ctm.scale(self.scale, self.scale);
-        ctm.pre_translate(-self.translation.x, -self.translation.y);
         let centering_vector =
             (self.inner_state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
         ctm.pre_translate(centering_vector.x, centering_vector.y);
+        ctm.scale(self.scale, self.scale);
+        ctm.pre_translate(-self.translation.x, -self.translation.y);
 
         if self.inner_state.pix.is_none() {
             self.inner_state.pix = Some(
