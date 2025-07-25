@@ -27,6 +27,17 @@ where
         out
     }
 
+    pub fn non_uniform_scale(&mut self, scale: Vector<T>) {
+        self.x = self.x * scale.x;
+        self.y = self.y * scale.y;
+    }
+
+    pub fn non_uniform_scaled(self, scale: Vector<T>) -> Vector<T> {
+        let mut out = self;
+        out.non_uniform_scale(scale);
+        out
+    }
+
     pub fn zero() -> Vector<T> {
         Self {
             x: T::zero(),

@@ -4,12 +4,12 @@ use mupdf::{Colorspace, Device, DisplayList, Document, IRect, Matrix, Page, Pixm
 use num::Integer;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::{
     config::MouseAction,
     geometry::{self, Rect, Vector},
-    pdf::link_extraction::LinkType,
+    pdf::{link_extraction::LinkType, text_extraction::TextExtractor},
 };
 
 use super::{
@@ -164,26 +164,7 @@ impl PdfViewer {
             }
 
             PdfMessage::MouseLeftUp(shift_pressed) => {
-                if shift_pressed {
-                    if let (Some(start_pos), Some(end_pos)) =
-                        (self.text_selection_start, self.last_mouse_pos)
-                    {
-                        let doc_start = self.screen_to_document_coords(start_pos);
-                        let doc_end = self.screen_to_document_coords(end_pos);
-
-                        let selection_rect = Rect::from_points(
-                            Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
-                            Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
-                        );
-
-                        if selection_rect.width() > MIN_SELECTION
-                            && selection_rect.height() > MIN_SELECTION
-                        {
-                            // TODO: Remove this entire section. Should be handled in mouse action
-                        }
-                    }
-                    self.text_selection_start = None;
-                } else {
+                if !shift_pressed {
                     // Handle link clicks only if mouse didn't move significantly (click vs pan)
                     let is_click = if let (Some(down_pos), Some(up_pos)) =
                         (self.mouse_down_pos, self.last_mouse_pos)
@@ -260,7 +241,20 @@ impl PdfViewer {
                         if selection_rect.width() > MIN_SELECTION
                             && selection_rect.height() > MIN_SELECTION
                         {
-                            todo!("Extract text");
+                            let extractor = TextExtractor::new(&self.page);
+                            let selection = extractor
+                                .extract_text_in_rect(selection_rect.into())
+                                .unwrap();
+                            info!("Copied: \"{}\"", selection.text);
+                            arboard::Clipboard::new().map_or_else(
+                                |e| error!("{e}"),
+                                |mut clipboard| {
+                                    clipboard
+                                        .set_text(selection.text)
+                                        .inspect_err(|e| error!("{e}"))
+                                        .unwrap();
+                                },
+                            )
                         }
                     }
                     self.text_selection_start = None;
@@ -328,11 +322,12 @@ impl PdfViewer {
     }
 
     fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
-        screen_pos += self.inner_state.bounds.x0;
-        screen_pos -= self.inner_state.bounds.center();
-        screen_pos.scale(1.0 / self.scale);
+        let centering_vector =
+            (self.inner_state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
+        screen_pos -= centering_vector;
         screen_pos += self.translation;
-        screen_pos += self.page_size().scaled(0.5);
+        screen_pos.scale(1.0 / self.scale);
+        // TODO: This is incomplete
         screen_pos
     }
 
@@ -362,6 +357,9 @@ impl PdfViewer {
         let mut ctm = Matrix::IDENTITY;
         ctm.scale(self.scale, self.scale);
         ctm.pre_translate(-self.translation.x, -self.translation.y);
+        let centering_vector =
+            (self.inner_state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
+        ctm.pre_translate(centering_vector.x, centering_vector.y);
 
         if self.inner_state.pix.is_none() {
             self.inner_state.pix = Some(
@@ -377,10 +375,16 @@ impl PdfViewer {
         let pix = self.inner_state.pix.as_mut().unwrap();
         pix.clear_with(255)?;
         let device = Device::from_pixmap(pix)?;
-        // Why are all the pixels just white?
-        self.inner_state
-            .list
-            .run(&device, &ctm, self.inner_state.bounds.into())?;
+        self.inner_state.list.run(
+            &device,
+            &ctm,
+            mupdf::Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: self.inner_state.bounds.width(),
+                y1: self.inner_state.bounds.height(),
+            },
+        )?;
         self.inner_state.img = Some(image::Handle::from_rgba(
             pix.width(),
             pix.height(),
