@@ -2,7 +2,7 @@ use anyhow::Result;
 use iced::advanced::image;
 use mupdf::{Colorspace, Device, DisplayList, Document, IRect, Matrix, Page, Pixmap};
 use num::Integer;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, error, info};
 
@@ -51,6 +51,8 @@ pub struct PdfViewer {
 
     doc: Document,
     page: Page,
+
+    debounce_handle: Option<iced::task::Handle>,
 }
 
 impl PdfViewer {
@@ -99,40 +101,66 @@ impl PdfViewer {
             document_outline: None,
             doc,
             page,
+            debounce_handle: None,
         })
     }
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
         self.label = format!("{} {}/{}", self.name, self.cur_page_idx + 1, "?",);
-        match message {
-            PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
-            PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
-            PdfMessage::SetPage(page) => self.set_page(page).unwrap(),
+        let task: iced::Task<PdfMessage> = match message {
+            PdfMessage::NextPage => {
+                self.set_page(self.cur_page_idx + 1).unwrap();
+                iced::Task::none()
+            }
+            PdfMessage::PreviousPage => {
+                self.set_page(self.cur_page_idx - 1).unwrap();
+                iced::Task::none()
+            }
+            PdfMessage::SetPage(page) => {
+                self.set_page(page).unwrap();
+                iced::Task::none()
+            }
             PdfMessage::ZoomIn => {
                 self.scale *= 1.2;
+                iced::Task::none()
             }
             PdfMessage::ZoomOut => {
                 self.scale /= 1.2;
+                iced::Task::none()
             }
             PdfMessage::ZoomHome => {
                 self.scale = 1.0;
+                iced::Task::none()
             }
             PdfMessage::ZoomFit => {
                 self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
+                iced::Task::none()
             }
             PdfMessage::MoveHorizontal(delta) => {
                 self.translation.x += delta / self.scale;
+                iced::Task::none()
             }
             PdfMessage::MoveVertical(delta) => {
                 self.translation.y += delta / self.scale;
+                iced::Task::none()
             }
             PdfMessage::UpdateBounds(rectangle) => {
-                if rectangle != self.inner_state.bounds {
-                    self.inner_state.pix = None;
-                }
                 self.inner_state.bounds = rectangle;
+                let (out, handle) = iced::Task::perform(
+                    (async move || {
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                        info!("Debounce over");
+                    })(),
+                    |_| PdfMessage::ReallocPixmap,
+                )
+                .abortable();
+                if let Some(handle) = self.debounce_handle.as_mut() {
+                    handle.abort();
+                }
+                self.debounce_handle = Some(handle);
+                out
             }
-            PdfMessage::None => {}
+            PdfMessage::None => iced::Task::none(),
             PdfMessage::MouseMoved(vector) => {
                 if self.inner_state.bounds.contains(vector) {
                     if self.panning && self.last_mouse_pos.is_some() {
@@ -150,6 +178,7 @@ impl PdfViewer {
                     self.last_mouse_pos = None;
                     self.is_over_link = false;
                 }
+                iced::Task::none()
             }
             PdfMessage::MouseLeftDown(shift_pressed) => {
                 // Store the initial mouse position for click vs pan detection
@@ -171,6 +200,7 @@ impl PdfViewer {
                         }
                     }
                 }
+                iced::Task::none()
             }
             PdfMessage::MouseLeftUp(shift_pressed) => {
                 if !shift_pressed {
@@ -194,7 +224,6 @@ impl PdfViewer {
                                 .iter()
                                 .find(|link| link.bounds.contains(pos))
                         {
-                            debug!("{link:?}");
                             match link.link_type {
                                 LinkType::InternalPage(page) => {
                                     if self.set_page(page as i32).is_err() {
@@ -214,79 +243,89 @@ impl PdfViewer {
                     self.panning = false;
                     self.mouse_down_pos = None;
                 }
+                iced::Task::none()
             }
-            PdfMessage::MouseAction(action, pressed) => match (action, pressed) {
-                (MouseAction::Panning, true) => {
-                    if let Some(mp) = self.last_mouse_pos {
-                        let mut padded_bounds = self.inner_state.bounds;
-                        padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
-                        padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
-                        if padded_bounds.contains(mp) {
-                            self.panning = true;
+            PdfMessage::MouseAction(action, pressed) => {
+                match (action, pressed) {
+                    (MouseAction::Panning, true) => {
+                        if let Some(mp) = self.last_mouse_pos {
+                            let mut padded_bounds = self.inner_state.bounds;
+                            padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
+                            padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
+                            if padded_bounds.contains(mp) {
+                                self.panning = true;
+                            }
                         }
                     }
-                }
-                (MouseAction::Panning, false) => {
-                    self.panning = false;
-                }
-                (MouseAction::Selection, true) => {
-                    if let Some(pos) = self.last_mouse_pos {
-                        self.text_selection_start = Some(pos);
+                    (MouseAction::Panning, false) => {
+                        self.panning = false;
                     }
-                }
-                (MouseAction::Selection, false) => {
-                    if let (Some(start_pos), Some(end_pos)) =
-                        (self.text_selection_start, self.last_mouse_pos)
-                    {
-                        let doc_start = self.screen_to_document_coords(start_pos);
-                        let doc_end = self.screen_to_document_coords(end_pos);
-
-                        let selection_rect = Rect::from_points(
-                            Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
-                            Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
-                        );
-
-                        if selection_rect.width() > MIN_SELECTION
-                            && selection_rect.height() > MIN_SELECTION
+                    (MouseAction::Selection, true) => {
+                        if let Some(pos) = self.last_mouse_pos {
+                            self.text_selection_start = Some(pos);
+                        }
+                    }
+                    (MouseAction::Selection, false) => {
+                        if let (Some(start_pos), Some(end_pos)) =
+                            (self.text_selection_start, self.last_mouse_pos)
                         {
-                            let extractor = TextExtractor::new(&self.page);
-                            let selection = extractor
-                                .extract_text_in_rect(selection_rect.into())
-                                .unwrap();
-                            info!("Copied: \"{}\" at {:?}", selection.text, selection.bounds);
-                            arboard::Clipboard::new().map_or_else(
-                                |e| error!("{e}"),
-                                |mut clipboard| {
-                                    clipboard
-                                        .set_text(selection.text)
-                                        .inspect_err(|e| error!("{e}"))
-                                        .unwrap();
-                                },
-                            )
+                            let doc_start = self.screen_to_document_coords(start_pos);
+                            let doc_end = self.screen_to_document_coords(end_pos);
+
+                            let selection_rect = Rect::from_points(
+                                Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
+                                Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
+                            );
+
+                            if selection_rect.width() > MIN_SELECTION
+                                && selection_rect.height() > MIN_SELECTION
+                            {
+                                let extractor = TextExtractor::new(&self.page);
+                                let selection = extractor
+                                    .extract_text_in_rect(selection_rect.into())
+                                    .unwrap();
+                                info!("Copied: \"{}\" at {:?}", selection.text, selection.bounds);
+                                arboard::Clipboard::new().map_or_else(
+                                    |e| error!("{e}"),
+                                    |mut clipboard| {
+                                        clipboard
+                                            .set_text(selection.text)
+                                            .inspect_err(|e| error!("{e}"))
+                                            .unwrap();
+                                    },
+                                )
+                            }
                         }
+                        self.text_selection_start = None;
                     }
-                    self.text_selection_start = None;
+                    (MouseAction::NextPage, true) => {
+                        let _ = self.set_page(self.cur_page_idx + 1);
+                    }
+                    (MouseAction::NextPage, false) => {}
+                    (MouseAction::PreviousPage, true) => {
+                        let _ = self.set_page(self.cur_page_idx - 1);
+                    }
+                    (MouseAction::PreviousPage, false) => {}
                 }
-                (MouseAction::NextPage, true) => {
-                    let _ = self.set_page(self.cur_page_idx + 1);
-                }
-                (MouseAction::NextPage, false) => {}
-                (MouseAction::PreviousPage, true) => {
-                    let _ = self.set_page(self.cur_page_idx - 1);
-                }
-                (MouseAction::PreviousPage, false) => {}
-            },
+                iced::Task::none()
+            }
             PdfMessage::ToggleLinkHitboxes => {
                 self.show_link_hitboxes = !self.show_link_hitboxes;
+                iced::Task::none()
             }
             PdfMessage::FileChanged => {
                 self.refresh_file().unwrap();
+                iced::Task::none()
             }
-        }
+            PdfMessage::ReallocPixmap => {
+                self.inner_state.pix = None;
+                iced::Task::none()
+            }
+        };
         // This is perhaps slightly inefficient, but with how fast rasterisation is now, I'll leave
         // it here.
         self.draw_pdf_to_pixmap().unwrap();
-        iced::Task::none()
+        task
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {

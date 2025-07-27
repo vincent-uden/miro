@@ -31,6 +31,7 @@ pub enum PdfMessage {
     MouseAction(MouseAction, bool), // action and whether it's pressed (true) or released (false)
     ToggleLinkHitboxes,
     FileChanged,
+    ReallocPixmap,
     #[default]
     None,
 }
