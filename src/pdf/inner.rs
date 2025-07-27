@@ -28,7 +28,6 @@ pub struct State {
     pub list: DisplayList,
     /// The pixmap can only be allocated once we know the bounds of the widget
     pub pix: Option<Pixmap>,
-    pub img: Option<image::Handle>,
 }
 
 #[derive(Debug)]
@@ -159,10 +158,14 @@ where
     ) {
         let viewport_bounds = layout.bounds();
         let draw_pdf = |renderer: &mut Renderer| {
-            if let Some(img) = &self.state.img {
+            if let Some(pix) = &self.state.pix {
                 renderer.draw_image(
                     image::Image {
-                        handle: img.clone(), // TODO: Can we avoid this clone?
+                        handle: image::Handle::from_rgba(
+                            pix.width(),
+                            pix.height(),
+                            pix.samples().to_vec(),
+                        ),
                         filter_method: FilterMethod::Nearest,
                         rotation: iced::Radians::from(0.0),
                         opacity: 1.0,

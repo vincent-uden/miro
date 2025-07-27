@@ -88,7 +88,6 @@ impl PdfViewer {
                 page_size: page.bounds()?.size().into(),
                 list,
                 pix: None,
-                img: None,
             },
             last_mouse_pos: None,
             mouse_down_pos: None,
@@ -429,7 +428,8 @@ impl PdfViewer {
             );
         }
         let pix = self.inner_state.pix.as_mut().unwrap();
-        pix.clear_with(255)?;
+        let samples = pix.samples_mut();
+        samples.fill(255);
         let device = Device::from_pixmap(pix)?;
         self.inner_state.list.run(
             &device,
@@ -441,11 +441,6 @@ impl PdfViewer {
                 y1: self.inner_state.bounds.height(),
             },
         )?;
-        self.inner_state.img = Some(image::Handle::from_rgba(
-            pix.width(),
-            pix.height(),
-            pix.samples().to_vec(), // TODO: Avoid this copy if possible
-        ));
 
         Ok(())
     }
