@@ -24,6 +24,7 @@ use super::{
 pub struct State {
     /// The viewport bounds
     pub bounds: Rect<f32>,
+    pub page_size: Vector<f32>,
     pub list: DisplayList,
     /// The pixmap can only be allocated once we know the bounds of the widget
     pub pix: Option<Pixmap>,
@@ -193,54 +194,53 @@ where
         let draw_link_hitboxes = |renderer: &mut Renderer| {
             if let Some(links) = self.link_hitboxes {
                 for link in links {
-                    // TODO: Enable once we have access to page bounds
                     let doc_rect = link.bounds;
-                    /* if let Some(page) = self.page_info {
-                        let scaled_page_size = page.size.scaled(self.scale);
-                        let pdf_center = Vector::new(
-                            (img_bounds.width - scaled_page_size.x) / 2.0,
-                            (img_bounds.height - scaled_page_size.y) / 2.0,
-                        );
+                    let scaled_page_size = self.state.page_size.scaled(self.scale);
+                    let pdf_center = Vector::new(
+                        (viewport_bounds.width - scaled_page_size.x) / 2.0,
+                        (viewport_bounds.height - scaled_page_size.y) / 2.0,
+                    );
 
-                        let offset = pdf_center - self.translation.scaled(self.scale);
-                        let mut link_bounds = Rect::from_points(
-                            doc_rect.x0.scaled(self.scale),
-                            doc_rect.x1.scaled(self.scale),
-                        );
-                        link_bounds.translate(offset);
+                    let link_bounds = Rect::from_points(
+                        (doc_rect.x0 - self.translation).scaled(self.scale)
+                            + pdf_center
+                            + viewport_bounds.position().into(),
+                        (doc_rect.x1 - self.translation).scaled(self.scale)
+                            + pdf_center
+                            + viewport_bounds.position().into(),
+                    );
 
-                        let (border_color, fill_color) = match link.link_type {
-                            LinkType::ExternalUrl => (
-                                iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
-                                iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
-                            ),
-                            LinkType::InternalPage(_) => (
-                                iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
-                                iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
-                            ),
-                            LinkType::Email => (
-                                iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
-                                iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
-                            ),
-                            LinkType::Other => (
-                                iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
-                                iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
-                            ),
-                        };
+                    let (border_color, fill_color) = match link.link_type {
+                        LinkType::ExternalUrl => (
+                            iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
+                            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
+                        ),
+                        LinkType::InternalPage(_) => (
+                            iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
+                            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
+                        ),
+                        LinkType::Email => (
+                            iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
+                            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
+                        ),
+                        LinkType::Other => (
+                            iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
+                            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
+                        ),
+                    };
 
-                        renderer.fill_quad(
-                            Quad {
-                                bounds: link_bounds.into(),
-                                border: Border {
-                                    color: border_color,
-                                    width: 1.5,
-                                    radius: Radius::from(2.0),
-                                },
-                                shadow: Shadow::default(),
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: link_bounds.into(),
+                            border: Border {
+                                color: border_color,
+                                width: 1.5,
+                                radius: Radius::from(2.0),
                             },
-                            fill_color,
-                        );
-                    } */
+                            shadow: Shadow::default(),
+                        },
+                        fill_color,
+                    );
                 }
             }
         };

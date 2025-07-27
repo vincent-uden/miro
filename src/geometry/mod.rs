@@ -167,6 +167,15 @@ impl From<iced::Size> for Vector<f32> {
     }
 }
 
+impl From<mupdf::Size> for Vector<f32> {
+    fn from(value: mupdf::Size) -> Self {
+        Self {
+            x: value.width,
+            y: value.height,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct Rect<T> {
     /// Top left

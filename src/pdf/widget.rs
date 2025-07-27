@@ -9,7 +9,10 @@ use tracing::{debug, error, info};
 use crate::{
     config::MouseAction,
     geometry::{self, Rect, Vector},
-    pdf::{link_extraction::LinkType, text_extraction::TextExtractor},
+    pdf::{
+        link_extraction::{LinkExtractor, LinkType},
+        text_extraction::TextExtractor,
+    },
 };
 
 use super::{
@@ -67,6 +70,9 @@ impl PdfViewer {
         let ctm = Matrix::IDENTITY;
         page.run(&list_dev, &ctm)?;
 
+        let extractor = LinkExtractor::new(&page);
+        let link_hitboxes = extractor.extract_all_links()?;
+
         Ok(Self {
             scale: 1.0,
             name: name,
@@ -77,6 +83,7 @@ impl PdfViewer {
             invert_colors: false,
             inner_state: inner::State {
                 bounds: Rect::default(),
+                page_size: page.bounds()?.size().into(),
                 list,
                 pix: None,
                 img: None,
@@ -86,7 +93,7 @@ impl PdfViewer {
             panning: false,
             text_selection_start: None,
             selected_text: None,
-            link_hitboxes: Vec::new(),
+            link_hitboxes,
             show_link_hitboxes: false,
             is_over_link: false,
             document_outline: None,
@@ -301,6 +308,9 @@ impl PdfViewer {
         let list_dev = Device::from_display_list(&self.inner_state.list)?;
         let ctm = Matrix::IDENTITY;
         self.page.run(&list_dev, &ctm)?;
+
+        let extractor = LinkExtractor::new(&self.page);
+        self.link_hitboxes = extractor.extract_all_links()?;
 
         Ok(())
     }
