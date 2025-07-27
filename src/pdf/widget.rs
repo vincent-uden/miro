@@ -127,6 +127,9 @@ impl PdfViewer {
                 self.translation.y += delta / self.scale;
             }
             PdfMessage::UpdateBounds(rectangle) => {
+                if rectangle != self.inner_state.bounds {
+                    self.inner_state.pix = None;
+                }
                 self.inner_state.bounds = rectangle;
             }
             PdfMessage::None => {}
@@ -280,7 +283,8 @@ impl PdfViewer {
                 self.refresh_file().unwrap();
             }
         }
-        // TODO: This shouldn't happen on every single message
+        // This is perhaps slightly inefficient, but with how fast rasterisation is now, I'll leave
+        // it here.
         self.draw_pdf_to_pixmap().unwrap();
         iced::Task::none()
     }
