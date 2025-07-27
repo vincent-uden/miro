@@ -250,7 +250,7 @@ impl App {
                         self.pdfs
                             .iter_mut()
                             .find(|pdf| pdf.path == path)
-                            .map(|viewer| viewer.refresh_file());
+                            .map(|viewer| viewer.update(PdfMessage::FileChanged));
                     }
                 }
                 iced::Task::none()

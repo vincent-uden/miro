@@ -30,6 +30,7 @@ pub enum PdfMessage {
     MouseLeftUp(bool),              // bool indicates if Shift is pressed
     MouseAction(MouseAction, bool), // action and whether it's pressed (true) or released (false)
     ToggleLinkHitboxes,
+    FileChanged,
     #[default]
     None,
 }

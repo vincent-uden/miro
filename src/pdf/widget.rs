@@ -75,8 +75,8 @@ impl PdfViewer {
 
         Ok(Self {
             scale: 1.0,
-            name: name,
-            path: path,
+            name,
+            path,
             label: String::new(),
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
@@ -169,7 +169,6 @@ impl PdfViewer {
                     }
                 }
             }
-
             PdfMessage::MouseLeftUp(shift_pressed) => {
                 if !shift_pressed {
                     // Handle link clicks only if mouse didn't move significantly (click vs pan)
@@ -213,7 +212,6 @@ impl PdfViewer {
                     self.mouse_down_pos = None;
                 }
             }
-
             PdfMessage::MouseAction(action, pressed) => match (action, pressed) {
                 (MouseAction::Panning, true) => {
                     if let Some(mp) = self.last_mouse_pos {
@@ -278,7 +276,11 @@ impl PdfViewer {
             PdfMessage::ToggleLinkHitboxes => {
                 self.show_link_hitboxes = !self.show_link_hitboxes;
             }
+            PdfMessage::FileChanged => {
+                self.refresh_file().unwrap();
+            }
         }
+        // TODO: This shouldn't happen on every single message
         self.draw_pdf_to_pixmap().unwrap();
         iced::Task::none()
     }
@@ -316,7 +318,8 @@ impl PdfViewer {
     }
 
     pub fn refresh_file(&mut self) -> Result<()> {
-        todo!("Re-render");
+        self.doc = Document::open(&self.path.to_str().unwrap())?;
+        self.set_page(self.cur_page_idx)?;
         Ok(())
     }
 
