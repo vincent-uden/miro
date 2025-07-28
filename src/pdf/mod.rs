@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::{
     geometry::{Rect, Vector},
     config::MouseAction,

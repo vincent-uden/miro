@@ -1,11 +1,9 @@
-use std::{fs::canonicalize, path::PathBuf, sync::Arc};
+use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
     alignment,
     border::{self, Radius},
     event::listen_with,
-    futures::{SinkExt, Stream},
-    stream,
     theme::palette,
     widget::{
         self,
@@ -32,7 +30,7 @@ use keybinds::{KeySeq, Keybind};
 use rfd::AsyncFileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use tracing::error;
 
 use crate::{
@@ -177,10 +175,10 @@ impl App {
                         error!("Couldn't create pdf viewer or {path_buf:?} {e}");
                     }
                 };
-                self.file_watcher.as_ref().map(|sender| {
+                if let Some(sender) = self.file_watcher.as_ref() {
                     // We should never fill this up from here, thus blocking is allright
                     let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
-                });
+                }
                 iced::Task::none()
             }
             AppMessage::CloseFile(path_buf) => {
@@ -281,21 +279,19 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::MouseRightDown => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseRight) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Right) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::MouseMiddleDown => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseMiddle) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Middle) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::MouseLeftUp => {
@@ -306,57 +302,51 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::MouseRightUp => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseRight) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Right) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::MouseMiddleUp => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseMiddle) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Middle) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::MouseBackDown => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseBack) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Back) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::MouseBackUp => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseBack) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Back) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::MouseForwardDown => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseForward) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Forward) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::MouseForwardUp => {
-                if !self.pdfs.is_empty() {
-                    if let Some(action) = self.get_mouse_action(MouseButton::MouseForward) {
+                if !self.pdfs.is_empty()
+                    && let Some(action) = self.get_mouse_action(MouseButton::Forward) {
                         let _ =
                             self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                     }
-                }
                 iced::Task::none()
             }
             AppMessage::ShiftPressed(pressed) => {

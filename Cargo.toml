@@ -1,6 +1,6 @@
 [package]
 name = "miro-pdf"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 license-file = "LICENSE"
 description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings."

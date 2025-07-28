@@ -56,6 +56,8 @@ fn main() -> iced::Result {
                 .expect(
                     "Managed to load a config file without being able to determine its location"
                 )
+                .canonicalize()
+                .unwrap()
                 .to_str()
                 .unwrap()
         );

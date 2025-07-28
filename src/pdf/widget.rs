@@ -1,19 +1,8 @@
 use anyhow::Result;
-use code_timing_macros::time_function;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
-use iced::advanced::image;
-use mupdf::{Colorspace, Device, DisplayList, Document, IRect, Matrix, Page, Pixmap};
-use num::Integer;
-use std::{
-    arch::x86_64::{__m128i, _mm_loadu_si128},
-    cell::RefCell,
-    collections::HashMap,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
-use tokio::sync::{Mutex, mpsc};
-use tracing::{debug, error, info};
+use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
+use std::{cell::RefCell, path::PathBuf, time::Duration};
+use tracing::{error, info};
 
 use crate::{
     config::MouseAction,
@@ -169,10 +158,9 @@ impl PdfViewer {
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.borrow_mut().bounds = rectangle;
                 let (out, handle) = iced::Task::perform(
-                    (async move || {
+                    async {
                         tokio::time::sleep(Duration::from_millis(150)).await;
-                        info!("Debounce over");
-                    })(),
+                    },
                     |_| PdfMessage::ReallocPixmap,
                 )
                 .abortable();
@@ -237,27 +225,26 @@ impl PdfViewer {
                         false
                     };
 
-                    if is_click {
-                        if let Some(pos) = self
+                    if is_click
+                        && let Some(pos) = self
                             .last_mouse_pos
                             .map(|p| self.screen_to_document_coords(p))
-                            && let Some(link) = self
-                                .link_hitboxes
-                                .iter()
-                                .find(|link| link.bounds.contains(pos))
-                        {
-                            match link.link_type {
-                                LinkType::InternalPage(page) => {
-                                    if self.set_page(page as i32).is_err() {
-                                        error!("Couldn't jump to page {page}");
-                                    }
+                        && let Some(link) = self
+                            .link_hitboxes
+                            .iter()
+                            .find(|link| link.bounds.contains(pos))
+                    {
+                        match link.link_type {
+                            LinkType::InternalPage(page) => {
+                                if self.set_page(page as i32).is_err() {
+                                    error!("Couldn't jump to page {page}");
                                 }
-                                _ => {
-                                    if let Ok(mut clipboard) = arboard::Clipboard::new()
-                                        && let Err(e) = clipboard.set_text(&link.uri)
-                                    {
-                                        error!("Failed to copy link to clipboard: {}", e);
-                                    }
+                            }
+                            _ => {
+                                if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                    && let Err(e) = clipboard.set_text(&link.uri)
+                                {
+                                    error!("Failed to copy link to clipboard: {}", e);
                                 }
                             }
                         }
@@ -460,7 +447,7 @@ impl PdfViewer {
                 .unwrap(),
             );
         }
-        let bounds = state.bounds.clone();
+        let bounds = state.bounds;
         let device = {
             let pix = state.pix.as_mut().unwrap();
             let samples = pix.samples_mut();
@@ -494,8 +481,8 @@ fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
         ])
         .build::<LinearGradient>()
         .unwrap();
-    for i in 0..256 {
-        cache[i] = gradient.at((i as f32) / 255.0).to_rgba8();
+    for (i, item) in cache.iter_mut().enumerate().take(256) {
+        *item = gradient.at((i as f32) / 255.0).to_rgba8();
     }
 }
 
@@ -510,6 +497,3 @@ fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, gradient_cache: &[[u8; 4]; 256]
         *pixel_array = gradient_cache[brightness];
     }
 }
-
-// TODO: (Next)
-// - Clean up clippy errors and rustc warnings

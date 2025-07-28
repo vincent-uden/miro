@@ -1,6 +1,4 @@
-use std::{cell::Ref, collections::HashMap};
-
-use colorgrad::{Gradient, GradientBuilder, LinearGradient};
+use std::cell::Ref;
 use iced::{
     Border, ContentFit, Element, Length, Shadow, Size,
     advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
@@ -8,7 +6,6 @@ use iced::{
     widget::image::FilterMethod,
 };
 use mupdf::{DisplayList, Pixmap};
-use tracing::debug;
 
 use crate::{
     geometry::{Rect, Vector},
