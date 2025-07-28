@@ -248,6 +248,8 @@ impl PdfViewer {
                                 }
                             }
                         }
+                        // Hide links after activation
+                        self.show_link_hitboxes = false;
                     }
                     self.panning = false;
                     self.mouse_down_pos = None;
@@ -320,6 +322,31 @@ impl PdfViewer {
             }
             PdfMessage::ToggleLinkHitboxes => {
                 self.show_link_hitboxes = !self.show_link_hitboxes;
+                iced::Task::none()
+            }
+            PdfMessage::ActivateLink(index) => {
+                if let Some(link) = self.link_hitboxes.get(index) {
+                    match link.link_type {
+                        LinkType::InternalPage(page) => {
+                            if self.set_page(page as i32).is_err() {
+                                error!("Couldn't jump to page {page}");
+                            }
+                        }
+                        _ => {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                && let Err(e) = clipboard.set_text(&link.uri)
+                            {
+                                error!("Failed to copy link to clipboard: {}", e);
+                            }
+                        }
+                    }
+                    // Hide links after activation
+                    self.show_link_hitboxes = false;
+                }
+                iced::Task::none()
+            }
+            PdfMessage::CloseLinkHitboxes => {
+                self.show_link_hitboxes = false;
                 iced::Task::none()
             }
             PdfMessage::FileChanged => {

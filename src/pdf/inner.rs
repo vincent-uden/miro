@@ -16,6 +16,61 @@ use super::{
     link_extraction::{LinkInfo, LinkType},
 };
 
+fn generate_key_combinations(count: usize) -> Vec<String> {
+    // Use easily distinguishable characters (excluding confusing ones like 'I', 'l', 'O', '0')
+    const CHARS: &[char] = &[
+        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n', 'p', 'q', 'r', 's', 't', 'u',
+        'v', 'w', 'x', 'y', 'z',
+    ];
+
+    let mut keys = Vec::new();
+
+    // Single characters first
+    for &c in CHARS.iter().take(count.min(CHARS.len())) {
+        keys.push(c.to_string());
+    }
+
+    // Two-character combinations if needed
+    if count > CHARS.len() {
+        let remaining = count - CHARS.len();
+        let mut added = 0;
+        'outer: for &c1 in CHARS {
+            for &c2 in CHARS {
+                if added >= remaining {
+                    break 'outer;
+                }
+                keys.push(format!("{}{}", c1, c2));
+                added += 1;
+            }
+        }
+    }
+
+    keys
+}
+
+fn get_link_colors(link_type: &LinkType) -> (iced::Color, iced::Color) {
+    match link_type {
+        LinkType::ExternalUrl => (
+            iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
+            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
+        ),
+        LinkType::InternalPage(_) => (
+            iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
+            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
+        ),
+        LinkType::Email => (
+            iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
+            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
+        ),
+        LinkType::Other => (
+            iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
+            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
+        ),
+    }
+}
+
+
+
 /// Contains the state required to rasterize the currently shown page of a pdf.
 #[derive(Debug)]
 pub struct State {
@@ -39,6 +94,7 @@ pub struct PageViewer<'a> {
     invert_colors: bool,
     text_selection_rect: Option<Rect<f32>>,
     link_hitboxes: Option<&'a Vec<LinkInfo>>,
+    link_keys: Option<Vec<String>>,
     is_over_link: bool,
 }
 
@@ -55,6 +111,7 @@ impl<'a> PageViewer<'a> {
             invert_colors: false,
             text_selection_rect: None,
             link_hitboxes: None,
+            link_keys: None,
             is_over_link: false,
         }
     }
@@ -107,6 +164,7 @@ impl<'a> PageViewer<'a> {
 
     pub fn link_hitboxes(mut self, links: Option<&'a Vec<LinkInfo>>) -> Self {
         self.link_hitboxes = links;
+        self.link_keys = links.map(|l| generate_key_combinations(l.len()));
         self
     }
 
@@ -118,7 +176,8 @@ impl<'a> PageViewer<'a> {
 
 impl<Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PageViewer<'_>
 where
-    Renderer: image::Renderer<Handle = image::Handle>,
+    Renderer:
+        image::Renderer<Handle = image::Handle> + iced::advanced::text::Renderer<Font = iced::Font>,
 {
     fn size(&self) -> iced::Size<Length> {
         Size::new(
@@ -213,24 +272,7 @@ where
                             + viewport_bounds.position().into(),
                     );
 
-                    let (border_color, fill_color) = match link.link_type {
-                        LinkType::ExternalUrl => (
-                            iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
-                            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
-                        ),
-                        LinkType::InternalPage(_) => (
-                            iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
-                            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
-                        ),
-                        LinkType::Email => (
-                            iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
-                            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
-                        ),
-                        LinkType::Other => (
-                            iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
-                            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
-                        ),
-                    };
+                    let (border_color, fill_color) = get_link_colors(&link.link_type);
 
                     renderer.fill_quad(
                         Quad {
@@ -248,9 +290,76 @@ where
             }
         };
 
+        let draw_key_hints = |renderer: &mut Renderer| {
+            if let (Some(links), Some(keys)) = (self.link_hitboxes, &self.link_keys) {
+                for (link, key) in links.iter().zip(keys.iter()) {
+                    let doc_rect = link.bounds;
+                    let scaled_page_size = self.state.page_size.scaled(self.scale);
+                    let pdf_center = Vector::new(
+                        (viewport_bounds.width - scaled_page_size.x) / 2.0,
+                        (viewport_bounds.height - scaled_page_size.y) / 2.0,
+                    );
+
+                    let link_bounds = Rect::from_points(
+                        (doc_rect.x0 - self.translation).scaled(self.scale)
+                            + pdf_center
+                            + viewport_bounds.position().into(),
+                        (doc_rect.x1 - self.translation).scaled(self.scale)
+                            + pdf_center
+                            + viewport_bounds.position().into(),
+                    );
+
+                    // Position key hint vertically centered, to the right of link bounds
+                    let link_center_y = (link_bounds.x0.y + link_bounds.x1.y) / 2.0 + 2.0;
+                    let text_height = 20.0;
+                    // Position the bounds so text appears centered relative to link
+                    let bounds_top = link_center_y - text_height / 2.0;
+                    let hint_position = iced::Point::new(link_bounds.x1.x + 2.0, bounds_top);
+                    let hint_bounds =
+                        iced::Rectangle::new(hint_position, iced::Size::new(24.0, text_height));
+
+                    // Use same colors as the link hitbox
+                    let (border_color, fill_color) = get_link_colors(&link.link_type);
+
+                    // Draw background quad for better visibility
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: hint_bounds,
+                            border: Border {
+                                color: border_color,
+                                width: 1.0,
+                                radius: Radius::from(3.0),
+                            },
+                            shadow: Shadow::default(),
+                        },
+                        fill_color,
+                    );
+
+                    // Draw text on top of background
+                    renderer.fill_text(
+                        iced::advanced::text::Text {
+                            content: key.clone(),
+                            bounds: iced::Size::new(24.0, text_height),
+                            size: iced::Pixels(12.0),
+                            line_height: iced::widget::text::LineHeight::default(),
+                            font: iced::Font::default(),
+                            horizontal_alignment: iced::alignment::Horizontal::Left,
+                            vertical_alignment: iced::alignment::Vertical::Top,
+                            shaping: iced::advanced::text::Shaping::default(),
+                            wrapping: iced::advanced::text::Wrapping::default(),
+                        },
+                        hint_position + Vector::new(4.0, 2.0).into(),
+                        iced::Color::WHITE, // White text on dark background
+                        hint_bounds,
+                    );
+                }
+            }
+        };
+
         renderer.with_layer(viewport_bounds, draw_pdf);
         renderer.with_layer(viewport_bounds, draw_selection);
         renderer.with_layer(viewport_bounds, draw_link_hitboxes);
+        renderer.with_layer(viewport_bounds, draw_key_hints);
     }
 
     fn on_event(
@@ -275,6 +384,42 @@ where
                 iced::window::Event::Resized(_) => Some(PdfMessage::UpdateBounds(bounds.into())),
                 _ => None,
             },
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                ..
+            }) => {
+                match key {
+                    // Handle Escape key to close links (hardcoded, not configurable)
+                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => {
+                        if modifiers.is_empty() && self.link_hitboxes.is_some() {
+                            Some(PdfMessage::CloseLinkHitboxes)
+                        } else {
+                            None
+                        }
+                    }
+                    // Handle character keys for link activation
+                    iced::keyboard::Key::Character(ref key_char) => {
+                        // Only handle keys without modifiers and when links are visible
+                        if modifiers.is_empty() && self.link_hitboxes.is_some() && self.link_keys.is_some()
+                        {
+                            if let (Some(_links), Some(keys)) = (self.link_hitboxes, &self.link_keys) {
+                                // Find the index of the pressed key combination
+                                if let Some(index) = keys.iter().position(|k| k == key_char.as_str()) {
+                                    Some(PdfMessage::ActivateLink(index))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         };
         if let Some(msg) = out {
@@ -303,7 +448,8 @@ where
 
 impl<'a, Renderer> From<PageViewer<'a>> for Element<'a, PdfMessage, iced::Theme, Renderer>
 where
-    Renderer: image::Renderer<Handle = image::Handle>,
+    Renderer:
+        image::Renderer<Handle = image::Handle> + iced::advanced::text::Renderer<Font = iced::Font>,
 {
     fn from(value: PageViewer<'a>) -> Self {
         Element::new(value)
