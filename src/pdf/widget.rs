@@ -1,9 +1,17 @@
 use anyhow::Result;
+use code_timing_macros::time_function;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::advanced::image;
 use mupdf::{Colorspace, Device, DisplayList, Document, IRect, Matrix, Page, Pixmap};
 use num::Integer;
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    arch::x86_64::{__m128i, _mm_loadu_si128},
+    cell::RefCell,
+    collections::HashMap,
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, error, info};
 
@@ -37,7 +45,7 @@ pub struct PdfViewer {
     pub cur_page_idx: i32,
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
-    inner_state: inner::State,
+    inner_state: RefCell<inner::State>,
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
     /// corner of the screen, it must account for that offset.
     last_mouse_pos: Option<Vector<f32>>,
@@ -99,12 +107,12 @@ impl PdfViewer {
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: false,
-            inner_state: inner::State {
+            inner_state: RefCell::new(inner::State {
                 bounds: Rect::default(),
                 page_size: page.bounds()?.size().into(),
                 list,
                 pix: None,
-            },
+            }),
             last_mouse_pos: None,
             mouse_down_pos: None,
             panning: false,
@@ -121,7 +129,6 @@ impl PdfViewer {
     }
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
-        self.label = format!("{} {}/{}", self.name, self.cur_page_idx + 1, "?",);
         let task: iced::Task<PdfMessage> = match message {
             PdfMessage::NextPage => {
                 self.set_page(self.cur_page_idx + 1).unwrap();
@@ -160,7 +167,7 @@ impl PdfViewer {
                 iced::Task::none()
             }
             PdfMessage::UpdateBounds(rectangle) => {
-                self.inner_state.bounds = rectangle;
+                self.inner_state.borrow_mut().bounds = rectangle;
                 let (out, handle) = iced::Task::perform(
                     (async move || {
                         tokio::time::sleep(Duration::from_millis(150)).await;
@@ -177,7 +184,7 @@ impl PdfViewer {
             }
             PdfMessage::None => iced::Task::none(),
             PdfMessage::MouseMoved(vector) => {
-                if self.inner_state.bounds.contains(vector) {
+                if self.inner_state.borrow().bounds.contains(vector) {
                     if self.panning && self.last_mouse_pos.is_some() {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
@@ -207,7 +214,7 @@ impl PdfViewer {
                 } else {
                     // Don't start panning if we're close enough to the edge that a pane resizing might happen
                     if let Some(mp) = self.last_mouse_pos {
-                        let mut padded_bounds = self.inner_state.bounds;
+                        let mut padded_bounds = self.inner_state.borrow().bounds;
                         padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
                         padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
                         if padded_bounds.contains(mp) {
@@ -264,7 +271,7 @@ impl PdfViewer {
                 match (action, pressed) {
                     (MouseAction::Panning, true) => {
                         if let Some(mp) = self.last_mouse_pos {
-                            let mut padded_bounds = self.inner_state.bounds;
+                            let mut padded_bounds = self.inner_state.borrow().bounds;
                             padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
                             padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
                             if padded_bounds.contains(mp) {
@@ -333,18 +340,22 @@ impl PdfViewer {
                 iced::Task::none()
             }
             PdfMessage::ReallocPixmap => {
-                self.inner_state.pix = None;
+                self.inner_state.borrow_mut().pix = None;
                 iced::Task::none()
             }
         };
-        // This is perhaps slightly inefficient, but with how fast rasterisation is now, I'll leave
-        // it here.
-        self.draw_pdf_to_pixmap().unwrap();
+        self.label = format!(
+            "{} {}/{}",
+            self.name,
+            self.cur_page_idx + 1,
+            self.doc.page_count().unwrap_or(0),
+        );
         task
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        PageViewer::new(&self.inner_state)
+        self.draw_pdf_to_pixmap().unwrap();
+        PageViewer::new(self.inner_state.borrow())
             .translation(self.translation)
             .scale(self.scale)
             .invert_colors(self.invert_colors)
@@ -363,9 +374,11 @@ impl PdfViewer {
         self.page = self.doc.load_page(self.cur_page_idx)?;
         let bounds = self.page.bounds()?;
 
+        let mut state = self.inner_state.borrow_mut();
+
         // Regenerate DisplayList for the new page
-        self.inner_state.list = DisplayList::new(bounds)?;
-        let list_dev = Device::from_display_list(&self.inner_state.list)?;
+        state.list = DisplayList::new(bounds)?;
+        let list_dev = Device::from_display_list(&state.list)?;
         let ctm = Matrix::IDENTITY;
         self.page.run(&list_dev, &ctm)?;
 
@@ -389,15 +402,16 @@ impl PdfViewer {
     }
 
     fn zoom_fit_ratio(&mut self) -> Result<f32> {
-        let vertical_scale = self.inner_state.bounds.height() / self.page_size().y;
-        let horizontal_scale = self.inner_state.bounds.width() / self.page_size().x;
+        let vertical_scale = self.inner_state.borrow().bounds.height() / self.page_size().y;
+        let horizontal_scale = self.inner_state.borrow().bounds.width() / self.page_size().x;
         Ok(vertical_scale.min(horizontal_scale))
     }
 
     fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
-        let centering_vector =
-            (self.inner_state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
-        screen_pos -= self.inner_state.bounds.x0; // screen scale
+        let centering_vector = (self.inner_state.borrow().bounds.size()
+            - self.page_size().scaled(self.scale))
+        .scaled(0.5);
+        screen_pos -= self.inner_state.borrow().bounds.x0; // screen scale
         screen_pos -= centering_vector; // screen scale
         screen_pos.scale(1.0 / self.scale);
         screen_pos += self.translation;
@@ -426,39 +440,44 @@ impl PdfViewer {
         }
     }
 
-    fn draw_pdf_to_pixmap(&mut self) -> Result<()> {
+    fn draw_pdf_to_pixmap(&self) -> Result<()> {
+        let mut state = self.inner_state.borrow_mut();
         let mut ctm = Matrix::IDENTITY;
         let centering_vector =
-            (self.inner_state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
+            (state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
         ctm.pre_translate(centering_vector.x, centering_vector.y);
         ctm.scale(self.scale, self.scale);
         ctm.pre_translate(-self.translation.x, -self.translation.y);
 
-        if self.inner_state.pix.is_none() {
-            self.inner_state.pix = Some(
+        if state.pix.is_none() {
+            state.pix = Some(
                 Pixmap::new_with_w_h(
                     &Colorspace::device_rgb(),
-                    self.inner_state.bounds.width().round() as i32,
-                    self.inner_state.bounds.height().round() as i32,
+                    state.bounds.width().round() as i32,
+                    state.bounds.height().round() as i32,
                     true,
                 )
                 .unwrap(),
             );
         }
-        let pix = self.inner_state.pix.as_mut().unwrap();
-        let samples = pix.samples_mut();
-        samples.fill(255);
-        let device = Device::from_pixmap(pix)?;
-        self.inner_state.list.run(
+        let bounds = state.bounds.clone();
+        let device = {
+            let pix = state.pix.as_mut().unwrap();
+            let samples = pix.samples_mut();
+            samples.fill(255);
+            Device::from_pixmap(pix)?
+        };
+        state.list.run(
             &device,
             &ctm,
             mupdf::Rect {
                 x0: 0.0,
                 y0: 0.0,
-                x1: self.inner_state.bounds.width(),
-                y1: self.inner_state.bounds.height(),
+                x1: bounds.width(),
+                y1: bounds.height(),
             },
         )?;
+        let pix = state.pix.as_mut().unwrap();
         if self.invert_colors {
             cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);
         }
@@ -482,18 +501,15 @@ fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
 
 fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, gradient_cache: &[[u8; 4]; 256]) {
     let samples = pixmap.samples_mut();
-    for i in 0..(samples.len() / 4) {
-        let r: u16 = samples[i * 4 + 0] as u16;
-        let g: u16 = samples[i * 4 + 1] as u16;
-        let b: u16 = samples[i * 4 + 2] as u16;
+    for pixel in samples.chunks_exact_mut(4) {
+        let r: u16 = pixel[0] as u16;
+        let g: u16 = pixel[1] as u16;
+        let b: u16 = pixel[2] as u16;
         let brightness = ((r + g + b) / 3) as usize;
-        samples[i * 4 + 0] = gradient_cache[brightness][0];
-        samples[i * 4 + 1] = gradient_cache[brightness][1];
-        samples[i * 4 + 2] = gradient_cache[brightness][2];
-        samples[i * 4 + 3] = gradient_cache[brightness][3];
+        let pixel_array: &mut [u8; 4] = pixel.try_into().unwrap();
+        *pixel_array = gradient_cache[brightness];
     }
 }
 
 // TODO: (Next)
-// - Dark mode (cpu shader is too slow)
 // - Clean up clippy errors and rustc warnings

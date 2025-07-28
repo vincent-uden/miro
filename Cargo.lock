@@ -815,6 +815,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "code-timing-macros"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15cfadb008499abfb16146f2dfb71bfd272d324380a34d535a5a41d838be2911"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+ "tracing",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2887,6 +2899,7 @@ dependencies = [
  "async-watcher",
  "axum",
  "clap",
+ "code-timing-macros",
  "colored",
  "colorgrad",
  "home",

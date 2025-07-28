@@ -517,12 +517,6 @@ impl App {
             ..Default::default()
         });
 
-        let _image: Element<'_, AppMessage> = if self.pdfs.is_empty() {
-            vertical_space().into()
-        } else {
-            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-        };
-
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
             command_bar = command_bar.push(file_tab(

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::Ref, collections::HashMap};
 
 use colorgrad::{Gradient, GradientBuilder, LinearGradient};
 use iced::{
@@ -32,7 +32,7 @@ pub struct State {
 
 #[derive(Debug)]
 pub struct PageViewer<'a> {
-    state: &'a State,
+    state: Ref<'a, State>,
     width: Length,
     height: Length,
     content_fit: ContentFit,
@@ -46,7 +46,7 @@ pub struct PageViewer<'a> {
 }
 
 impl<'a> PageViewer<'a> {
-    pub fn new(state: &'a State) -> Self {
+    pub fn new(state: Ref<'a, State>) -> Self {
         Self {
             state,
             width: Length::Fill,
