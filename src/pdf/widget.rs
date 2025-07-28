@@ -1,13 +1,18 @@
 use anyhow::Result;
-use num::Integer;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::sync::{Mutex, mpsc};
-use tracing::{debug, error};
+use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
+use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
+use std::{cell::RefCell, path::PathBuf, time::Duration};
+use tracing::{error, info};
 
 use crate::{
-    geometry::{Rect, Vector},
-    pdf::link_extraction::LinkType,
     config::MouseAction,
+    geometry::{self, Rect, Vector},
+    pdf::{
+        link_extraction::{LinkExtractor, LinkType},
+        outline_extraction::OutlineExtractor,
+        text_extraction::TextExtractor,
+    },
+    DARK_THEME,
 };
 
 use super::{
@@ -15,18 +20,12 @@ use super::{
     inner::{self, PageViewer},
     link_extraction::LinkInfo,
     outline_extraction::OutlineItem,
-    worker::{
-        CachedTile, DocumentInfo, PageInfo, RenderRequest, WorkerCommand, WorkerResponse,
-        worker_main,
-    },
 };
 
-const TILE_CACHE_GRID_SIZE: i32 = 5;
-
 const MIN_SELECTION: f32 = 5.0;
-
 const MIN_CLICK_DISTANCE: f32 = 5.0;
 
+/// Renders a pdf document. Owns all information related to the document.
 #[derive(Debug)]
 pub struct PdfViewer {
     pub name: String,
@@ -35,130 +34,148 @@ pub struct PdfViewer {
     pub cur_page_idx: i32,
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
-    inner_state: inner::State,
+    inner_state: RefCell<inner::State>,
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
     /// corner of the screen, it must account for that offset.
     last_mouse_pos: Option<Vector<f32>>,
     /// Position where the mouse was pressed down, used to detect clicks vs pans
     mouse_down_pos: Option<Vector<f32>>,
     panning: bool,
-    command_tx: mpsc::UnboundedSender<WorkerCommand>,
-    pub result_rx: Arc<Mutex<mpsc::UnboundedReceiver<WorkerResponse>>>,
-    worker_handle: Option<std::thread::JoinHandle<()>>,
-    document_info: Option<DocumentInfo>,
-    page_info: Option<PageInfo>,
-    shown_scale: f32,
-    pending_scale: f32,
-    pending_tile_cache: HashMap<(i32, i32), CachedTile>,
-    shown_tile_cache: HashMap<(i32, i32), CachedTile>,
-    current_center_tile: Vector<i32>,
-    generation: Arc<std::sync::Mutex<usize>>,
+    scale: f32,
     text_selection_start: Option<Vector<f32>>,
-    selected_text: Option<String>,
     link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
     is_over_link: bool,
-    document_outline: Option<Vec<OutlineItem>>,
-}
+    document_outline: Vec<OutlineItem>,
 
-impl Default for PdfViewer {
-    fn default() -> Self {
-        Self::new()
-    }
+    doc: Document,
+    page: Page,
+
+    debounce_handle: Option<iced::task::Handle>,
+
+    gradient_cache: [[u8; 4]; 256],
 }
 
 impl PdfViewer {
-    pub fn new() -> Self {
-        assert!(
-            TILE_CACHE_GRID_SIZE.is_odd(),
-            "The tile cache grid must be of an odd size, is currently {TILE_CACHE_GRID_SIZE}"
-        );
+    pub fn from_path(path: PathBuf) -> Result<Self> {
+        let name = path
+            .file_name()
+            .expect("The pdf must have a file name")
+            .to_string_lossy()
+            .to_string();
+        let doc = Document::open(&path.to_str().unwrap())?;
+        let page = doc.load_page(0)?;
+        let bounds = page.bounds()?;
+        // All of these can be immutable since the mutability is actually hidden across the ffi
+        // boundary in the C structs.
+        let list = DisplayList::new(bounds)?;
+        let list_dev = Device::from_display_list(&list)?;
+        let ctm = Matrix::IDENTITY;
+        page.run(&list_dev, &ctm)?;
 
-        let (command_tx, command_rx) = mpsc::unbounded_channel::<WorkerCommand>();
-        let (result_tx, result_rx) = mpsc::unbounded_channel::<WorkerResponse>();
+        let extractor = LinkExtractor::new(&page);
+        let link_hitboxes = extractor.extract_all_links()?;
 
-        let worker_handle = std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(worker_main(command_rx, result_tx));
-        });
+        let extractor = OutlineExtractor::new(&doc);
+        let document_outline = extractor.extract_outline()?;
 
-        Self {
-            shown_scale: 1.0,
-            pending_scale: 1.0,
-            name: String::new(),
-            path: PathBuf::new(),
+        let bg_color = DARK_THEME
+            .extended_palette()
+            .background
+            .base
+            .color
+            .into_rgba8();
+        let mut gradient_cache = [[0; 4]; 256];
+        generate_gradient_cache(&mut gradient_cache, &bg_color);
+
+        Ok(Self {
+            scale: 1.0,
+            name,
+            path,
             label: String::new(),
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: false,
-            inner_state: inner::State::default(),
+            inner_state: RefCell::new(inner::State {
+                bounds: Rect::default(),
+                page_size: page.bounds()?.size().into(),
+                list,
+                pix: None,
+            }),
             last_mouse_pos: None,
             mouse_down_pos: None,
             panning: false,
-            command_tx,
-            result_rx: Arc::new(Mutex::new(result_rx)),
-            worker_handle: Some(worker_handle),
-            document_info: None,
-            page_info: None,
-            pending_tile_cache: HashMap::new(),
-            shown_tile_cache: HashMap::new(),
-            current_center_tile: Vector::zero(),
-            generation: Arc::new(std::sync::Mutex::new(0)),
             text_selection_start: None,
-            selected_text: None,
-            link_hitboxes: Vec::new(),
+            link_hitboxes,
             show_link_hitboxes: false,
             is_over_link: false,
-            document_outline: None,
-        }
+            document_outline,
+            doc,
+            page,
+            debounce_handle: None,
+            gradient_cache,
+        })
     }
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
-        self.label = format!(
-            "{} {}/{}",
-            self.name,
-            self.cur_page_idx + 1,
-            self.document_info.map(|x| x.page_count).unwrap_or_default(),
-        );
-        match message {
-            PdfMessage::OpenFile(path_buf) => self.load_file(path_buf).unwrap(),
-            PdfMessage::NextPage => self.set_page(self.cur_page_idx + 1).unwrap(),
-            PdfMessage::PreviousPage => self.set_page(self.cur_page_idx - 1).unwrap(),
-            PdfMessage::SetPage(page) => self.set_page(page).unwrap(),
+        let task: iced::Task<PdfMessage> = match message {
+            PdfMessage::NextPage => {
+                self.set_page(self.cur_page_idx + 1).unwrap();
+                iced::Task::none()
+            }
+            PdfMessage::PreviousPage => {
+                self.set_page(self.cur_page_idx - 1).unwrap();
+                iced::Task::none()
+            }
+            PdfMessage::SetPage(page) => {
+                self.set_page(page).unwrap();
+                iced::Task::none()
+            }
             PdfMessage::ZoomIn => {
-                self.pending_scale *= 1.2;
-                self.invalidate_cache();
+                self.scale *= 1.2;
+                iced::Task::none()
             }
             PdfMessage::ZoomOut => {
-                self.pending_scale /= 1.2;
-                self.invalidate_cache();
+                self.scale /= 1.2;
+                iced::Task::none()
             }
             PdfMessage::ZoomHome => {
-                self.pending_scale = 1.0;
-                self.invalidate_cache();
+                self.scale = 1.0;
+                iced::Task::none()
             }
             PdfMessage::ZoomFit => {
-                self.pending_scale = self.zoom_fit_ratio().unwrap_or(1.0);
-                self.invalidate_cache();
+                self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
+                iced::Task::none()
             }
             PdfMessage::MoveHorizontal(delta) => {
-                self.translation.x += delta / self.shown_scale;
+                self.translation.x += delta / self.scale;
+                iced::Task::none()
             }
             PdfMessage::MoveVertical(delta) => {
-                self.translation.y += delta / self.shown_scale;
+                self.translation.y += delta / self.scale;
+                iced::Task::none()
             }
             PdfMessage::UpdateBounds(rectangle) => {
-                // TODO: The amount of wl_registrys that appear scale with the amount of resizing
-                // of the window that is done
-                self.inner_state.bounds = rectangle;
+                self.inner_state.borrow_mut().bounds = rectangle;
+                let (out, handle) = iced::Task::perform(
+                    async {
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                    },
+                    |_| PdfMessage::ReallocPixmap,
+                )
+                .abortable();
+                if let Some(handle) = self.debounce_handle.as_mut() {
+                    handle.abort();
+                }
+                self.debounce_handle = Some(handle);
+                out
             }
-            PdfMessage::None => {}
+            PdfMessage::None => iced::Task::none(),
             PdfMessage::MouseMoved(vector) => {
-                if self.inner_state.bounds.contains(vector) {
+                if self.inner_state.borrow().bounds.contains(vector) {
                     if self.panning && self.last_mouse_pos.is_some() {
                         self.translation +=
-                            (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.shown_scale);
-                        self.invalidate_cache();
+                            (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
                     }
                     let doc_pos = self.screen_to_document_coords(vector);
                     self.is_over_link = self
@@ -171,6 +188,7 @@ impl PdfViewer {
                     self.last_mouse_pos = None;
                     self.is_over_link = false;
                 }
+                iced::Task::none()
             }
             PdfMessage::MouseLeftDown(shift_pressed) => {
                 // Store the initial mouse position for click vs pan detection
@@ -184,7 +202,7 @@ impl PdfViewer {
                 } else {
                     // Don't start panning if we're close enough to the edge that a pane resizing might happen
                     if let Some(mp) = self.last_mouse_pos {
-                        let mut padded_bounds = self.inner_state.bounds;
+                        let mut padded_bounds = self.inner_state.borrow().bounds;
                         padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
                         padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
                         if padded_bounds.contains(mp) {
@@ -192,34 +210,10 @@ impl PdfViewer {
                         }
                     }
                 }
+                iced::Task::none()
             }
-
             PdfMessage::MouseLeftUp(shift_pressed) => {
-                if shift_pressed {
-                    if let (Some(start_pos), Some(end_pos)) =
-                        (self.text_selection_start, self.last_mouse_pos)
-                    {
-                        let doc_start = self.screen_to_document_coords(start_pos);
-                        let doc_end = self.screen_to_document_coords(end_pos);
-
-                        let selection_rect = Rect::from_points(
-                            Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
-                            Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
-                        );
-
-                        if selection_rect.width() > MIN_SELECTION
-                            && selection_rect.height() > MIN_SELECTION
-                        {
-                            if let Err(e) = self
-                                .command_tx
-                                .send(WorkerCommand::ExtractText(selection_rect.into()))
-                            {
-                                error!("Failed to send text extraction command: {}", e);
-                            }
-                        }
-                    }
-                    self.text_selection_start = None;
-                } else {
+                if !shift_pressed {
                     // Handle link clicks only if mouse didn't move significantly (click vs pan)
                     let is_click = if let (Some(down_pos), Some(up_pos)) =
                         (self.mouse_down_pos, self.last_mouse_pos)
@@ -231,28 +225,26 @@ impl PdfViewer {
                         false
                     };
 
-                    if is_click {
-                        if let Some(pos) = self
+                    if is_click
+                        && let Some(pos) = self
                             .last_mouse_pos
                             .map(|p| self.screen_to_document_coords(p))
-                            && let Some(link) = self
-                                .link_hitboxes
-                                .iter()
-                                .find(|link| link.bounds.contains(pos))
-                        {
-                            debug!("{link:?}");
-                            match link.link_type {
-                                LinkType::InternalPage(page) => {
-                                    if self.set_page(page as i32).is_err() {
-                                        error!("Couldn't jump to page {page}");
-                                    }
+                        && let Some(link) = self
+                            .link_hitboxes
+                            .iter()
+                            .find(|link| link.bounds.contains(pos))
+                    {
+                        match link.link_type {
+                            LinkType::InternalPage(page) => {
+                                if self.set_page(page as i32).is_err() {
+                                    error!("Couldn't jump to page {page}");
                                 }
-                                _ => {
-                                    if let Ok(mut clipboard) = arboard::Clipboard::new()
-                                        && let Err(e) = clipboard.set_text(&link.uri)
-                                    {
-                                        error!("Failed to copy link to clipboard: {}", e);
-                                    }
+                            }
+                            _ => {
+                                if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                    && let Err(e) = clipboard.set_text(&link.uri)
+                                {
+                                    error!("Failed to copy link to clipboard: {}", e);
                                 }
                             }
                         }
@@ -260,125 +252,99 @@ impl PdfViewer {
                     self.panning = false;
                     self.mouse_down_pos = None;
                 }
+                iced::Task::none()
             }
-
-            PdfMessage::MouseAction(action, pressed) => match (action, pressed) {
-                (MouseAction::Panning, true) => {
-                    if let Some(mp) = self.last_mouse_pos {
-                        let mut padded_bounds = self.inner_state.bounds;
-                        padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
-                        padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
-                        if padded_bounds.contains(mp) {
-                            self.panning = true;
-                        }
-                    }
-                }
-                (MouseAction::Panning, false) => {
-                    self.panning = false;
-                }
-                (MouseAction::Selection, true) => {
-                    if let Some(pos) = self.last_mouse_pos {
-                        self.text_selection_start = Some(pos);
-                    }
-                }
-                (MouseAction::Selection, false) => {
-                    if let (Some(start_pos), Some(end_pos)) =
-                        (self.text_selection_start, self.last_mouse_pos)
-                    {
-                        let doc_start = self.screen_to_document_coords(start_pos);
-                        let doc_end = self.screen_to_document_coords(end_pos);
-
-                        let selection_rect = Rect::from_points(
-                            Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
-                            Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
-                        );
-
-                        if selection_rect.width() > MIN_SELECTION
-                            && selection_rect.height() > MIN_SELECTION
-                        {
-                            if let Err(e) = self
-                                .command_tx
-                                .send(WorkerCommand::ExtractText(selection_rect.into()))
-                            {
-                                error!("Failed to send text extraction command: {}", e);
+            PdfMessage::MouseAction(action, pressed) => {
+                match (action, pressed) {
+                    (MouseAction::Panning, true) => {
+                        if let Some(mp) = self.last_mouse_pos {
+                            let mut padded_bounds = self.inner_state.borrow().bounds;
+                            padded_bounds.x0 += Vector { x: 11.0, y: 11.0 };
+                            padded_bounds.x1 -= Vector { x: 11.0, y: 11.0 };
+                            if padded_bounds.contains(mp) {
+                                self.panning = true;
                             }
                         }
                     }
-                    self.text_selection_start = None;
-                }
-                (MouseAction::NextPage, true) => {
-                    let _ = self.set_page(self.cur_page_idx + 1);
-                }
-                (MouseAction::NextPage, false) => {}
-                (MouseAction::PreviousPage, true) => {
-                    let _ = self.set_page(self.cur_page_idx - 1);
-                }
-                (MouseAction::PreviousPage, false) => {}
-            },
-            PdfMessage::ToggleLinkHitboxes => {
-                self.show_link_hitboxes = !self.show_link_hitboxes;
-            }
-            PdfMessage::WorkerResponse(worker_response) => match worker_response {
-                WorkerResponse::RenderedTile(cached_tile) => {
-                    let current_generation = *self.generation.lock().unwrap();
-                    if cached_tile.generation == current_generation {
-                        self.pending_tile_cache
-                            .insert((cached_tile.x, cached_tile.y), cached_tile);
-                        if self.pending_tile_cache.len() == TILE_CACHE_GRID_SIZE.pow(2) as usize {
-                            std::mem::swap(
-                                &mut self.pending_tile_cache,
-                                &mut self.shown_tile_cache,
-                            );
-                            self.pending_tile_cache.clear();
-                            self.shown_scale = self.pending_scale;
+                    (MouseAction::Panning, false) => {
+                        self.panning = false;
+                    }
+                    (MouseAction::Selection, true) => {
+                        if let Some(pos) = self.last_mouse_pos {
+                            self.text_selection_start = Some(pos);
                         }
                     }
-                }
-                WorkerResponse::Loaded(document_info) => {
-                    self.pending_tile_cache.clear();
-                    self.shown_tile_cache.clear();
-                    self.document_info = Some(document_info);
-                    self.set_page(0).unwrap();
-                    if let Err(e) = self.command_tx.send(WorkerCommand::ExtractOutline) {
-                        error!("Failed to send outline extraction command: {}", e);
+                    (MouseAction::Selection, false) => {
+                        if let (Some(start_pos), Some(end_pos)) =
+                            (self.text_selection_start, self.last_mouse_pos)
+                        {
+                            let doc_start = self.screen_to_document_coords(start_pos);
+                            let doc_end = self.screen_to_document_coords(end_pos);
+
+                            let selection_rect = Rect::from_points(
+                                Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
+                                Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
+                            );
+
+                            if selection_rect.width() > MIN_SELECTION
+                                && selection_rect.height() > MIN_SELECTION
+                            {
+                                let extractor = TextExtractor::new(&self.page);
+                                let selection = extractor
+                                    .extract_text_in_rect(selection_rect.into())
+                                    .unwrap();
+                                info!("Copied: \"{}\" at {:?}", selection.text, selection.bounds);
+                                arboard::Clipboard::new().map_or_else(
+                                    |e| error!("{e}"),
+                                    |mut clipboard| {
+                                        clipboard
+                                            .set_text(selection.text)
+                                            .inspect_err(|e| error!("{e}"))
+                                            .unwrap();
+                                    },
+                                )
+                            }
+                        }
+                        self.text_selection_start = None;
                     }
-                }
-                WorkerResponse::SetPage(page_info) => {
-                    self.page_info = Some(page_info);
-                    if self.inner_state.bounds.size() != Vector::zero() {
-                        self.force_invalidate_cache();
+                    (MouseAction::NextPage, true) => {
+                        let _ = self.set_page(self.cur_page_idx + 1);
                     }
-                    if let Err(e) = self.command_tx.send(WorkerCommand::ExtractLinks) {
-                        error!("Failed to send link extraction command: {}", e);
+                    (MouseAction::NextPage, false) => {}
+                    (MouseAction::PreviousPage, true) => {
+                        let _ = self.set_page(self.cur_page_idx - 1);
                     }
+                    (MouseAction::PreviousPage, false) => {}
                 }
-                WorkerResponse::Refreshed(_, document_info) => {
-                    self.document_info = Some(document_info);
-                    self.refresh_file().unwrap();
-                }
-                WorkerResponse::ExtractedText(text_selection) => {
-                    self.selected_text = Some(text_selection.text.clone());
-                    if let Ok(mut clipboard) = arboard::Clipboard::new()
-                        && let Err(e) = clipboard.set_text(&text_selection.text)
-                    {
-                        error!("Failed to copy text to clipboard: {}", e);
-                    }
-                }
-                WorkerResponse::ExtractedLinks(links) => {
-                    self.link_hitboxes = links;
-                }
-                WorkerResponse::ExtractedOutline(outline) => {
-                    self.document_outline = Some(outline);
-                }
-            },
-        }
-        iced::Task::none()
+                iced::Task::none()
+            }
+            PdfMessage::ToggleLinkHitboxes => {
+                self.show_link_hitboxes = !self.show_link_hitboxes;
+                iced::Task::none()
+            }
+            PdfMessage::FileChanged => {
+                self.refresh_file().unwrap();
+                iced::Task::none()
+            }
+            PdfMessage::ReallocPixmap => {
+                self.inner_state.borrow_mut().pix = None;
+                iced::Task::none()
+            }
+        };
+        self.label = format!(
+            "{} {}/{}",
+            self.name,
+            self.cur_page_idx + 1,
+            self.doc.page_count().unwrap_or(0),
+        );
+        task
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        PageViewer::new(&self.shown_tile_cache, &self.inner_state)
+        self.draw_pdf_to_pixmap().unwrap();
+        PageViewer::new(self.inner_state.borrow())
             .translation(self.translation)
-            .scale(self.shown_scale)
+            .scale(self.scale)
             .invert_colors(self.invert_colors)
             .text_selection(self.current_selection_rect())
             .link_hitboxes(if self.show_link_hitboxes {
@@ -386,183 +352,61 @@ impl PdfViewer {
             } else {
                 None
             })
-            .page_info(self.page_info)
             .over_link(self.is_over_link)
             .into()
     }
 
     fn set_page(&mut self, idx: i32) -> Result<()> {
-        if let Some(doc) = self.document_info {
-            self.cur_page_idx = idx.clamp(0, doc.page_count - 1);
-            self.command_tx
-                .send(WorkerCommand::SetPage(self.cur_page_idx))?;
-        }
+        self.cur_page_idx = idx.clamp(0, self.doc.page_count()? - 1);
+        self.page = self.doc.load_page(self.cur_page_idx)?;
+        let bounds = self.page.bounds()?;
+
+        let mut state = self.inner_state.borrow_mut();
+
+        // Regenerate DisplayList for the new page
+        state.list = DisplayList::new(bounds)?;
+        let list_dev = Device::from_display_list(&state.list)?;
+        let ctm = Matrix::IDENTITY;
+        self.page.run(&list_dev, &ctm)?;
+
+        let extractor = LinkExtractor::new(&self.page);
+        self.link_hitboxes = extractor.extract_all_links()?;
+
         Ok(())
     }
 
-    fn load_file(&mut self, path: PathBuf) -> Result<()> {
-        self.name = path
-            .file_name()
-            .expect("The pdf must have a file name")
-            .to_string_lossy()
-            .to_string();
-        self.path = path.to_path_buf();
-
-        self.command_tx.send(WorkerCommand::LoadDocument(path))?;
+    pub fn refresh_file(&mut self) -> Result<()> {
+        self.doc = Document::open(&self.path.to_str().unwrap())?;
+        let extractor = OutlineExtractor::new(&self.doc);
+        self.document_outline = extractor.extract_outline()?;
+        self.set_page(self.cur_page_idx)?;
         Ok(())
     }
 
-    pub fn force_invalidate_cache(&mut self) {
-        let middle_of_screen = self.translation.scaled(self.pending_scale);
-        let tile_size = self.tile_bounds(Vector::zero()).unwrap();
-
-        let viewport_tile_coord = Vector {
-            x: (middle_of_screen.x / tile_size.width() as f32).round() as i32,
-            y: (middle_of_screen.y / tile_size.height() as f32).round() as i32,
-        };
-
-        self.increment_generation();
-        self.pending_tile_cache.clear();
-        self.current_center_tile = viewport_tile_coord;
-        self.populate_cache();
-    }
-
-    fn increment_generation(&mut self) {
-        let mut generation = self.generation.lock().unwrap();
-        *generation += 1;
-    }
-
-    fn invalidate_cache(&mut self) {
-        let middle_of_screen = self.translation.scaled(self.pending_scale);
-        let tile_size = self.tile_bounds(Vector::zero()).unwrap();
-
-        let viewport_tile_coord = Vector {
-            x: (middle_of_screen.x / tile_size.width() as f32).round() as i32,
-            y: (middle_of_screen.y / tile_size.height() as f32).round() as i32,
-        };
-
-        if viewport_tile_coord != self.current_center_tile || self.pending_scale != self.shown_scale
-        {
-            if self.pending_scale != self.shown_scale {
-                self.increment_generation();
-                self.pending_tile_cache.clear();
-            } else {
-                self.pending_tile_cache = self.shown_tile_cache.clone();
-                self.pending_tile_cache.retain(|_, v| {
-                    (v.x - viewport_tile_coord.x).abs() <= 1
-                        && (v.y - viewport_tile_coord.y).abs() <= 1
-                });
-            }
-            self.current_center_tile = viewport_tile_coord;
-            self.populate_cache();
-        }
-    }
-
-    fn populate_cache(&mut self) {
-        let half_grid_size = TILE_CACHE_GRID_SIZE / 2;
-        for x in -half_grid_size..=half_grid_size {
-            for y in -half_grid_size..=half_grid_size {
-                if !self.pending_tile_cache.contains_key(&(
-                    self.current_center_tile.x + x,
-                    self.current_center_tile.y + y,
-                )) {
-                    self.command_tx
-                        .send(WorkerCommand::RenderTile(RenderRequest {
-                            id: 0,
-                            page_number: self.cur_page_idx,
-                            bounds: self
-                                .tile_bounds(self.current_center_tile + Vector { x, y })
-                                .unwrap(),
-                            invert_colors: self.invert_colors,
-                            scale: self.pending_scale,
-                            x: self.current_center_tile.x + x,
-                            y: self.current_center_tile.y + y,
-                            generation: *self.generation.lock().unwrap(),
-                        }))
-                        .unwrap();
-                }
-            }
-        }
-    }
-
-    fn refresh_file(&mut self) -> Result<()> {
-        self.force_invalidate_cache();
-        Ok(())
+    fn page_size(&self) -> Vector<f32> {
+        let page_bounds: geometry::Rect<f32> = self.page.bounds().unwrap().into();
+        page_bounds.size()
     }
 
     fn zoom_fit_ratio(&mut self) -> Result<f32> {
-        if let Some(page) = &self.page_info {
-            let page_size = page.size;
-            let vertical_scale = self.inner_state.bounds.height() / page_size.y;
-            let horizontal_scale = self.inner_state.bounds.width() / page_size.x;
-            Ok(vertical_scale.min(horizontal_scale))
-        } else {
-            Ok(1.0)
-        }
-    }
-
-    fn tile_bounds(&self, coord: Vector<i32>) -> Option<mupdf::IRect> {
-        if let Some(page) = self.page_info {
-            let centered_offset = Vector::new(
-                -(self.inner_state.bounds.width() - page.size.x * self.pending_scale) / 2.0,
-                -(self.inner_state.bounds.height() - page.size.y * self.pending_scale) / 2.0,
-            );
-
-            let mut out_box = self.inner_state.bounds;
-            out_box.translate(centered_offset);
-            out_box.scale(0.6);
-
-            let tile_width = out_box.width();
-            let tile_height = out_box.height();
-            let tile_offset = Vector {
-                x: tile_width * coord.x as f32,
-                y: tile_height * coord.y as f32,
-            };
-            out_box.translate(tile_offset);
-
-            // Snap to pixel boundaries to ensure perfect tile alignment
-            out_box.x0.x = out_box.x0.x.floor();
-            out_box.x0.y = out_box.x0.y.floor();
-            out_box.x1.x = out_box.x0.x + tile_width.ceil();
-            out_box.x1.y = out_box.x0.y + tile_height.ceil();
-
-            Some(out_box.into())
-        } else {
-            None
-        }
-    }
-
-    pub async fn try_recv_worker_response(&self) -> Option<WorkerResponse> {
-        if let Ok(mut rx) = self.result_rx.try_lock() {
-            rx.try_recv().ok()
-        } else {
-            None
-        }
-    }
-
-    pub fn refresh_file_worker(&mut self) -> Result<()> {
-        self.command_tx.send(WorkerCommand::RefreshFile)?;
-        Ok(())
+        let vertical_scale = self.inner_state.borrow().bounds.height() / self.page_size().y;
+        let horizontal_scale = self.inner_state.borrow().bounds.width() / self.page_size().x;
+        Ok(vertical_scale.min(horizontal_scale))
     }
 
     fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
-        if let Some(page) = self.page_info {
-            screen_pos += self.inner_state.bounds.x0;
-            screen_pos -= self.inner_state.bounds.center();
-            screen_pos.scale(1.0 / self.shown_scale);
-            screen_pos += self.translation;
-            screen_pos += page.size.scaled(0.5);
-            screen_pos
-        } else {
-            // Fallback to old method if no page info
-            let viewport_center = self.inner_state.bounds.center();
-            let relative_pos = screen_pos - viewport_center;
-            relative_pos.scaled(1.0 / self.shown_scale) + self.translation
-        }
+        let centering_vector = (self.inner_state.borrow().bounds.size()
+            - self.page_size().scaled(self.scale))
+        .scaled(0.5);
+        screen_pos -= self.inner_state.borrow().bounds.x0; // screen scale
+        screen_pos -= centering_vector; // screen scale
+        screen_pos.scale(1.0 / self.scale);
+        screen_pos += self.translation;
+        screen_pos
     }
 
-    pub fn get_outline(&self) -> Option<&Vec<OutlineItem>> {
-        self.document_outline.as_ref()
+    pub fn get_outline(&self) -> &[OutlineItem] {
+        self.document_outline.as_slice()
     }
 
     fn current_selection_rect(&self) -> Option<Rect<f32>> {
@@ -582,13 +426,74 @@ impl PdfViewer {
             None
         }
     }
+
+    fn draw_pdf_to_pixmap(&self) -> Result<()> {
+        let mut state = self.inner_state.borrow_mut();
+        let mut ctm = Matrix::IDENTITY;
+        let centering_vector =
+            (state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
+        ctm.pre_translate(centering_vector.x, centering_vector.y);
+        ctm.scale(self.scale, self.scale);
+        ctm.pre_translate(-self.translation.x, -self.translation.y);
+
+        if state.pix.is_none() {
+            state.pix = Some(
+                Pixmap::new_with_w_h(
+                    &Colorspace::device_rgb(),
+                    state.bounds.width().round() as i32,
+                    state.bounds.height().round() as i32,
+                    true,
+                )
+                .unwrap(),
+            );
+        }
+        let bounds = state.bounds;
+        let device = {
+            let pix = state.pix.as_mut().unwrap();
+            let samples = pix.samples_mut();
+            samples.fill(255);
+            Device::from_pixmap(pix)?
+        };
+        state.list.run(
+            &device,
+            &ctm,
+            mupdf::Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: bounds.width(),
+                y1: bounds.height(),
+            },
+        )?;
+        let pix = state.pix.as_mut().unwrap();
+        if self.invert_colors {
+            cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);
+        }
+
+        Ok(())
+    }
 }
 
-impl Drop for PdfViewer {
-    fn drop(&mut self) {
-        let _ = self.command_tx.send(WorkerCommand::Shutdown);
-        if let Some(handle) = self.worker_handle.take() {
-            let _ = handle.join();
-        }
+fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
+    let gradient = GradientBuilder::new()
+        .colors(&[
+            colorgrad::Color::from_rgba8(255, 255, 255, 255),
+            colorgrad::Color::from_rgba8(bg_color[0], bg_color[1], bg_color[2], bg_color[3]),
+        ])
+        .build::<LinearGradient>()
+        .unwrap();
+    for (i, item) in cache.iter_mut().enumerate().take(256) {
+        *item = gradient.at((i as f32) / 255.0).to_rgba8();
+    }
+}
+
+fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, gradient_cache: &[[u8; 4]; 256]) {
+    let samples = pixmap.samples_mut();
+    for pixel in samples.chunks_exact_mut(4) {
+        let r: u16 = pixel[0] as u16;
+        let g: u16 = pixel[1] as u16;
+        let b: u16 = pixel[2] as u16;
+        let brightness = ((r + g + b) / 3) as usize;
+        let pixel_array: &mut [u8; 4] = pixel.try_into().unwrap();
+        *pixel_array = gradient_cache[brightness];
     }
 }

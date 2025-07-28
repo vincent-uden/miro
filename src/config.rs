@@ -65,7 +65,7 @@ impl ConfigParseResult {
 
         let mut output = format!("{}\n", "Configuration parsing errors:".bright_red().bold());
         for error in &self.errors {
-            output.push_str(&format!("  {}\n", error));
+            output.push_str(&format!("  {error}\n"));
         }
         output
     }
@@ -73,26 +73,17 @@ impl ConfigParseResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString)]
 pub enum MouseButton {
-    MouseLeft,
-    MouseMiddle,
-    MouseRight,
-    MouseBack,
-    MouseForward,
+    Left,
+    Middle,
+    Right,
+    Back,
+    Forward,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct MouseModifiers {
     pub ctrl: bool,
     pub shift: bool,
-}
-
-impl Default for MouseModifiers {
-    fn default() -> Self {
-        Self {
-            ctrl: false,
-            shift: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -286,12 +277,12 @@ impl Config {
                 let action_str = &parts[2];
 
                 let action = BindableMessage::from_str(action_str)
-                    .map_err(|_| format!("Unknown action: {}", action_str))?;
+                    .map_err(|_| format!("Unknown action: {action_str}"))?;
 
                 config
                     .keyboard
                     .bind(key_str, action)
-                    .map_err(|e| format!("Failed to bind key '{}': {}", key_str, e))?;
+                    .map_err(|e| format!("Failed to bind key '{key_str}': {e}"))?;
             }
             Command::MouseBind => {
                 if parts.len() != 3 {
@@ -305,10 +296,10 @@ impl Config {
                 let action_str = &parts[2];
 
                 let mouse_input = MouseInput::from_str(mouse_input_str)
-                    .map_err(|e| format!("Invalid mouse input '{}': {}", mouse_input_str, e))?;
+                    .map_err(|e| format!("Invalid mouse input '{mouse_input_str}': {e}"))?;
 
                 let mouse_action = MouseAction::from_str(action_str)
-                    .map_err(|_| format!("Unknown mouse action: {}", action_str))?;
+                    .map_err(|_| format!("Unknown mouse action: {action_str}"))?;
 
                 config.mouse.push((mouse_input, mouse_action));
             }
@@ -329,18 +320,17 @@ impl Config {
                             "False" | "false" | "0" => false,
                             _ => {
                                 return Err(format!(
-                                    "Invalid boolean value for Rpc: '{}'. Use True/False",
-                                    value
+                                    "Invalid boolean value for Rpc: '{value}'. Use True/False"
                                 ));
                             }
                         };
                     }
                     "RpcPort" => {
                         config.rpc_port = value.parse::<u32>().map_err(|_| {
-                            format!("Invalid port number: '{}'. Must be a valid integer", value)
+                            format!("Invalid port number: '{value}'. Must be a valid integer")
                         })?;
                     }
-                    _ => return Err(format!("Unknown setting: {}", setting)),
+                    _ => return Err(format!("Unknown setting: {setting}")),
                 }
             }
         }
@@ -352,9 +342,9 @@ impl Config {
         let mut parts = Vec::new();
         let mut current_part = String::new();
         let mut in_quotes = false;
-        let mut chars = line.chars().peekable();
+        let chars = line.chars();
 
-        while let Some(ch) = chars.next() {
+        for ch in chars {
             match ch {
                 '"' => {
                     in_quotes = !in_quotes;
@@ -449,7 +439,7 @@ impl Default for Config {
             mouse: vec![
                 (
                     MouseInput {
-                        button: MouseButton::MouseLeft,
+                        button: MouseButton::Left,
                         modifiers: MouseModifiers {
                             ctrl: false,
                             shift: false,
@@ -459,7 +449,7 @@ impl Default for Config {
                 ),
                 (
                     MouseInput {
-                        button: MouseButton::MouseLeft,
+                        button: MouseButton::Left,
                         modifiers: MouseModifiers {
                             ctrl: false,
                             shift: true,
@@ -469,7 +459,7 @@ impl Default for Config {
                 ),
                 (
                     MouseInput {
-                        button: MouseButton::MouseMiddle,
+                        button: MouseButton::Middle,
                         modifiers: MouseModifiers {
                             ctrl: false,
                             shift: false,
@@ -479,7 +469,7 @@ impl Default for Config {
                 ),
                 (
                     MouseInput {
-                        button: MouseButton::MouseRight,
+                        button: MouseButton::Right,
                         modifiers: MouseModifiers {
                             ctrl: false,
                             shift: false,
@@ -489,7 +479,7 @@ impl Default for Config {
                 ),
                 (
                     MouseInput {
-                        button: MouseButton::MouseForward,
+                        button: MouseButton::Forward,
                         modifiers: MouseModifiers {
                             ctrl: false,
                             shift: false,
@@ -499,7 +489,7 @@ impl Default for Config {
                 ),
                 (
                     MouseInput {
-                        button: MouseButton::MouseBack,
+                        button: MouseButton::Back,
                         modifiers: MouseModifiers {
                             ctrl: false,
                             shift: false,
@@ -586,29 +576,29 @@ mod tests {
     #[test]
     pub fn can_parse_mouse_input() {
         // Test basic mouse buttons
-        let input = MouseInput::from_str("MouseLeft").unwrap();
-        assert_eq!(input.button, MouseButton::MouseLeft);
+        let input = MouseInput::from_str("Left").unwrap();
+        assert_eq!(input.button, MouseButton::Left);
         assert_eq!(input.modifiers, MouseModifiers::default());
 
-        let input = MouseInput::from_str("MouseMiddle").unwrap();
-        assert_eq!(input.button, MouseButton::MouseMiddle);
+        let input = MouseInput::from_str("Middle").unwrap();
+        assert_eq!(input.button, MouseButton::Middle);
 
-        let input = MouseInput::from_str("MouseRight").unwrap();
-        assert_eq!(input.button, MouseButton::MouseRight);
+        let input = MouseInput::from_str("Right").unwrap();
+        assert_eq!(input.button, MouseButton::Right);
 
         // Test with modifiers
-        let input = MouseInput::from_str("Ctrl+MouseLeft").unwrap();
-        assert_eq!(input.button, MouseButton::MouseLeft);
+        let input = MouseInput::from_str("Ctrl+Left").unwrap();
+        assert_eq!(input.button, MouseButton::Left);
         assert_eq!(input.modifiers.ctrl, true);
         assert_eq!(input.modifiers.shift, false);
 
-        let input = MouseInput::from_str("Shift+MouseRight").unwrap();
-        assert_eq!(input.button, MouseButton::MouseRight);
+        let input = MouseInput::from_str("Shift+Right").unwrap();
+        assert_eq!(input.button, MouseButton::Right);
         assert_eq!(input.modifiers.ctrl, false);
         assert_eq!(input.modifiers.shift, true);
 
-        let input = MouseInput::from_str("Ctrl+Shift+MouseMiddle").unwrap();
-        assert_eq!(input.button, MouseButton::MouseMiddle);
+        let input = MouseInput::from_str("Ctrl+Shift+Middle").unwrap();
+        assert_eq!(input.button, MouseButton::Middle);
         assert_eq!(input.modifiers.ctrl, true);
         assert_eq!(input.modifiers.shift, true);
     }
@@ -618,13 +608,13 @@ mod tests {
         let config = Config::default();
 
         let input = MouseInput {
-            button: MouseButton::MouseLeft,
+            button: MouseButton::Left,
             modifiers: MouseModifiers::default(),
         };
         assert_eq!(config.get_mouse_action(input), Some(MouseAction::Panning));
 
         let input = MouseInput {
-            button: MouseButton::MouseLeft,
+            button: MouseButton::Left,
             modifiers: MouseModifiers {
                 ctrl: false,
                 shift: true,
@@ -633,13 +623,13 @@ mod tests {
         assert_eq!(config.get_mouse_action(input), Some(MouseAction::Selection));
 
         let input = MouseInput {
-            button: MouseButton::MouseMiddle,
+            button: MouseButton::Middle,
             modifiers: MouseModifiers::default(),
         };
         assert_eq!(config.get_mouse_action(input), Some(MouseAction::Panning));
 
         let input = MouseInput {
-            button: MouseButton::MouseRight,
+            button: MouseButton::Right,
             modifiers: MouseModifiers {
                 ctrl: true,
                 shift: false,

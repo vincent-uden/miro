@@ -815,6 +815,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "code-timing-macros"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15cfadb008499abfb16146f2dfb71bfd272d324380a34d535a5a41d838be2911"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+ "tracing",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2880,13 +2892,14 @@ dependencies = [
 
 [[package]]
 name = "miro-pdf"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "arboard",
  "async-watcher",
  "axum",
  "clap",
+ "code-timing-macros",
  "colored",
  "colorgrad",
  "home",
@@ -2912,8 +2925,9 @@ dependencies = [
 
 [[package]]
 name = "mupdf"
-version = "0.4.4"
-source = "git+https://github.com/messense/mupdf-rs.git?rev=ee58c1ea#ee58c1ea94c02fa1c25b9f26cb15ff1c7679ea25"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a6499267155b9ae03ff8e53c456d0bfff988b2647d62ff1df038f39ebe93a0c"
 dependencies = [
  "bitflags 2.9.0",
  "font-kit",
@@ -2925,8 +2939,9 @@ dependencies = [
 
 [[package]]
 name = "mupdf-sys"
-version = "0.4.4"
-source = "git+https://github.com/messense/mupdf-rs.git?rev=ee58c1ea#ee58c1ea94c02fa1c25b9f26cb15ff1c7679ea25"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13e9a0d4e844ab50315d43312f3d62f72c77205b07c8ee21cbd4b52bdc2a9910"
 dependencies = [
  "bindgen",
  "cc",

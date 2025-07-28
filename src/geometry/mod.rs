@@ -27,6 +27,24 @@ where
         out
     }
 
+    pub fn non_uniform_scale(&mut self, scale: Vector<T>) {
+        self.x = self.x * scale.x;
+        self.y = self.y * scale.y;
+    }
+
+    pub fn non_uniform_scaled(self, scale: Vector<T>) -> Vector<T> {
+        let mut out = self;
+        out.non_uniform_scale(scale);
+        out
+    }
+
+    pub fn div_inverted(self) -> Self {
+        Self {
+            x: T::one() / self.x,
+            y: T::one() / self.y,
+        }
+    }
+
     pub fn zero() -> Vector<T> {
         Self {
             x: T::zero(),
@@ -142,6 +160,15 @@ impl From<iced::Vector> for Vector<f32> {
 
 impl From<iced::Size> for Vector<f32> {
     fn from(value: iced::Size) -> Self {
+        Self {
+            x: value.width,
+            y: value.height,
+        }
+    }
+}
+
+impl From<mupdf::Size> for Vector<f32> {
+    fn from(value: mupdf::Size) -> Self {
         Self {
             x: value.width,
             y: value.height,

@@ -1,13 +1,11 @@
-use std::collections::HashMap;
-
-use colorgrad::{Gradient, GradientBuilder, LinearGradient};
+use std::cell::Ref;
 use iced::{
     Border, ContentFit, Element, Length, Shadow, Size,
     advanced::{Layout, Widget, image, layout, renderer::Quad, widget::Tree},
     border::Radius,
     widget::image::FilterMethod,
 };
-use mupdf::Pixmap;
+use mupdf::{DisplayList, Pixmap};
 
 use crate::{
     geometry::{Rect, Vector},
@@ -16,37 +14,37 @@ use crate::{
 use super::{
     PdfMessage,
     link_extraction::{LinkInfo, LinkType},
-    worker::{CachedTile, PageInfo},
 };
 
-#[derive(Debug, Default)]
+/// Contains the state required to rasterize the currently shown page of a pdf.
+#[derive(Debug)]
 pub struct State {
+    /// The viewport bounds
     pub bounds: Rect<f32>,
+    pub page_size: Vector<f32>,
+    pub list: DisplayList,
+    /// The pixmap can only be allocated once we know the bounds of the widget
+    pub pix: Option<Pixmap>,
 }
 
 #[derive(Debug)]
 pub struct PageViewer<'a> {
-    cache: &'a HashMap<(i32, i32), CachedTile>,
-    state: &'a State,
-    // TODO: Maybe remove these?
+    state: Ref<'a, State>,
     width: Length,
     height: Length,
     content_fit: ContentFit,
-    // ---
     filter_method: FilterMethod,
     translation: Vector<f32>,
     scale: f32,
     invert_colors: bool,
     text_selection_rect: Option<Rect<f32>>,
     link_hitboxes: Option<&'a Vec<LinkInfo>>,
-    page_info: Option<PageInfo>,
     is_over_link: bool,
 }
 
 impl<'a> PageViewer<'a> {
-    pub fn new(cache: &'a HashMap<(i32, i32), CachedTile>, state: &'a State) -> Self {
+    pub fn new(state: Ref<'a, State>) -> Self {
         Self {
-            cache,
             state,
             width: Length::Fill,
             height: Length::Fill,
@@ -57,7 +55,6 @@ impl<'a> PageViewer<'a> {
             invert_colors: false,
             text_selection_rect: None,
             link_hitboxes: None,
-            page_info: None,
             is_over_link: false,
         }
     }
@@ -113,11 +110,6 @@ impl<'a> PageViewer<'a> {
         self
     }
 
-    pub fn page_info(mut self, page_info: Option<PageInfo>) -> Self {
-        self.page_info = page_info;
-        self
-    }
-
     pub fn over_link(mut self, is_over_link: bool) -> Self {
         self.is_over_link = is_over_link;
         self
@@ -161,29 +153,29 @@ where
         _cursor: iced::advanced::mouse::Cursor,
         _viewport: &iced::Rectangle,
     ) {
-        let img_bounds = layout.bounds();
-        let pdf_cache = |renderer: &mut Renderer| {
-            for (_, v) in self.cache.iter() {
-                let tile_bounds: Rect<f32> = v.bounds.into();
-                let viewport_bounds = layout.bounds();
-                let translation_vector = -self.translation.scaled(self.scale)
-                    + viewport_bounds.center().into()
-                    - tile_bounds.size().scaled(0.5);
-
-                renderer.with_translation(translation_vector.into(), |renderer: &mut Renderer| {
-                    renderer.draw_image(
-                        image::Image {
-                            handle: v.image_handle.clone(),
-                            filter_method: self.filter_method,
-                            rotation: iced::Radians::from(0.0),
-                            opacity: 1.0,
-                            snap: true,
-                        },
-                        tile_bounds.into(),
-                    );
-                });
+        let viewport_bounds = layout.bounds();
+        // It is probably possible to modify the mupdf-rs library to store the pixels in a Bytes
+        // struct. This would allow for zero-copy sharing of the bytes in the image handle, rather
+        // than the expensive clone we are doing now.
+        let draw_pdf = |renderer: &mut Renderer| {
+            if let Some(pix) = &self.state.pix {
+                renderer.draw_image(
+                    image::Image {
+                        handle: image::Handle::from_rgba(
+                            pix.width(),
+                            pix.height(),
+                            pix.samples().to_vec(),
+                        ),
+                        filter_method: FilterMethod::Nearest,
+                        rotation: iced::Radians::from(0.0),
+                        opacity: 1.0,
+                        snap: true,
+                    },
+                    viewport_bounds,
+                );
             }
         };
+
         let draw_selection = |renderer: &mut Renderer| {
             if let Some(rect) = self.text_selection_rect {
                 // Draw selection rectangle with semi-transparent blue fill and blue border
@@ -206,59 +198,59 @@ where
             if let Some(links) = self.link_hitboxes {
                 for link in links {
                     let doc_rect = link.bounds;
-                    if let Some(page) = self.page_info {
-                        let scaled_page_size = page.size.scaled(self.scale);
-                        let pdf_center = Vector::new(
-                            (img_bounds.width - scaled_page_size.x) / 2.0,
-                            (img_bounds.height - scaled_page_size.y) / 2.0,
-                        );
+                    let scaled_page_size = self.state.page_size.scaled(self.scale);
+                    let pdf_center = Vector::new(
+                        (viewport_bounds.width - scaled_page_size.x) / 2.0,
+                        (viewport_bounds.height - scaled_page_size.y) / 2.0,
+                    );
 
-                        let offset = pdf_center - self.translation.scaled(self.scale);
-                        let mut link_bounds = Rect::from_points(
-                            doc_rect.x0.scaled(self.scale),
-                            doc_rect.x1.scaled(self.scale),
-                        );
-                        link_bounds.translate(offset);
+                    let link_bounds = Rect::from_points(
+                        (doc_rect.x0 - self.translation).scaled(self.scale)
+                            + pdf_center
+                            + viewport_bounds.position().into(),
+                        (doc_rect.x1 - self.translation).scaled(self.scale)
+                            + pdf_center
+                            + viewport_bounds.position().into(),
+                    );
 
-                        let (border_color, fill_color) = match link.link_type {
-                            LinkType::ExternalUrl => (
-                                iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
-                                iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
-                            ),
-                            LinkType::InternalPage(_) => (
-                                iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
-                                iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
-                            ),
-                            LinkType::Email => (
-                                iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
-                                iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
-                            ),
-                            LinkType::Other => (
-                                iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
-                                iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
-                            ),
-                        };
+                    let (border_color, fill_color) = match link.link_type {
+                        LinkType::ExternalUrl => (
+                            iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
+                            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
+                        ),
+                        LinkType::InternalPage(_) => (
+                            iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
+                            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
+                        ),
+                        LinkType::Email => (
+                            iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
+                            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
+                        ),
+                        LinkType::Other => (
+                            iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
+                            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
+                        ),
+                    };
 
-                        renderer.fill_quad(
-                            Quad {
-                                bounds: link_bounds.into(),
-                                border: Border {
-                                    color: border_color,
-                                    width: 1.5,
-                                    radius: Radius::from(2.0),
-                                },
-                                shadow: Shadow::default(),
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: link_bounds.into(),
+                            border: Border {
+                                color: border_color,
+                                width: 1.5,
+                                radius: Radius::from(2.0),
                             },
-                            fill_color,
-                        );
-                    }
+                            shadow: Shadow::default(),
+                        },
+                        fill_color,
+                    );
                 }
             }
         };
 
-        renderer.with_layer(img_bounds, pdf_cache);
-        renderer.with_layer(img_bounds, draw_selection);
-        renderer.with_layer(img_bounds, draw_link_hitboxes);
+        renderer.with_layer(viewport_bounds, draw_pdf);
+        renderer.with_layer(viewport_bounds, draw_selection);
+        renderer.with_layer(viewport_bounds, draw_link_hitboxes);
     }
 
     fn on_event(
@@ -315,36 +307,5 @@ where
 {
     fn from(value: PageViewer<'a>) -> Self {
         Element::new(value)
-    }
-}
-
-pub fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, bg_color: &[u8; 4]) {
-    let samples = pixmap.samples_mut();
-    for i in 0..(samples.len() / 4) {
-        let a = samples[i * 4 + 3];
-        // If the background is transparent, assume it's suppused to be white
-        if a < 255 {
-            samples[i * 4 + 3] = 255;
-        }
-    }
-    let gradient = GradientBuilder::new()
-        .colors(&[
-            colorgrad::Color::from_rgba8(255, 255, 255, 255),
-            colorgrad::Color::from_rgba8(bg_color[0], bg_color[1], bg_color[2], 255),
-        ])
-        .build::<LinearGradient>()
-        .unwrap();
-    for i in 0..(samples.len() / 4) {
-        let r: u16 = samples[i * 4] as u16;
-        let g: u16 = samples[i * 4 + 1] as u16;
-        let b: u16 = samples[i * 4 + 2] as u16;
-        if samples[i * 4..i * 4 + 3] == bg_color[0..3] {
-            continue;
-        }
-        let brightness = ((r + g + b) as f32) / (255.0 * 3.0);
-        let [r_out, g_out, b_out, _] = gradient.at(brightness).to_rgba8();
-        samples[i * 4] = r_out;
-        samples[i * 4 + 1] = g_out;
-        samples[i * 4 + 2] = b_out;
     }
 }

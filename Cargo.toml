@@ -1,6 +1,6 @@
 [package]
 name = "miro-pdf"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 license-file = "LICENSE"
 description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings."
@@ -15,6 +15,7 @@ arboard = { version = "3.6.0", features = ["wayland-data-control"] }
 async-watcher = "0.3.0"
 axum = "0.8.4"
 clap = {version = "4.5.32", features = ["derive"] }
+code-timing-macros = {version = "0.0.6", features = ["release", "tracing"]}
 colored = "2.1.0"
 colorgrad = "0.7.1"
 home = "0.5.11"
@@ -23,7 +24,8 @@ iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
 keybinds = { version = "0.1.1", features = ["iced", "serde"] }
 logos = "0.15.0"
-mupdf = { version = "0.4.4", git = "https://github.com/messense/mupdf-rs.git", rev = "ee58c1ea" }
+# mupdf = { version = "0.4.4", git = "https://github.com/messense/mupdf-rs.git", rev = "ee58c1ea" }
+mupdf = { version = "0.5.0" }
 num = "0.4.3"
 once_cell = "1.21.3"
 rfd = "0.15.3"
@@ -36,3 +38,7 @@ tracing = "0.1.41"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 twox-hash = { version = "2.1.1", features = ["serialize"] }
+
+[profile.bench]
+debug = true
+strip = false
