@@ -607,7 +607,8 @@ impl App {
                     color: Some(palette.background.weak.color),
                 }
             }));
-        } else if let Some(outline) = self.pdfs[self.pdf_idx].get_outline() {
+        } else {
+            let outline = self.pdfs[self.pdf_idx].get_outline();
             if outline.is_empty() {
                 col = col.push(text("No outline available").style(|theme: &Theme| {
                     let palette = theme.extended_palette();
@@ -619,15 +620,7 @@ impl App {
                 let outline_content = view_outline_items(outline, 0);
                 col = col.push(widget::scrollable(outline_content));
             }
-        } else {
-            col = col.push(text("Loading outline...").style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                text::Style {
-                    color: Some(palette.background.weak.color),
-                }
-            }));
         }
-
         container(col).height(Length::Fill).into()
     }
 

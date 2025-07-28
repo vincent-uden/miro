@@ -10,9 +10,12 @@ use crate::{
     config::MouseAction,
     geometry::{self, Rect, Vector},
     pdf::{
+        inner::cpu_pdf_dark_mode_shader,
         link_extraction::{LinkExtractor, LinkType},
+        outline_extraction::OutlineExtractor,
         text_extraction::TextExtractor,
     },
+    DARK_THEME,
 };
 
 use super::{
@@ -43,11 +46,10 @@ pub struct PdfViewer {
     panning: bool,
     scale: f32,
     text_selection_start: Option<Vector<f32>>,
-    selected_text: Option<String>,
     link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
     is_over_link: bool,
-    document_outline: Option<Vec<OutlineItem>>,
+    document_outline: Vec<OutlineItem>,
 
     doc: Document,
     page: Page,
@@ -75,6 +77,9 @@ impl PdfViewer {
         let extractor = LinkExtractor::new(&page);
         let link_hitboxes = extractor.extract_all_links()?;
 
+        let extractor = OutlineExtractor::new(&doc);
+        let document_outline = extractor.extract_outline()?;
+
         Ok(Self {
             scale: 1.0,
             name,
@@ -93,11 +98,10 @@ impl PdfViewer {
             mouse_down_pos: None,
             panning: false,
             text_selection_start: None,
-            selected_text: None,
             link_hitboxes,
             show_link_hitboxes: false,
             is_over_link: false,
-            document_outline: None,
+            document_outline,
             doc,
             page,
             debounce_handle: None,
@@ -361,6 +365,8 @@ impl PdfViewer {
 
     pub fn refresh_file(&mut self) -> Result<()> {
         self.doc = Document::open(&self.path.to_str().unwrap())?;
+        let extractor = OutlineExtractor::new(&self.doc);
+        self.document_outline = extractor.extract_outline()?;
         self.set_page(self.cur_page_idx)?;
         Ok(())
     }
@@ -386,8 +392,8 @@ impl PdfViewer {
         screen_pos
     }
 
-    pub fn get_outline(&self) -> Option<&Vec<OutlineItem>> {
-        self.document_outline.as_ref()
+    pub fn get_outline(&self) -> &[OutlineItem] {
+        self.document_outline.as_slice()
     }
 
     fn current_selection_rect(&self) -> Option<Rect<f32>> {
@@ -441,7 +447,20 @@ impl PdfViewer {
                 y1: self.inner_state.bounds.height(),
             },
         )?;
+        if self.invert_colors {
+            let bg_color = DARK_THEME
+                .extended_palette()
+                .background
+                .base
+                .color
+                .into_rgba8();
+            cpu_pdf_dark_mode_shader(pix, &bg_color);
+        }
 
         Ok(())
     }
 }
+
+// TODO: (Next)
+// - Dark mode (cpu shader is too slow)
+// - Clean up clippy errors and rustc warnings

@@ -157,6 +157,9 @@ where
         _viewport: &iced::Rectangle,
     ) {
         let viewport_bounds = layout.bounds();
+        // It is probably possible to modify the mupdf-rs library to store the pixels in a Bytes
+        // struct. This would allow for zero-copy sharing of the bytes in the image handle, rather
+        // than the expensive clone we are doing now.
         let draw_pdf = |renderer: &mut Renderer| {
             if let Some(pix) = &self.state.pix {
                 renderer.draw_image(
