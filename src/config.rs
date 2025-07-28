@@ -126,7 +126,14 @@ impl FromStr for MouseInput {
             }
         }
 
-        let button = MouseButton::from_str(button_str)?;
+        // Strip "Mouse" prefix if present
+        let button_name = if button_str.starts_with("Mouse") {
+            &button_str[5..]
+        } else {
+            button_str
+        };
+
+        let button = MouseButton::from_str(button_name)?;
 
         Ok(MouseInput { button, modifiers })
     }
@@ -756,7 +763,7 @@ Bind j MoveDown
 Bind k MoveUp
 "#;
         let result = Config::parse_with_errors(config_str);
-        
+
         assert!(!result.has_errors());
         assert_eq!(result.config.keyboard.as_slice().len(), 2);
     }
@@ -769,15 +776,15 @@ UnknownCommand arg1
 Set RpcPort invalid_port
 "#;
         let result = Config::parse_with_errors(config_str);
-        
+
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 3);
-        
+
         // Print the colored output for manual verification
         // This won't show colors in test output, but demonstrates the functionality
         let formatted = result.format_errors();
         println!("\n{}", formatted);
-        
+
         // Verify the content is correct
         assert!(formatted.contains("Configuration parsing errors:"));
         assert!(formatted.contains("Line 2"));
@@ -788,17 +795,18 @@ Set RpcPort invalid_port
     #[test]
     pub fn test_config_file_with_errors() {
         use std::fs;
-        
+
         let config_content = fs::read_to_string("test_config_with_errors.conf");
         if let Ok(content) = config_content {
             let result = Config::parse_with_errors(&content);
-            
+
             if result.has_errors() {
                 // This will show colored output when run with --nocapture
                 eprintln!("{}", result.format_errors());
             }
-            
+
             // Should still parse valid lines
             assert!(!result.config.keyboard.as_slice().is_empty());
         }
-    }}
+    }
+}
