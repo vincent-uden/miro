@@ -1,4 +1,5 @@
 use anyhow::Result;
+use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::advanced::image;
 use mupdf::{Colorspace, Device, DisplayList, Document, IRect, Matrix, Page, Pixmap};
 use num::Integer;
@@ -10,7 +11,6 @@ use crate::{
     config::MouseAction,
     geometry::{self, Rect, Vector},
     pdf::{
-        inner::cpu_pdf_dark_mode_shader,
         link_extraction::{LinkExtractor, LinkType},
         outline_extraction::OutlineExtractor,
         text_extraction::TextExtractor,
@@ -55,6 +55,8 @@ pub struct PdfViewer {
     page: Page,
 
     debounce_handle: Option<iced::task::Handle>,
+
+    gradient_cache: [[u8; 4]; 256],
 }
 
 impl PdfViewer {
@@ -79,6 +81,15 @@ impl PdfViewer {
 
         let extractor = OutlineExtractor::new(&doc);
         let document_outline = extractor.extract_outline()?;
+
+        let bg_color = DARK_THEME
+            .extended_palette()
+            .background
+            .base
+            .color
+            .into_rgba8();
+        let mut gradient_cache = [[0; 4]; 256];
+        generate_gradient_cache(&mut gradient_cache, &bg_color);
 
         Ok(Self {
             scale: 1.0,
@@ -105,6 +116,7 @@ impl PdfViewer {
             doc,
             page,
             debounce_handle: None,
+            gradient_cache,
         })
     }
 
@@ -448,16 +460,37 @@ impl PdfViewer {
             },
         )?;
         if self.invert_colors {
-            let bg_color = DARK_THEME
-                .extended_palette()
-                .background
-                .base
-                .color
-                .into_rgba8();
-            cpu_pdf_dark_mode_shader(pix, &bg_color);
+            cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);
         }
 
         Ok(())
+    }
+}
+
+fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
+    let gradient = GradientBuilder::new()
+        .colors(&[
+            colorgrad::Color::from_rgba8(255, 255, 255, 255),
+            colorgrad::Color::from_rgba8(bg_color[0], bg_color[1], bg_color[2], bg_color[3]),
+        ])
+        .build::<LinearGradient>()
+        .unwrap();
+    for i in 0..256 {
+        cache[i] = gradient.at((i as f32) / 255.0).to_rgba8();
+    }
+}
+
+fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, gradient_cache: &[[u8; 4]; 256]) {
+    let samples = pixmap.samples_mut();
+    for i in 0..(samples.len() / 4) {
+        let r: u16 = samples[i * 4 + 0] as u16;
+        let g: u16 = samples[i * 4 + 1] as u16;
+        let b: u16 = samples[i * 4 + 2] as u16;
+        let brightness = ((r + g + b) / 3) as usize;
+        samples[i * 4 + 0] = gradient_cache[brightness][0];
+        samples[i * 4 + 1] = gradient_cache[brightness][1];
+        samples[i * 4 + 2] = gradient_cache[brightness][2];
+        samples[i * 4 + 3] = gradient_cache[brightness][3];
     }
 }
 

@@ -312,34 +312,3 @@ where
         Element::new(value)
     }
 }
-
-pub fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, bg_color: &[u8; 4]) {
-    let samples = pixmap.samples_mut();
-    for i in 0..(samples.len() / 4) {
-        let a = samples[i * 4 + 3];
-        // If the background is transparent, assume it's suppused to be white
-        if a < 255 {
-            samples[i * 4 + 3] = 255;
-        }
-    }
-    let gradient = GradientBuilder::new()
-        .colors(&[
-            colorgrad::Color::from_rgba8(255, 255, 255, 255),
-            colorgrad::Color::from_rgba8(bg_color[0], bg_color[1], bg_color[2], 255),
-        ])
-        .build::<LinearGradient>()
-        .unwrap();
-    for i in 0..(samples.len() / 4) {
-        let r: u16 = samples[i * 4] as u16;
-        let g: u16 = samples[i * 4 + 1] as u16;
-        let b: u16 = samples[i * 4 + 2] as u16;
-        if samples[i * 4..i * 4 + 3] == bg_color[0..3] {
-            continue;
-        }
-        let brightness = ((r + g + b) as f32) / (255.0 * 3.0);
-        let [r_out, g_out, b_out, _] = gradient.at(brightness).to_rgba8();
-        samples[i * 4] = r_out;
-        samples[i * 4 + 1] = g_out;
-        samples[i * 4 + 2] = b_out;
-    }
-}
