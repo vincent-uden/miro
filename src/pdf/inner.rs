@@ -91,6 +91,7 @@ pub struct PageViewer<'a> {
     text_selection_rect: Option<Rect<f32>>,
     link_hitboxes: Option<&'a Vec<LinkInfo>>,
     link_keys: Option<Vec<String>>,
+    pending_link_key: String,
     is_over_link: bool,
 }
 
@@ -108,6 +109,7 @@ impl<'a> PageViewer<'a> {
             text_selection_rect: None,
             link_hitboxes: None,
             link_keys: None,
+            pending_link_key: String::new(),
             is_over_link: false,
         }
     }
@@ -393,23 +395,15 @@ where
                             None
                         }
                     }
-                    // Handle character keys for link activation
                     iced::keyboard::Key::Character(ref key_char) => {
-                        // Only handle keys without modifiers and when links are visible
-                        if modifiers.is_empty()
-                            && self.link_hitboxes.is_some()
-                            && self.link_keys.is_some()
+                        if let Some(keys) = &self.link_keys
+                            && !keys.is_empty()
                         {
-                            if let (Some(_links), Some(keys)) =
-                                (self.link_hitboxes, &self.link_keys)
-                            {
-                                // Find the index of the pressed key combination
-                                if let Some(index) =
-                                    keys.iter().position(|k| k == key_char.as_str())
-                                {
-                                    Some(PdfMessage::ActivateLink(index))
-                                } else {
-                                    None
+                            self.pending_link_key.push_str(key_char);
+                            if self.pending_link_key.len() >= keys[0].len() {
+                                match keys.iter().position(|k| **k == self.pending_link_key) {
+                                    Some(k) => Some(PdfMessage::ActivateLink(k)),
+                                    None => None,
                                 }
                             } else {
                                 None
