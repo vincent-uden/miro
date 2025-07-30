@@ -165,6 +165,7 @@ pub enum BindableMessage {
     ToggleLinkHitboxes,
     OpenFileFinder,
     CloseTab,
+    PrintPdf,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -196,6 +197,7 @@ impl From<BindableMessage> for AppMessage {
             }
             BindableMessage::OpenFileFinder => AppMessage::OpenNewFileFinder,
             BindableMessage::CloseTab => AppMessage::CloseActiveTab,
+            BindableMessage::PrintPdf => AppMessage::PdfMessage(PdfMessage::PrintPdf),
         }
     }
 }
@@ -450,6 +452,10 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Ctrl+o").unwrap(),
                     BindableMessage::OpenFileFinder,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+p").unwrap(),
+                    BindableMessage::PrintPdf,
                 ),
                 Keybind::new(KeySeq::from_str("Z Z").unwrap(), BindableMessage::CloseTab),
             ]),

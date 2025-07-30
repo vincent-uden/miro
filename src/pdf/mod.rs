@@ -32,6 +32,7 @@ pub enum PdfMessage {
     CloseLinkHitboxes, // Close/hide link hitboxes
     FileChanged,
     ReallocPixmap,
+    PrintPdf,
     #[default]
     None,
 }
