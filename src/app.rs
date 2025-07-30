@@ -652,17 +652,20 @@ impl App {
                     iced::mouse::Button::Forward => Some(AppMessage::MouseForwardUp),
                     _ => None,
                 },
-                iced::mouse::Event::WheelScrolled { delta } => match delta {
-                    iced::mouse::ScrollDelta::Lines { x: _, y }
-                    | iced::mouse::ScrollDelta::Pixels { x: _, y } => {
-                        if y > 0.0 {
-                            Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
-                        } else if y < 0.0 {
-                            Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
-                        } else {
-                            None
+                iced::mouse::Event::WheelScrolled { delta } => match status {
+                    iced::event::Status::Ignored => match delta {
+                        iced::mouse::ScrollDelta::Lines { x: _, y }
+                        | iced::mouse::ScrollDelta::Pixels { x: _, y } => {
+                            if y > 0.0 {
+                                Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
+                            } else if y < 0.0 {
+                                Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
+                            } else {
+                                None
+                            }
                         }
-                    }
+                    },
+                    iced::event::Status::Captured => None,
                 },
                 _ => None,
             },
