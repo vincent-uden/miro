@@ -3,6 +3,7 @@ use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
 use std::{cell::RefCell, path::PathBuf, time::Duration};
 use tracing::{error, info};
+use open;
 
 use crate::{
     config::MouseAction,
@@ -244,7 +245,18 @@ impl PdfViewer {
                                     error!("Couldn't jump to page {page}");
                                 }
                             }
-                            _ => {
+                            LinkType::ExternalUrl => {
+                                if let Err(e) = open::that(&link.uri) {
+                                    error!("Failed to open external link: {}", e);
+                                    // Fallback to clipboard copy if opening fails
+                                    if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                        && let Err(e) = clipboard.set_text(&link.uri)
+                                    {
+                                        error!("Failed to copy link to clipboard: {}", e);
+                                    }
+                                }
+                            }
+                            LinkType::Email | LinkType::Other => {
                                 if let Ok(mut clipboard) = arboard::Clipboard::new()
                                     && let Err(e) = clipboard.set_text(&link.uri)
                                 {
@@ -336,7 +348,17 @@ impl PdfViewer {
                                 error!("Couldn't jump to page {page}");
                             }
                         }
-                        _ => {
+                        LinkType::ExternalUrl => {
+                            if let Err(e) = open::that(&link.uri) {
+                                error!("Failed to open external link: {}", e);
+                                if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                    && let Err(e) = clipboard.set_text(&link.uri)
+                                {
+                                    error!("Failed to copy link to clipboard: {}", e);
+                                }
+                            }
+                        }
+                        LinkType::Email | LinkType::Other => {
                             if let Ok(mut clipboard) = arboard::Clipboard::new()
                                 && let Err(e) = clipboard.set_text(&link.uri)
                             {
