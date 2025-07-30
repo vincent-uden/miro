@@ -206,6 +206,7 @@ pub struct Config {
     pub mouse: Vec<MouseBinding>,
     pub rpc_enabled: bool,
     pub rpc_port: u32,
+    pub scale_factor: f64,
 }
 
 impl Config {
@@ -337,6 +338,14 @@ impl Config {
                             format!("Invalid port number: '{value}'. Must be a valid integer")
                         })?;
                     }
+                    "ScaleFactor" => {
+                        config.scale_factor = value.parse::<f64>().map_err(|_| {
+                            format!("Invalid scale factor: '{value}'. Must be a valid number (e.g., 1.0, 1.5, 2.0)")
+                        })?;
+                        if config.scale_factor <= 0.0 {
+                            return Err(format!("Scale factor must be positive: '{value}'"));
+                        }
+                    }
                     _ => return Err(format!("Unknown setting: {setting}")),
                 }
             }
@@ -395,6 +404,7 @@ impl Config {
         }
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
+        base.scale_factor = overrider.scale_factor;
         base
     }
 }
@@ -507,6 +517,7 @@ impl Default for Config {
             ],
             rpc_enabled: false,
             rpc_port: 7890,
+            scale_factor: 1.0,
         }
     }
 }
@@ -556,6 +567,7 @@ mod tests {
             mouse: Vec::new(),
             rpc_enabled: false,
             rpc_port: 7890,
+            scale_factor: 1.0,
         };
     }
 
@@ -578,6 +590,11 @@ mod tests {
             assert_eq!(b1.0, b2.0); // MouseInput
             assert_eq!(b1.1, b2.1); // MouseAction
         }
+
+        // Check other settings
+        assert_eq!(config.rpc_enabled, default_cfg.rpc_enabled);
+        assert_eq!(config.rpc_port, default_cfg.rpc_port);
+        assert_eq!(config.scale_factor, default_cfg.scale_factor);
     }
 
     #[test]
