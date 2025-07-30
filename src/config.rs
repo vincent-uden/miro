@@ -787,6 +787,11 @@ Bind k MoveUp
 
     #[test]
     pub fn demonstrate_colored_error_output() {
+        use colored::control;
+        
+        // Disable colors for consistent testing
+        control::set_override(false);
+        
         let config_str = r#"
 Bind j InvalidAction
 UnknownCommand arg1
@@ -804,9 +809,12 @@ Set RpcPort invalid_port
 
         // Verify the content is correct
         assert!(formatted.contains("Configuration parsing errors:"));
-        assert!(formatted.contains("Line 2"));
-        assert!(formatted.contains("Line 3"));
-        assert!(formatted.contains("Line 4"));
+        assert!(formatted.contains("Line 2:"));
+        assert!(formatted.contains("Line 3:"));
+        assert!(formatted.contains("Line 4:"));
+        
+        // Re-enable colors
+        control::unset_override();
     }
 
     #[test]
