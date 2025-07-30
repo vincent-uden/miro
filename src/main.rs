@@ -71,13 +71,11 @@ fn main() -> iced::Result {
         .window(settings())
         .run_with(move || {
             let state = App::new(BookmarkStore::system_store().unwrap_or_default());
-            (
-                state,
-                match args.path {
-                    Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
-                    None => iced::Task::none(),
-                },
-            )
+            let file_task = match args.path {
+                Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
+                None => iced::Task::none(),
+            };
+            (state, file_task)
         })
 }
 

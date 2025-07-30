@@ -42,6 +42,9 @@ pub struct PdfViewer {
     mouse_down_pos: Option<Vector<f32>>,
     panning: bool,
     scale: f32,
+    /// Factor used to scale the pixmap up/down to compensate for fractional scaling in at the
+    /// WM/DE level.
+    scale_factor: f64,
     text_selection_start: Option<Vector<f32>>,
     link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
@@ -90,6 +93,7 @@ impl PdfViewer {
 
         Ok(Self {
             scale: 1.0,
+            scale_factor: 1.0,
             name,
             path,
             label: String::new(),
@@ -248,6 +252,8 @@ impl PdfViewer {
                                 }
                             }
                         }
+                        // Hide links after activation
+                        self.show_link_hitboxes = false;
                     }
                     self.panning = false;
                     self.mouse_down_pos = None;
@@ -320,6 +326,31 @@ impl PdfViewer {
             }
             PdfMessage::ToggleLinkHitboxes => {
                 self.show_link_hitboxes = !self.show_link_hitboxes;
+                iced::Task::none()
+            }
+            PdfMessage::ActivateLink(index) => {
+                if let Some(link) = self.link_hitboxes.get(index) {
+                    match link.link_type {
+                        LinkType::InternalPage(page) => {
+                            if self.set_page(page as i32).is_err() {
+                                error!("Couldn't jump to page {page}");
+                            }
+                        }
+                        _ => {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                && let Err(e) = clipboard.set_text(&link.uri)
+                            {
+                                error!("Failed to copy link to clipboard: {}", e);
+                            }
+                        }
+                    }
+                    // Hide links after activation
+                    self.show_link_hitboxes = false;
+                }
+                iced::Task::none()
+            }
+            PdfMessage::CloseLinkHitboxes => {
+                self.show_link_hitboxes = false;
                 iced::Task::none()
             }
             PdfMessage::FileChanged => {
@@ -409,6 +440,18 @@ impl PdfViewer {
         self.document_outline.as_slice()
     }
 
+    pub fn set_scale_factor(&mut self, scale_factor: f64) {
+        if (self.scale_factor - scale_factor).abs() > 0.01 {
+            info!(
+                "Setting scale factor from {} to {}",
+                self.scale_factor, scale_factor
+            );
+            self.scale_factor = scale_factor;
+            // Invalidate pixmap to force re-render at new scale factor
+            self.inner_state.borrow_mut().pix = None;
+        }
+    }
+
     fn current_selection_rect(&self) -> Option<Rect<f32>> {
         if let (Some(start_pos), Some(current_pos)) =
             (self.text_selection_start, self.last_mouse_pos)
@@ -430,21 +473,22 @@ impl PdfViewer {
     fn draw_pdf_to_pixmap(&self) -> Result<()> {
         let mut state = self.inner_state.borrow_mut();
         let mut ctm = Matrix::IDENTITY;
+
+        let effective_scale = self.scale * self.scale_factor as f32;
         let centering_vector =
             (state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
         ctm.pre_translate(centering_vector.x, centering_vector.y);
-        ctm.scale(self.scale, self.scale);
+
+        ctm.scale(effective_scale, effective_scale);
         ctm.pre_translate(-self.translation.x, -self.translation.y);
 
         if state.pix.is_none() {
+            let render_width = (state.bounds.width() * self.scale_factor as f32).round() as i32;
+            let render_height = (state.bounds.height() * self.scale_factor as f32).round() as i32;
+
             state.pix = Some(
-                Pixmap::new_with_w_h(
-                    &Colorspace::device_rgb(),
-                    state.bounds.width().round() as i32,
-                    state.bounds.height().round() as i32,
-                    true,
-                )
-                .unwrap(),
+                Pixmap::new_with_w_h(&Colorspace::device_rgb(), render_width, render_height, true)
+                    .unwrap(),
             );
         }
         let bounds = state.bounds;
@@ -460,8 +504,8 @@ impl PdfViewer {
             mupdf::Rect {
                 x0: 0.0,
                 y0: 0.0,
-                x1: bounds.width(),
-                y1: bounds.height(),
+                x1: bounds.width() * self.scale_factor as f32,
+                y1: bounds.height() * self.scale_factor as f32,
             },
         )?;
         let pix = state.pix.as_mut().unwrap();
