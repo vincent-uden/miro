@@ -168,21 +168,22 @@ impl App {
         match message {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
-                match PdfViewer::from_path(path_buf.clone()) {
+                let out = match PdfViewer::from_path(path_buf.clone()) {
                     Ok(mut viewer) => {
                         viewer.set_scale_factor(self.scale_factor);
                         self.pdfs.push(viewer);
-                        self.pdf_idx = 0;
+                        iced::Task::done(AppMessage::OpenTab(self.pdfs.len() - 1))
                     }
                     Err(e) => {
                         error!("Couldn't create pdf viewer or {path_buf:?} {e}");
+                        iced::Task::none()
                     }
                 };
                 if let Some(sender) = self.file_watcher.as_ref() {
                     // We should never fill this up from here, thus blocking is allright
                     let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
                 }
-                iced::Task::none()
+                out
             }
             AppMessage::CloseFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
