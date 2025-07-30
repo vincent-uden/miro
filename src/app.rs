@@ -435,6 +435,10 @@ impl App {
                     AppMessage::OpenNewFileFinder,
                     cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
                 ))(menu_button(
+                    "Print",
+                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
+                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
+                ))(menu_button(
                     "Close",
                     AppMessage::CloseTab(self.pdf_idx),
                     None,

@@ -361,6 +361,18 @@ impl PdfViewer {
                 self.inner_state.borrow_mut().pix = None;
                 iced::Task::none()
             }
+            PdfMessage::PrintPdf => {
+                let path = self.path.clone();
+                iced::Task::perform(
+                    async move {
+                        let file_url = format!("file://{}", path.to_string_lossy());
+                        if let Err(e) = webbrowser::open(&file_url) {
+                            error!("Failed to open PDF in default browser: {}", e);
+                        }
+                    },
+                    |_| PdfMessage::None,
+                )
+            }
         };
         self.label = format!(
             "{} {}/{}",
