@@ -552,7 +552,7 @@ impl App {
                 i == self.pdf_idx,
             ));
         }
-        command_bar = command_bar.spacing(4.0).height(Length::Shrink);
+        command_bar = command_bar.spacing(4.0).padding(8.0).height(Length::Shrink);
         scrollable(command_bar)
             .direction(Direction::Horizontal(
                 Scrollbar::default().scroller_width(0.0).width(0.0),
@@ -889,9 +889,13 @@ fn file_tab(
         };
         container::Style {
             text_color: Some(pair.text),
-            background: Some(Background::Color(pair.color)),
-            border: border::rounded(border::top(4)),
-            shadow: Shadow::default(),
+            background: None,
+            border: border::rounded(4),
+            shadow: Shadow {
+                color: palette.background.strong.color,
+                offset: iced::Vector { x: 0.0, y: 2.0 },
+                blur_radius: 8.0,
+            },
         }
     })
     .into()
