@@ -8,7 +8,7 @@ use app::App;
 use bookmarks::BookmarkStore;
 use clap::Parser;
 use config::Config;
-use iced::{Theme, window::icon::from_file_data};
+use iced::{window::icon::from_file_data, Color, Theme};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -80,9 +80,110 @@ fn main() -> iced::Result {
 }
 
 pub fn theme(app: &App) -> Theme {
+    use iced::theme::palette::{*};
+
+    let not_defined = Pair {
+        color: Color::from_rgb8(255, 0, 23),
+        text: Color::from_rgb8(13, 255, 0),
+    };
+
+    let miro_light = Theme::custom_with_fn(
+        "Miro Light".to_string(),
+        iced::theme::Palette {
+            background: Color::from_rgb8(240, 239, 238),
+            text: Color::from_rgb8(30, 30, 30),
+            primary: Color::from_rgb8(167, 143, 135),
+            success: Color::from_rgb8(0, 255, 0),
+            danger: Color::from_rgb8(255, 0, 0),
+        },
+        |_: Palette| Extended {
+            background: Background {
+                base: Pair {
+                    color: Color::from_rgb8(240, 239, 238),
+                    text: Color::from_rgb8(30, 30, 30),
+                },
+                weak: not_defined,
+                strong: Pair {
+                    color: Color::from_rgb8(187, 184, 187),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            primary: Primary {
+                base: Pair {
+                    color: Color::from_rgb8(167, 143, 135),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                weak: not_defined,
+                strong: not_defined,
+            },
+            secondary: Secondary {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            success: Success {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            danger: Danger {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            is_dark: false,
+        },
+    );
+    let miro_dark = Theme::custom_with_fn(
+        "Miro Dark".to_string(),
+        iced::theme::Palette {
+            background: Color::from_rgb8(26, 27, 38),
+            text: Color::from_rgb8(255, 255, 255),
+            primary: Color::from_rgb8(0, 0, 255),
+            success: Color::from_rgb8(0, 255, 0),
+            danger: Color::from_rgb8(255, 0, 0),
+        },
+        |_: Palette| Extended {
+            background: Background {
+                base: Pair {
+                    color: Color::from_rgb8(26, 27, 38),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                weak: not_defined,
+                strong: Pair {
+                    color: Color::from_rgb8(51, 56, 71),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            primary: Primary {
+                base: Pair {
+                    color: Color::from_rgb8(51, 56, 71),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                weak: not_defined,
+                strong: not_defined,
+            },
+            secondary: Secondary {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            success: Success {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            danger: Danger {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            is_dark: false,
+        },
+    );
     match app.dark_mode {
-        true => DARK_THEME,
-        false => LIGHT_THEME,
+        true => miro_dark,
+        false => miro_light,
     }
 }
 
