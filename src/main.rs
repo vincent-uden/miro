@@ -102,7 +102,10 @@ pub fn theme(app: &App) -> Theme {
                     color: Color::from_rgb8(240, 239, 238),
                     text: Color::from_rgb8(30, 30, 30),
                 },
-                weak: not_defined,
+                weak: Pair {
+                    color: Color::from_rgb8(255, 255, 255),
+                    text: Color::from_rgb8(30, 30, 30),
+                },
                 strong: Pair {
                     color: Color::from_rgb8(187, 184, 187),
                     text: Color::from_rgb8(255, 255, 255),
@@ -113,7 +116,10 @@ pub fn theme(app: &App) -> Theme {
                     color: Color::from_rgb8(167, 143, 135),
                     text: Color::from_rgb8(255, 255, 255),
                 },
-                weak: not_defined,
+                weak: Pair {
+                    color: Color::from_rgb8(228, 226, 226),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
                 strong: not_defined,
             },
             secondary: Secondary {

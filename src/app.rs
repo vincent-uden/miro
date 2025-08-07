@@ -14,6 +14,7 @@ use iced::{
         row,
         scrollable, // This comment is here to avoid import granularity formatting breaking the imports
         scrollable::{Direction, Scrollbar},
+        stack,
         text,
         vertical_space,
         PaneGrid,
@@ -546,13 +547,14 @@ impl App {
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
             command_bar = command_bar.push(file_tab(
-                &pdf.label,
+                &pdf.name,
+                &pdf.page_progress,
                 AppMessage::OpenTab(i),
                 AppMessage::CloseTab(i),
                 i == self.pdf_idx,
             ));
         }
-        command_bar = command_bar.spacing(4.0).padding(8.0).height(Length::Shrink);
+        command_bar = command_bar.spacing(4.0).height(Length::Shrink);
         scrollable(command_bar)
             .direction(Direction::Horizontal(
                 Scrollbar::default().scroller_width(0.0).width(0.0),
@@ -573,7 +575,18 @@ impl App {
                     };
                     let tabs = self.create_tabs();
 
-                    widget::column![menu_bar, pdf_content, tabs].into()
+                    widget::column![
+                        menu_bar,
+                        stack![
+                            pdf_content,
+                            container(tabs)
+                                .align_y(alignment::Vertical::Bottom)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .padding(8.0)
+                        ]
+                    ]
+                    .into()
                 }
             }))
             .style(|_theme: &Theme| Default::default())
@@ -860,16 +873,19 @@ fn menu_button(
     })
 }
 
-fn file_tab(
-    label: &str,
+fn file_tab<'a>(
+    file_name: &'a str,
+    page_progress: &'a str,
     on_press: AppMessage,
     on_close: AppMessage,
     is_open: bool,
-) -> Element<'_, AppMessage> {
+) -> Element<'a, AppMessage> {
     container(
         widget::row![
-            labeled_button(label, on_press).style(file_tab_style),
-            // TODO: Fix alignment on the x, it doesnt look great next to the text
+            // TODO: Bold font on the file name text
+            base_button(widget::row![text(file_name), text(page_progress)], on_press)
+                .style(file_tab_style),
+            // TODO: Svg X
             base_button(
                 text(icon_to_string(RequiredIcons::X))
                     .align_y(alignment::Vertical::Bottom)
@@ -878,23 +894,29 @@ fn file_tab(
             )
             .style(file_tab_style),
         ]
+        .align_y(alignment::Vertical::Center)
         .spacing(2.0),
     )
+    .padding(6.0)
     .style(move |theme| {
         let palette = theme.extended_palette();
-        let pair = if is_open {
-            palette.secondary.strong
+        let border_pair = if is_open {
+            palette.primary.base
         } else {
-            palette.secondary.base
+            palette.primary.weak
         };
         container::Style {
-            text_color: Some(pair.text),
-            background: None,
-            border: border::rounded(4),
+            text_color: None,
+            background: Some(palette.background.weak.color.into()),
+            border: Border {
+                color: border_pair.color,
+                width: 2.0,
+                radius: Radius::from(8.0),
+            },
             shadow: Shadow {
-                color: palette.background.strong.color,
+                color: border_pair.color,
                 offset: iced::Vector { x: 0.0, y: 2.0 },
-                blur_radius: 8.0,
+                blur_radius: 4.0,
             },
         }
     })
@@ -909,6 +931,7 @@ pub fn file_tab_style(theme: &Theme, status: button::Status) -> button::Style {
         button::Status::Active | button::Status::Pressed | button::Status::Hovered => {
             button::Style {
                 background: None,
+                text_color: palette.background.base.text,
                 ..base
             }
         }
