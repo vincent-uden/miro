@@ -10,10 +10,11 @@ use iced::{
         self,
         button,
         container,
+        horizontal_space,
         pane_grid,
         responsive,
         row,
-        scrollable, // This comment is here to avoid import granularity formatting breaking the imports
+        scrollable, // -
         scrollable::{Direction, Scrollbar},
         stack,
         text,
@@ -458,7 +459,7 @@ impl App {
         let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
         let cfg = CONFIG.read().unwrap();
 
-        container(
+        container(row![
             menu_bar!((
                 debug_button_s("File"),
                 menu_tpl_1(menu_items!((menu_button(
@@ -469,7 +470,7 @@ impl App {
                     "Print",
                     AppMessage::PdfMessage(PdfMessage::PrintPdf),
                     cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                ))(menu_button(
+                ))(menu_button_last(
                     "Close",
                     AppMessage::CloseTab(self.pdf_idx),
                     None,
@@ -508,7 +509,7 @@ impl App {
                     "Fit To Screen",
                     AppMessage::PdfMessage(PdfMessage::ZoomFit),
                     cfg.get_binding_for_msg(BindableMessage::ZoomFit)
-                ))(menu_button(
+                ))(menu_button_last(
                     if self.has_sidebar_pane() {
                         "Close sidebar"
                     } else {
@@ -521,24 +522,39 @@ impl App {
             .draw_path(menu::DrawPath::Backdrop)
             .style(
                 |theme: &iced::Theme, status: iced_aw::style::Status| menu::Style {
-                    menu_background_expand: 0.0.into(),
+                    menu_background: theme.extended_palette().background.weak.color.into(),
+                    menu_background_expand: Padding::default().bottom(3.0).left(3.0).right(3.0),
                     bar_background_expand: 0.0.into(),
-                    bar_background: Background::Color(
-                        theme.extended_palette().secondary.base.color,
-                    ),
+                    bar_background: theme.extended_palette().background.weak.color.into(),
                     menu_border: Border {
-                        radius: Radius::new(0.0),
-                        ..Default::default()
+                        radius: Radius::new(0.0).bottom(8.0),
+                        color: theme.extended_palette().background.strong.color.into(),
+                        width: 2.0,
                     },
+                    bar_shadow: Shadow::default(),
+                    menu_shadow: Shadow::default(),
                     ..primary(theme, status)
                 },
             ),
-        )
+            container(horizontal_space())
+                .width(Length::Fill)
+                .height(28.0)
+                .style(|theme: &iced::Theme| container::Style {
+                    background: Some(theme.extended_palette().background.weak.color.into()),
+                    ..Default::default()
+                })
+        ])
         .width(Length::Fill)
+        .padding(Padding::default().bottom(2.0))
         .style(|theme| container::Style {
             background: Some(Background::Color(
-                theme.extended_palette().secondary.base.color,
+                theme.extended_palette().background.weak.color,
             )),
+            border: Border {
+                color: theme.extended_palette().background.strong.color.into(),
+                width: 2.0,
+                radius: 0.0.into(),
+            },
             ..Default::default()
         })
         .into()
@@ -813,9 +829,9 @@ fn debug_button_s(label: &str) -> button::Button<'_, AppMessage, iced::Theme, ic
         .style(move |theme, status| {
             let palette = theme.extended_palette();
             let pair = match status {
-                button::Status::Active => palette.secondary.base,
-                button::Status::Hovered | button::Status::Disabled => palette.secondary.weak,
-                button::Status::Pressed => palette.secondary.strong,
+                button::Status::Active => palette.background.weak,
+                button::Status::Hovered | button::Status::Disabled => palette.background.base,
+                button::Status::Pressed => palette.primary.base,
             };
             button::Style {
                 text_color: pair.text,
@@ -848,6 +864,7 @@ fn menu_button(
     base_button(
         row![
             text(label),
+            horizontal_space(),
             text(txt).style(|theme: &Theme| {
                 let palette = theme.extended_palette();
                 text::Style {
@@ -861,14 +878,63 @@ fn menu_button(
     .style(move |theme, status| {
         let palette = theme.extended_palette();
         let pair = match status {
-            button::Status::Active => palette.background.base,
-            button::Status::Hovered => palette.background.weak,
+            button::Status::Active => palette.background.weak,
+            button::Status::Hovered => palette.background.base,
             button::Status::Pressed => palette.background.strong,
             button::Status::Disabled => palette.secondary.weak,
         };
         button::Style {
             text_color: pair.text,
             background: Some(Background::Color(pair.color)),
+            border: Border {
+                radius: Radius::default(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    })
+}
+
+fn menu_button_last(
+    label: &str,
+    msg: AppMessage,
+    binding: Option<Keybind<BindableMessage>>,
+) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
+    let txt = format!(
+        " {}",
+        binding.map_or(String::new(), |b| format_key_sequence(&b.seq))
+    );
+    base_button(
+        row![
+            text(label),
+            horizontal_space(),
+            text(txt).style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                text::Style {
+                    color: Some(palette.primary.base.color),
+                }
+            })
+        ],
+        msg,
+    )
+    .width(Length::Fill)
+    .style(move |theme, status| {
+        let palette = theme.extended_palette();
+        let pair = match status {
+            button::Status::Active => palette.background.weak,
+            button::Status::Hovered => palette.background.base,
+            button::Status::Pressed => palette.background.strong,
+            button::Status::Disabled => palette.secondary.weak,
+        };
+        button::Style {
+            text_color: pair.text,
+            background: Some(Background::Color(pair.color)),
+            border: Border {
+                radius: Radius::default().bottom(8.0),
+                color: theme.extended_palette().background.strong.color.into(),
+                width: 0.0,
+                ..Default::default()
+            },
             ..Default::default()
         }
     })
@@ -938,7 +1004,7 @@ fn file_tab<'a>(
 
 pub fn file_tab_style(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
-    let base = styled(palette.secondary.base);
+    let base = styled(palette.background.strong);
 
     match status {
         button::Status::Active | button::Status::Pressed | button::Status::Hovered => {
