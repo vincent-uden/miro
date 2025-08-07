@@ -134,6 +134,7 @@ pub fn theme(app: &App) -> Theme {
             is_dark: false,
         },
     );
+    // TODO: Change primary color to tokyo night primary
     let miro_dark = Theme::custom_with_fn(
         "Miro Dark".to_string(),
         iced::theme::Palette {

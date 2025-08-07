@@ -71,7 +71,6 @@ pub struct App {
     pub invert_pdf: bool,
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
-    sidebar_showing: bool,
     sidebar_tab: SidebarTab,
     waiting_for_worker: Vec<AppMessage>,
     shift_pressed: bool,
@@ -136,18 +135,9 @@ impl App {
     }
 
     pub fn new(bookmark_store: BookmarkStore) -> Self {
-        let (mut ps, p) = pane_grid::State::new(Pane {
+        let (ps, _p) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
         });
-        if let Some((_, split)) = ps.split(
-            pane_grid::Axis::Vertical,
-            p,
-            Pane {
-                pane_type: PaneType::Sidebar,
-            },
-        ) {
-            ps.resize(split, 0.7);
-        }
         Self {
             pdfs: vec![],
             pdf_idx: 0,
@@ -156,7 +146,6 @@ impl App {
             invert_pdf: false,
             bookmark_store,
             pane_state: ps,
-            sidebar_showing: false,
             sidebar_tab: SidebarTab::Outline,
             waiting_for_worker: vec![],
             shift_pressed: false,
@@ -164,6 +153,30 @@ impl App {
             scale_factor: CONFIG.read().unwrap().scale_factor,
         }
     }
+
+    fn has_sidebar_pane(&self) -> bool {
+        self.pane_state
+            .panes
+            .iter()
+            .any(|(_, pane)| matches!(pane.pane_type, PaneType::Sidebar))
+    }
+
+    fn get_pdf_pane_id(&self) -> Option<pane_grid::Pane> {
+        self.pane_state
+            .panes
+            .iter()
+            .find(|(_, pane)| matches!(pane.pane_type, PaneType::Pdf))
+            .map(|(id, _)| *id)
+    }
+
+    fn get_sidebar_pane_id(&self) -> Option<pane_grid::Pane> {
+        self.pane_state
+            .panes
+            .iter()
+            .find(|(_, pane)| matches!(pane.pane_type, PaneType::Sidebar))
+            .map(|(id, _)| *id)
+    }
+
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         match message {
             AppMessage::OpenFile(path_buf) => {
@@ -403,7 +416,23 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::ToggleSidebar => {
-                self.sidebar_showing = !self.sidebar_showing;
+                if self.has_sidebar_pane() {
+                    if let Some(sidebar_id) = self.get_sidebar_pane_id() {
+                        self.pane_state.close(sidebar_id);
+                    }
+                } else {
+                    if let Some(pdf_id) = self.get_pdf_pane_id() {
+                        if let Some((_, split)) = self.pane_state.split(
+                            pane_grid::Axis::Vertical,
+                            pdf_id,
+                            Pane {
+                                pane_type: PaneType::Sidebar,
+                            },
+                        ) {
+                            self.pane_state.resize(split, 0.7);
+                        }
+                    }
+                }
                 iced::Task::none()
             }
             AppMessage::SetSidebar(sidebar_tab) => {
@@ -423,12 +452,11 @@ impl App {
         }
     }
 
-    pub fn view(&self) -> iced::Element<'_, AppMessage> {
+    fn create_menu_bar(&self) -> Element<'_, AppMessage> {
         let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
         let cfg = CONFIG.read().unwrap();
 
-        #[rustfmt::skip]
-        let mb = container(
+        container(
             menu_bar!((
                 debug_button_s("File"),
                 menu_tpl_1(menu_items!((menu_button(
@@ -446,50 +474,47 @@ impl App {
                 ))))
             )(
                 debug_button_s("View"),
-                menu_tpl_1(menu_items!(
-                    (menu_button(
-                        if self.dark_mode {
-                            "Light Interface"
-                        } else {
-                            "Dark Interface"
-                        },
-                        AppMessage::ToggleDarkModeUi,
-                        cfg.get_binding_for_msg(BindableMessage::ToggleDarkModeUi)
-                    ))
-                    (menu_button(
-                        if self.invert_pdf {
-                            "Light Pdf"
-                        } else {
-                            "Dark Pdf"
-                        },
-                        AppMessage::ToggleDarkModePdf,
-                        cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
-                    ))
-                    (menu_button(
-                        "Zoom In",
-                        AppMessage::PdfMessage(PdfMessage::ZoomIn),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomIn)
-                    ))
-                    (menu_button(
-                        "Zoom Out",
-                        AppMessage::PdfMessage(PdfMessage::ZoomOut),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomOut)
-                    ))
-                    (menu_button(
-                        "Zoom 100%",
-                        AppMessage::PdfMessage(PdfMessage::ZoomHome),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomHome)
-                    ))
-                    (menu_button(
-                        "Fit To Screen",
-                        AppMessage::PdfMessage(PdfMessage::ZoomFit),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomFit)
-                    ))
-                     (menu_button(
-                         if self.sidebar_showing { "Close sidebar" } else { "Open sidebar" },
-                         AppMessage::ToggleSidebar,
-                         cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
-                     ))                ))
+                menu_tpl_1(menu_items!((menu_button(
+                    if self.dark_mode {
+                        "Light Interface"
+                    } else {
+                        "Dark Interface"
+                    },
+                    AppMessage::ToggleDarkModeUi,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleDarkModeUi)
+                ))(menu_button(
+                    if self.invert_pdf {
+                        "Light Pdf"
+                    } else {
+                        "Dark Pdf"
+                    },
+                    AppMessage::ToggleDarkModePdf,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
+                ))(menu_button(
+                    "Zoom In",
+                    AppMessage::PdfMessage(PdfMessage::ZoomIn),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomIn)
+                ))(menu_button(
+                    "Zoom Out",
+                    AppMessage::PdfMessage(PdfMessage::ZoomOut),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomOut)
+                ))(menu_button(
+                    "Zoom 100%",
+                    AppMessage::PdfMessage(PdfMessage::ZoomHome),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomHome)
+                ))(menu_button(
+                    "Fit To Screen",
+                    AppMessage::PdfMessage(PdfMessage::ZoomFit),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomFit)
+                ))(menu_button(
+                    if self.has_sidebar_pane() {
+                        "Close sidebar"
+                    } else {
+                        "Open sidebar"
+                    },
+                    AppMessage::ToggleSidebar,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
+                ))))
             ))
             .draw_path(menu::DrawPath::Backdrop)
             .style(
@@ -513,8 +538,11 @@ impl App {
                 theme.extended_palette().secondary.base.color,
             )),
             ..Default::default()
-        });
+        })
+        .into()
+    }
 
+    fn create_tabs(&self) -> Element<'_, AppMessage> {
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
             command_bar = command_bar.push(file_tab(
@@ -525,40 +553,34 @@ impl App {
             ));
         }
         command_bar = command_bar.spacing(4.0).height(Length::Shrink);
-        let tabs = scrollable(command_bar).direction(Direction::Horizontal(
-            Scrollbar::default().scroller_width(0.0).width(0.0),
-        ));
-
-        let c = if self.sidebar_showing {
-            let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
-                pane_grid::Content::new(responsive(move |_size| match pane.pane_type {
-                    PaneType::Sidebar => self.view_sidebar(),
-                    PaneType::Pdf => {
-                        if self.pdfs.is_empty() {
-                            vertical_space().into()
-                        } else {
-                            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-                        }
-                    }
-                }))
-                .style(|_theme: &Theme| Default::default())
-            })
-            .on_resize(10, AppMessage::PaneResize);
-
-            widget::column![mb, pg, tabs]
-        } else {
-            widget::column![mb, self.view_pdf(), tabs]
-        };
-
-        c.into()
+        scrollable(command_bar)
+            .direction(Direction::Horizontal(
+                Scrollbar::default().scroller_width(0.0).width(0.0),
+            ))
+            .into()
     }
 
-    fn view_pdf(&self) -> Element<'_, AppMessage> {
-        if self.pdfs.is_empty() {
-            vertical_space().into()
-        } else {
-            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-        }
+    pub fn view(&self) -> iced::Element<'_, AppMessage> {
+        let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
+            pane_grid::Content::new(responsive(move |_size| match pane.pane_type {
+                PaneType::Sidebar => self.view_sidebar(),
+                PaneType::Pdf => {
+                    let menu_bar = self.create_menu_bar();
+                    let pdf_content = if self.pdfs.is_empty() {
+                        vertical_space().into()
+                    } else {
+                        self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
+                    };
+                    let tabs = self.create_tabs();
+
+                    widget::column![menu_bar, pdf_content, tabs].into()
+                }
+            }))
+            .style(|_theme: &Theme| Default::default())
+        })
+        .on_resize(10, AppMessage::PaneResize);
+
+        pg.into()
     }
 
     fn view_sidebar(&self) -> Element<'_, AppMessage> {
