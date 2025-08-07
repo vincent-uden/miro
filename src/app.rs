@@ -581,7 +581,7 @@ impl App {
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
         let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
-            pane_grid::Content::new(responsive(move |_size| match pane.pane_type {
+            pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
                 PaneType::Pdf => {
                     let menu_bar = self.create_menu_bar();
@@ -605,7 +605,7 @@ impl App {
                     ]
                     .into()
                 }
-            }))
+            })
             .style(|_theme: &Theme| Default::default())
         })
         .on_resize(10, AppMessage::PaneResize);
