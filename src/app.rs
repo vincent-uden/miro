@@ -4,6 +4,7 @@ use iced::{
     alignment,
     border::{self, Radius},
     event::listen_with,
+    font::{Font, Weight},
     theme::palette,
     widget::{
         self,
@@ -882,16 +883,28 @@ fn file_tab<'a>(
 ) -> Element<'a, AppMessage> {
     container(
         widget::row![
-            // TODO: Bold font on the file name text
-            base_button(widget::row![text(file_name), text(page_progress)], on_press)
-                .style(file_tab_style),
+            base_button(
+                widget::row![
+                    text(file_name).font(Font {
+                        family: iced::font::Family::Name("Geist"),
+                        weight: Weight::Semibold,
+                        ..Default::default()
+                    }),
+                    text(page_progress)
+                ]
+                .spacing(8.0),
+                on_press
+            )
+            .style(file_tab_style),
             // TODO: Svg X
             base_button(
                 text(icon_to_string(RequiredIcons::X))
                     .align_y(alignment::Vertical::Bottom)
+                    .size(24.0)
                     .font(REQUIRED_FONT),
                 on_close
             )
+            .padding(0.0)
             .style(file_tab_style),
         ]
         .align_y(alignment::Vertical::Center)

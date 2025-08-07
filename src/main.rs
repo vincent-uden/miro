@@ -8,7 +8,7 @@ use app::App;
 use bookmarks::BookmarkStore;
 use clap::Parser;
 use config::Config;
-use iced::{window::icon::from_file_data, Color, Theme};
+use iced::{window::icon::from_file_data, Color, Font, Theme};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -69,6 +69,8 @@ fn main() -> iced::Result {
         .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
         .window(settings())
+        .font(include_bytes!("../assets/font/Geist-VariableFont_wght.ttf").as_slice())
+        .default_font(Font::with_name("Geist"))
         .run_with(move || {
             let state = App::new(BookmarkStore::system_store().unwrap_or_default());
             let file_task = match args.path {
