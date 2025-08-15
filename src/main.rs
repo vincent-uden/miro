@@ -142,52 +142,87 @@ pub fn theme(app: &App) -> Theme {
             is_dark: false,
         },
     );
-    // TODO: Change primary color to tokyo night primary
     let miro_dark = Theme::custom_with_fn(
         "Miro Dark".to_string(),
         iced::theme::Palette {
             background: Color::from_rgb8(26, 27, 38),
-            text: Color::from_rgb8(255, 255, 255),
-            primary: Color::from_rgb8(0, 0, 255),
-            success: Color::from_rgb8(0, 255, 0),
-            danger: Color::from_rgb8(255, 0, 0),
+            text: Color::from_rgb8(154, 165, 206),
+            primary: Color::from_rgb8(42, 195, 222),
+            success: Color::from_rgb8(158, 206, 106),
+            danger: Color::from_rgb8(247, 118, 142),
         },
         |_: Palette| Extended {
             background: Background {
                 base: Pair {
                     color: Color::from_rgb8(26, 27, 38),
-                    text: Color::from_rgb8(255, 255, 255),
+                    text: Color::from_rgb8(154, 165, 206),
                 },
-                weak: not_defined,
+                weak: Pair {
+                    color: Color::from_rgb8(36, 40, 59),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
                 strong: Pair {
                     color: Color::from_rgb8(51, 56, 71),
-                    text: Color::from_rgb8(255, 255, 255),
+                    text: Color::from_rgb8(154, 165, 206),
                 },
             },
             primary: Primary {
                 base: Pair {
-                    color: Color::from_rgb8(51, 56, 71),
+                    color: Color::from_rgb8(42, 195, 222),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(73, 219, 240),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(21, 171, 204),
                     text: Color::from_rgb8(255, 255, 255),
                 },
-                weak: not_defined,
-                strong: not_defined,
             },
             secondary: Secondary {
-                base: not_defined,
-                weak: not_defined,
-                strong: not_defined,
+                base: Pair {
+                    color: Color::from_rgb8(51, 56, 71),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(68, 75, 95),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(34, 39, 47),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
             },
             success: Success {
-                base: not_defined,
-                weak: not_defined,
-                strong: not_defined,
+                base: Pair {
+                    color: Color::from_rgb8(158, 206, 106),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(180, 220, 140),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(136, 192, 72),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
             },
             danger: Danger {
-                base: not_defined,
-                weak: not_defined,
-                strong: not_defined,
+                base: Pair {
+                    color: Color::from_rgb8(247, 118, 142),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(250, 150, 170),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(244, 86, 114),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
             },
-            is_dark: false,
+            is_dark: true,
         },
     );
     match app.dark_mode {
