@@ -32,6 +32,7 @@ pub struct PdfViewer {
     pub name: String,
     pub path: PathBuf,
     pub label: String,
+    pub page_progress: String,
     pub cur_page_idx: i32,
     translation: Vector<f32>, // In document space
     pub invert_colors: bool,
@@ -98,6 +99,7 @@ impl PdfViewer {
             name,
             path,
             label: String::new(),
+            page_progress: String::new(),
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: false,
@@ -402,6 +404,11 @@ impl PdfViewer {
             self.cur_page_idx + 1,
             self.doc.page_count().unwrap_or(0),
         );
+        self.page_progress = format!(
+            " {}/{}",
+            self.cur_page_idx + 1,
+            self.doc.page_count().unwrap_or(0),
+        );
         task
     }
 
@@ -474,6 +481,10 @@ impl PdfViewer {
         self.document_outline.as_slice()
     }
 
+    pub fn get_page_count(&self) -> i32 {
+        self.doc.page_count().unwrap_or(0)
+    }
+
     pub fn set_scale_factor(&mut self, scale_factor: f64) {
         if (self.scale_factor - scale_factor).abs() > 0.01 {
             info!(
@@ -528,6 +539,8 @@ impl PdfViewer {
         let bounds = state.bounds;
         let device = {
             let pix = state.pix.as_mut().unwrap();
+            // TODO: Might contain undefined behvaiour. Seems to work fine in release mode.
+            // But in debug mode on my laptop (at least) this produces UB
             let samples = pix.samples_mut();
             samples.fill(255);
             Device::from_pixmap(pix)?

@@ -4,16 +4,19 @@ use iced::{
     alignment,
     border::{self, Radius},
     event::listen_with,
+    font::{Font, Weight},
     theme::palette,
     widget::{
         self,
         button,
         container,
+        horizontal_space,
         pane_grid,
         responsive,
         row,
-        scrollable, // This comment is here to avoid import granularity formatting breaking the imports
+        scrollable, // -
         scrollable::{Direction, Scrollbar},
+        stack,
         text,
         vertical_space,
         PaneGrid,
@@ -71,7 +74,6 @@ pub struct App {
     pub invert_pdf: bool,
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
-    sidebar_showing: bool,
     sidebar_tab: SidebarTab,
     waiting_for_worker: Vec<AppMessage>,
     shift_pressed: bool,
@@ -136,18 +138,9 @@ impl App {
     }
 
     pub fn new(bookmark_store: BookmarkStore) -> Self {
-        let (mut ps, p) = pane_grid::State::new(Pane {
+        let (ps, _p) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
         });
-        if let Some((_, split)) = ps.split(
-            pane_grid::Axis::Vertical,
-            p,
-            Pane {
-                pane_type: PaneType::Sidebar,
-            },
-        ) {
-            ps.resize(split, 0.7);
-        }
         Self {
             pdfs: vec![],
             pdf_idx: 0,
@@ -156,7 +149,6 @@ impl App {
             invert_pdf: false,
             bookmark_store,
             pane_state: ps,
-            sidebar_showing: false,
             sidebar_tab: SidebarTab::Outline,
             waiting_for_worker: vec![],
             shift_pressed: false,
@@ -164,6 +156,30 @@ impl App {
             scale_factor: CONFIG.read().unwrap().scale_factor,
         }
     }
+
+    fn has_sidebar_pane(&self) -> bool {
+        self.pane_state
+            .panes
+            .iter()
+            .any(|(_, pane)| matches!(pane.pane_type, PaneType::Sidebar))
+    }
+
+    fn get_pdf_pane_id(&self) -> Option<pane_grid::Pane> {
+        self.pane_state
+            .panes
+            .iter()
+            .find(|(_, pane)| matches!(pane.pane_type, PaneType::Pdf))
+            .map(|(id, _)| *id)
+    }
+
+    fn get_sidebar_pane_id(&self) -> Option<pane_grid::Pane> {
+        self.pane_state
+            .panes
+            .iter()
+            .find(|(_, pane)| matches!(pane.pane_type, PaneType::Sidebar))
+            .map(|(id, _)| *id)
+    }
+
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         match message {
             AppMessage::OpenFile(path_buf) => {
@@ -403,7 +419,23 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::ToggleSidebar => {
-                self.sidebar_showing = !self.sidebar_showing;
+                if self.has_sidebar_pane() {
+                    if let Some(sidebar_id) = self.get_sidebar_pane_id() {
+                        self.pane_state.close(sidebar_id);
+                    }
+                } else {
+                    if let Some(pdf_id) = self.get_pdf_pane_id() {
+                        if let Some((_, split)) = self.pane_state.split(
+                            pane_grid::Axis::Vertical,
+                            pdf_id,
+                            Pane {
+                                pane_type: PaneType::Sidebar,
+                            },
+                        ) {
+                            self.pane_state.resize(split, 0.7);
+                        }
+                    }
+                }
                 iced::Task::none()
             }
             AppMessage::SetSidebar(sidebar_tab) => {
@@ -423,12 +455,11 @@ impl App {
         }
     }
 
-    pub fn view(&self) -> iced::Element<'_, AppMessage> {
+    fn create_menu_bar(&self) -> Element<'_, AppMessage> {
         let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
         let cfg = CONFIG.read().unwrap();
 
-        #[rustfmt::skip]
-        let mb = container(
+        container(row![
             menu_bar!((
                 debug_button_s("File"),
                 menu_tpl_1(menu_items!((menu_button(
@@ -439,138 +470,290 @@ impl App {
                     "Print",
                     AppMessage::PdfMessage(PdfMessage::PrintPdf),
                     cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                ))(menu_button(
+                ))(menu_button_last(
                     "Close",
                     AppMessage::CloseTab(self.pdf_idx),
                     None,
                 ))))
             )(
                 debug_button_s("View"),
-                menu_tpl_1(menu_items!(
-                    (menu_button(
-                        if self.dark_mode {
-                            "Light Interface"
-                        } else {
-                            "Dark Interface"
-                        },
-                        AppMessage::ToggleDarkModeUi,
-                        cfg.get_binding_for_msg(BindableMessage::ToggleDarkModeUi)
-                    ))
-                    (menu_button(
-                        if self.invert_pdf {
-                            "Light Pdf"
-                        } else {
-                            "Dark Pdf"
-                        },
-                        AppMessage::ToggleDarkModePdf,
-                        cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
-                    ))
-                    (menu_button(
-                        "Zoom In",
-                        AppMessage::PdfMessage(PdfMessage::ZoomIn),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomIn)
-                    ))
-                    (menu_button(
-                        "Zoom Out",
-                        AppMessage::PdfMessage(PdfMessage::ZoomOut),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomOut)
-                    ))
-                    (menu_button(
-                        "Zoom 100%",
-                        AppMessage::PdfMessage(PdfMessage::ZoomHome),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomHome)
-                    ))
-                    (menu_button(
-                        "Fit To Screen",
-                        AppMessage::PdfMessage(PdfMessage::ZoomFit),
-                        cfg.get_binding_for_msg(BindableMessage::ZoomFit)
-                    ))
-                     (menu_button(
-                         if self.sidebar_showing { "Close sidebar" } else { "Open sidebar" },
-                         AppMessage::ToggleSidebar,
-                         cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
-                     ))                ))
+                menu_tpl_1(menu_items!((menu_button(
+                    if self.dark_mode {
+                        "Light Interface"
+                    } else {
+                        "Dark Interface"
+                    },
+                    AppMessage::ToggleDarkModeUi,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleDarkModeUi)
+                ))(menu_button(
+                    if self.invert_pdf {
+                        "Light Pdf"
+                    } else {
+                        "Dark Pdf"
+                    },
+                    AppMessage::ToggleDarkModePdf,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
+                ))(menu_button(
+                    "Zoom In",
+                    AppMessage::PdfMessage(PdfMessage::ZoomIn),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomIn)
+                ))(menu_button(
+                    "Zoom Out",
+                    AppMessage::PdfMessage(PdfMessage::ZoomOut),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomOut)
+                ))(menu_button(
+                    "Zoom 100%",
+                    AppMessage::PdfMessage(PdfMessage::ZoomHome),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomHome)
+                ))(menu_button(
+                    "Fit To Screen",
+                    AppMessage::PdfMessage(PdfMessage::ZoomFit),
+                    cfg.get_binding_for_msg(BindableMessage::ZoomFit)
+                ))(menu_button_last(
+                    if self.has_sidebar_pane() {
+                        "Close sidebar"
+                    } else {
+                        "Open sidebar"
+                    },
+                    AppMessage::ToggleSidebar,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
+                ))))
             ))
             .draw_path(menu::DrawPath::Backdrop)
             .style(
                 |theme: &iced::Theme, status: iced_aw::style::Status| menu::Style {
-                    menu_background_expand: 0.0.into(),
+                    menu_background: theme.extended_palette().background.weak.color.into(),
+                    menu_background_expand: Padding::default().bottom(3.0).left(3.0).right(3.0),
                     bar_background_expand: 0.0.into(),
-                    bar_background: Background::Color(
-                        theme.extended_palette().secondary.base.color,
-                    ),
+                    bar_background: theme.extended_palette().background.weak.color.into(),
                     menu_border: Border {
-                        radius: Radius::new(0.0),
-                        ..Default::default()
+                        radius: Radius::new(0.0).bottom(8.0),
+                        color: theme.extended_palette().background.strong.color.into(),
+                        width: 2.0,
                     },
+                    bar_shadow: Shadow::default(),
+                    menu_shadow: Shadow::default(),
                     ..primary(theme, status)
                 },
             ),
-        )
+            container(horizontal_space())
+                .width(Length::Fill)
+                .height(28.0)
+                .style(|theme: &iced::Theme| container::Style {
+                    background: Some(theme.extended_palette().background.weak.color.into()),
+                    ..Default::default()
+                })
+        ])
         .width(Length::Fill)
+        .padding(Padding::default().bottom(2.0))
         .style(|theme| container::Style {
             background: Some(Background::Color(
-                theme.extended_palette().secondary.base.color,
+                theme.extended_palette().background.weak.color,
             )),
+            border: Border {
+                color: theme.extended_palette().background.strong.color.into(),
+                width: 2.0,
+                radius: 0.0.into(),
+            },
             ..Default::default()
-        });
+        })
+        .into()
+    }
 
+    fn create_tabs(&self) -> Element<'_, AppMessage> {
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
             command_bar = command_bar.push(file_tab(
-                &pdf.label,
+                &pdf.name,
+                &pdf.page_progress,
                 AppMessage::OpenTab(i),
                 AppMessage::CloseTab(i),
                 i == self.pdf_idx,
             ));
         }
         command_bar = command_bar.spacing(4.0).height(Length::Shrink);
-        let tabs = scrollable(command_bar).direction(Direction::Horizontal(
-            Scrollbar::default().scroller_width(0.0).width(0.0),
-        ));
-
-        let c = if self.sidebar_showing {
-            let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
-                pane_grid::Content::new(responsive(move |_size| match pane.pane_type {
-                    PaneType::Sidebar => self.view_sidebar(),
-                    PaneType::Pdf => {
-                        if self.pdfs.is_empty() {
-                            vertical_space().into()
-                        } else {
-                            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-                        }
-                    }
-                }))
-                .style(|_theme: &Theme| Default::default())
-            })
-            .on_resize(10, AppMessage::PaneResize);
-
-            widget::column![mb, pg, tabs]
-        } else {
-            widget::column![mb, self.view_pdf(), tabs]
-        };
-
-        c.into()
+        scrollable(command_bar)
+            .direction(Direction::Horizontal(
+                Scrollbar::default().scroller_width(0.0).width(0.0),
+            ))
+            .into()
     }
 
-    fn view_pdf(&self) -> Element<'_, AppMessage> {
-        if self.pdfs.is_empty() {
-            vertical_space().into()
-        } else {
-            self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
-        }
+    pub fn view(&self) -> iced::Element<'_, AppMessage> {
+        let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
+            pane_grid::Content::new(match pane.pane_type {
+                PaneType::Sidebar => self.view_sidebar(),
+                PaneType::Pdf => {
+                    let menu_bar = self.create_menu_bar();
+                    let pdf_content = if self.pdfs.is_empty() {
+                        vertical_space().into()
+                    } else {
+                        self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
+                    };
+                    let tabs = self.create_tabs();
+
+                    widget::column![
+                        menu_bar,
+                        stack![
+                            pdf_content,
+                            container(tabs)
+                                .align_y(alignment::Vertical::Bottom)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .padding(8.0)
+                        ]
+                    ]
+                    .into()
+                }
+            })
+            .style(|_theme: &Theme| Default::default())
+        })
+        .on_resize(10, AppMessage::PaneResize);
+
+        pg.into()
     }
 
     fn view_sidebar(&self) -> Element<'_, AppMessage> {
-        let sidebar_picker = widget::row![
-            icons::icon_button(icons::table_of_contents(), icons::ButtonVariant::Primary)
-                .on_press(AppMessage::SetSidebar(SidebarTab::Outline)),
-            icons::icon_button(icons::bookmark(), icons::ButtonVariant::Primary)
-                .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark)),
-        ]
-        .height(Length::Shrink)
-        .spacing(4.0)
-        .padding(Padding::default().top(4.0).bottom(4.0));
+        let create_expanded_outline_button = || {
+            button(
+                widget::row![
+                    widget::svg(icons::table_of_contents())
+                        .width(18.0)
+                        .height(18.0)
+                        .style(|theme: &Theme, _| {
+                            let palette = theme.extended_palette();
+                            widget::svg::Style {
+                                color: Some(palette.primary.base.text),
+                            }
+                        }),
+                    horizontal_space().width(8.0),
+                    text("Outline")
+                ]
+                .align_y(alignment::Vertical::Center)
+            )
+            .width(Length::Fill)
+            .height(30.0)
+            .padding(6.0)
+            .style(|theme: &Theme, _status| {
+                let palette = theme.extended_palette();
+                button::Style {
+                    background: Some(palette.primary.base.color.into()),
+                    text_color: palette.primary.base.text,
+                    border: Border {
+                        radius: Radius::from(4.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
+        };
+
+        let create_collapsed_outline_button = || {
+            button(widget::svg(icons::table_of_contents()).width(18.0).height(18.0).style(
+                |theme: &Theme, _| {
+                    let palette = theme.extended_palette();
+                    widget::svg::Style {
+                        color: Some(palette.primary.base.text),
+                    }
+                },
+            ))
+            .width(Length::Shrink)
+            .height(30.0)
+            .padding(6.0)
+            .style(|theme: &Theme, status| {
+                let palette = theme.extended_palette();
+                widget::button::Style {
+                    background: match status {
+                        widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
+                        widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
+                        widget::button::Status::Active => Some(palette.primary.base.color.into()),
+                        _ => None,
+                    },
+                    border: Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
+        };
+
+        let create_expanded_bookmark_button = || {
+            button(
+                widget::row![
+                    text("Bookmarks").width(Length::Fill),
+                    widget::svg(icons::bookmark())
+                        .width(18.0)
+                        .height(18.0)
+                        .style(|theme: &Theme, _| {
+                            let palette = theme.extended_palette();
+                            widget::svg::Style {
+                                color: Some(palette.primary.base.text),
+                            }
+                        })
+                ]
+                .align_y(alignment::Vertical::Center)
+            )
+            .width(Length::Fill)
+            .height(30.0)
+            .padding(6.0)
+            .style(|theme: &Theme, _status| {
+                let palette = theme.extended_palette();
+                button::Style {
+                    background: Some(palette.primary.base.color.into()),
+                    text_color: palette.primary.base.text,
+                    border: Border {
+                        radius: Radius::from(4.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
+        };
+
+        let create_collapsed_bookmark_button = || {
+            button(widget::svg(icons::bookmark()).width(18.0).height(18.0).style(
+                |theme: &Theme, _| {
+                    let palette = theme.extended_palette();
+                    widget::svg::Style {
+                        color: Some(palette.primary.base.text),
+                    }
+                },
+            ))
+            .width(Length::Shrink)
+            .height(30.0)
+            .padding(6.0)
+            .style(|theme: &Theme, status| {
+                let palette = theme.extended_palette();
+                widget::button::Style {
+                    background: match status {
+                        widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
+                        widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
+                        widget::button::Status::Active => Some(palette.primary.base.color.into()),
+                        _ => None,
+                    },
+                    border: Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
+        };
+
+        let (outline_button, bookmark_button) = match self.sidebar_tab {
+            SidebarTab::Outline => (create_expanded_outline_button(), create_collapsed_bookmark_button()),
+            SidebarTab::Bookmark => (create_collapsed_outline_button(), create_expanded_bookmark_button()),
+        };
+
+        let sidebar_picker = widget::row![outline_button, bookmark_button]
+            .height(Length::Shrink)
+            .spacing(4.0)
+            .padding(Padding::default().top(4.0).bottom(4.0));
 
         let contents: Element<'_, AppMessage> = match self.sidebar_tab {
             SidebarTab::Outline => self.view_outline(),
@@ -777,9 +960,9 @@ fn debug_button_s(label: &str) -> button::Button<'_, AppMessage, iced::Theme, ic
         .style(move |theme, status| {
             let palette = theme.extended_palette();
             let pair = match status {
-                button::Status::Active => palette.secondary.base,
-                button::Status::Hovered | button::Status::Disabled => palette.secondary.weak,
-                button::Status::Pressed => palette.secondary.strong,
+                button::Status::Active => palette.background.weak,
+                button::Status::Hovered | button::Status::Disabled => palette.background.base,
+                button::Status::Pressed => palette.primary.base,
             };
             button::Style {
                 text_color: pair.text,
@@ -812,6 +995,7 @@ fn menu_button(
     base_button(
         row![
             text(label),
+            horizontal_space(),
             text(txt).style(|theme: &Theme| {
                 let palette = theme.extended_palette();
                 text::Style {
@@ -825,51 +1009,125 @@ fn menu_button(
     .style(move |theme, status| {
         let palette = theme.extended_palette();
         let pair = match status {
-            button::Status::Active => palette.background.base,
-            button::Status::Hovered => palette.background.weak,
+            button::Status::Active => palette.background.weak,
+            button::Status::Hovered => palette.background.base,
             button::Status::Pressed => palette.background.strong,
             button::Status::Disabled => palette.secondary.weak,
         };
         button::Style {
             text_color: pair.text,
             background: Some(Background::Color(pair.color)),
+            border: Border {
+                radius: Radius::default(),
+                ..Default::default()
+            },
             ..Default::default()
         }
     })
 }
 
-fn file_tab(
+fn menu_button_last(
     label: &str,
+    msg: AppMessage,
+    binding: Option<Keybind<BindableMessage>>,
+) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
+    let txt = format!(
+        " {}",
+        binding.map_or(String::new(), |b| format_key_sequence(&b.seq))
+    );
+    base_button(
+        row![
+            text(label),
+            horizontal_space(),
+            text(txt).style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                text::Style {
+                    color: Some(palette.primary.base.color),
+                }
+            })
+        ],
+        msg,
+    )
+    .width(Length::Fill)
+    .style(move |theme, status| {
+        let palette = theme.extended_palette();
+        let pair = match status {
+            button::Status::Active => palette.background.weak,
+            button::Status::Hovered => palette.background.base,
+            button::Status::Pressed => palette.background.strong,
+            button::Status::Disabled => palette.secondary.weak,
+        };
+        button::Style {
+            text_color: pair.text,
+            background: Some(Background::Color(pair.color)),
+            border: Border {
+                radius: Radius::default().bottom(8.0),
+                color: theme.extended_palette().background.strong.color.into(),
+                width: 0.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    })
+}
+
+fn file_tab<'a>(
+    file_name: &'a str,
+    page_progress: &'a str,
     on_press: AppMessage,
     on_close: AppMessage,
     is_open: bool,
-) -> Element<'_, AppMessage> {
+) -> Element<'a, AppMessage> {
     container(
         widget::row![
-            labeled_button(label, on_press).style(file_tab_style),
-            // TODO: Fix alignment on the x, it doesnt look great next to the text
+            base_button(
+                widget::row![
+                    text(file_name).font(Font {
+                        family: iced::font::Family::Name("Geist"),
+                        weight: Weight::Semibold,
+                        ..Default::default()
+                    }),
+                    text(page_progress)
+                ]
+                .spacing(8.0),
+                on_press
+            )
+            .style(file_tab_style),
+            // TODO: Svg X
             base_button(
                 text(icon_to_string(RequiredIcons::X))
                     .align_y(alignment::Vertical::Bottom)
+                    .size(24.0)
                     .font(REQUIRED_FONT),
                 on_close
             )
+            .padding(0.0)
             .style(file_tab_style),
         ]
+        .align_y(alignment::Vertical::Center)
         .spacing(2.0),
     )
+    .padding(6.0)
     .style(move |theme| {
         let palette = theme.extended_palette();
-        let pair = if is_open {
-            palette.secondary.strong
+        let border_pair = if is_open {
+            palette.primary.base
         } else {
-            palette.secondary.base
+            palette.primary.weak
         };
         container::Style {
-            text_color: Some(pair.text),
-            background: Some(Background::Color(pair.color)),
-            border: border::rounded(border::top(4)),
-            shadow: Shadow::default(),
+            text_color: None,
+            background: Some(palette.background.weak.color.into()),
+            border: Border {
+                color: border_pair.color,
+                width: 2.0,
+                radius: Radius::from(8.0),
+            },
+            shadow: Shadow {
+                color: border_pair.color,
+                offset: iced::Vector { x: 0.0, y: 2.0 },
+                blur_radius: 4.0,
+            },
         }
     })
     .into()
@@ -877,12 +1135,13 @@ fn file_tab(
 
 pub fn file_tab_style(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
-    let base = styled(palette.secondary.base);
+    let base = styled(palette.background.strong);
 
     match status {
         button::Status::Active | button::Status::Pressed | button::Status::Hovered => {
             button::Style {
                 background: None,
+                text_color: palette.background.base.text,
                 ..base
             }
         }

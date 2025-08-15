@@ -8,7 +8,7 @@ use app::App;
 use bookmarks::BookmarkStore;
 use clap::Parser;
 use config::Config;
-use iced::{Theme, window::icon::from_file_data};
+use iced::{window::icon::from_file_data, Color, Font, Theme};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -69,6 +69,8 @@ fn main() -> iced::Result {
         .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
         .window(settings())
+        .font(include_bytes!("../assets/font/Geist-VariableFont_wght.ttf").as_slice())
+        .default_font(Font::with_name("Geist"))
         .run_with(move || {
             let state = App::new(BookmarkStore::system_store().unwrap_or_default());
             let file_task = match args.path {
@@ -80,9 +82,164 @@ fn main() -> iced::Result {
 }
 
 pub fn theme(app: &App) -> Theme {
+    use iced::theme::palette::{*};
+
+    let not_defined = Pair {
+        color: Color::from_rgb8(255, 0, 23),
+        text: Color::from_rgb8(13, 255, 0),
+    };
+
+    let miro_light = Theme::custom_with_fn(
+        "Miro Light".to_string(),
+        iced::theme::Palette {
+            background: Color::from_rgb8(240, 239, 238),
+            text: Color::from_rgb8(30, 30, 30),
+            primary: Color::from_rgb8(167, 143, 135),
+            success: Color::from_rgb8(0, 255, 0),
+            danger: Color::from_rgb8(255, 0, 0),
+        },
+        |_: Palette| Extended {
+            background: Background {
+                base: Pair {
+                    color: Color::from_rgb8(240, 239, 238),
+                    text: Color::from_rgb8(30, 30, 30),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(255, 255, 255),
+                    text: Color::from_rgb8(30, 30, 30),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(187, 184, 187),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            primary: Primary {
+                base: Pair {
+                    color: Color::from_rgb8(167, 143, 135),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(228, 226, 226),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(147, 123, 115),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            secondary: Secondary {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            success: Success {
+                base: not_defined,
+                weak: not_defined,
+                strong: not_defined,
+            },
+            danger: Danger {
+                base: Pair {
+                    color: Color::from_rgb8(167, 143, 135),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(228, 226, 226),
+                    text: Color::from_rgb8(30, 30, 30),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(147, 123, 115),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            is_dark: false,
+        },
+    );
+    let miro_dark = Theme::custom_with_fn(
+        "Miro Dark".to_string(),
+        iced::theme::Palette {
+            background: Color::from_rgb8(26, 27, 38),
+            text: Color::from_rgb8(154, 165, 206),
+            primary: Color::from_rgb8(42, 195, 222),
+            success: Color::from_rgb8(158, 206, 106),
+            danger: Color::from_rgb8(247, 118, 142),
+        },
+        |_: Palette| Extended {
+            background: Background {
+                base: Pair {
+                    color: Color::from_rgb8(26, 27, 38),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(36, 40, 59),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(51, 56, 71),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+            },
+            primary: Primary {
+                base: Pair {
+                    color: Color::from_rgb8(42, 195, 222),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(73, 219, 240),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(21, 171, 204),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            secondary: Secondary {
+                base: Pair {
+                    color: Color::from_rgb8(51, 56, 71),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(68, 75, 95),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(34, 39, 47),
+                    text: Color::from_rgb8(154, 165, 206),
+                },
+            },
+            success: Success {
+                base: Pair {
+                    color: Color::from_rgb8(158, 206, 106),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(180, 220, 140),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(136, 192, 72),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            danger: Danger {
+                base: Pair {
+                    color: Color::from_rgb8(247, 118, 142),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(250, 150, 170),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(244, 86, 114),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
+            is_dark: true,
+        },
+    );
     match app.dark_mode {
-        true => DARK_THEME,
-        false => LIGHT_THEME,
+        true => miro_dark,
+        false => miro_light,
     }
 }
 
