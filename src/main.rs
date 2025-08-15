@@ -122,7 +122,10 @@ pub fn theme(app: &App) -> Theme {
                     color: Color::from_rgb8(228, 226, 226),
                     text: Color::from_rgb8(255, 255, 255),
                 },
-                strong: not_defined,
+                strong: Pair {
+                    color: Color::from_rgb8(147, 123, 115),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
             },
             secondary: Secondary {
                 base: not_defined,
@@ -135,9 +138,18 @@ pub fn theme(app: &App) -> Theme {
                 strong: not_defined,
             },
             danger: Danger {
-                base: not_defined,
-                weak: not_defined,
-                strong: not_defined,
+                base: Pair {
+                    color: Color::from_rgb8(167, 143, 135),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(228, 226, 226),
+                    text: Color::from_rgb8(30, 30, 30),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(147, 123, 115),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
             },
             is_dark: false,
         },
