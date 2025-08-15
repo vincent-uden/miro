@@ -614,7 +614,7 @@ impl App {
     }
 
     fn view_sidebar(&self) -> Element<'_, AppMessage> {
-        let outline_button = if matches!(self.sidebar_tab, SidebarTab::Outline) {
+        let create_expanded_outline_button = || {
             button(
                 widget::row![
                     widget::svg(icons::table_of_contents())
@@ -632,7 +632,7 @@ impl App {
                 .align_y(alignment::Vertical::Center)
             )
             .width(Length::Fill)
-            .height(30.0) // 18.0 (icon) + 12.0 (padding: 6.0 * 2)
+            .height(30.0)
             .padding(6.0)
             .style(|theme: &Theme, _status| {
                 let palette = theme.extended_palette();
@@ -647,7 +647,9 @@ impl App {
                 }
             })
             .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
-        } else {
+        };
+
+        let create_collapsed_outline_button = || {
             button(widget::svg(icons::table_of_contents()).width(18.0).height(18.0).style(
                 |theme: &Theme, _| {
                     let palette = theme.extended_palette();
@@ -657,7 +659,7 @@ impl App {
                 },
             ))
             .width(Length::Shrink)
-            .height(30.0) // Match the expanded button height
+            .height(30.0)
             .padding(6.0)
             .style(|theme: &Theme, status| {
                 let palette = theme.extended_palette();
@@ -678,7 +680,7 @@ impl App {
             .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
         };
 
-        let bookmark_button = if matches!(self.sidebar_tab, SidebarTab::Bookmark) {
+        let create_expanded_bookmark_button = || {
             button(
                 widget::row![
                     text("Bookmarks").width(Length::Fill),
@@ -695,7 +697,7 @@ impl App {
                 .align_y(alignment::Vertical::Center)
             )
             .width(Length::Fill)
-            .height(30.0) // 18.0 (icon) + 12.0 (padding: 6.0 * 2)
+            .height(30.0)
             .padding(6.0)
             .style(|theme: &Theme, _status| {
                 let palette = theme.extended_palette();
@@ -710,7 +712,9 @@ impl App {
                 }
             })
             .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
-        } else {
+        };
+
+        let create_collapsed_bookmark_button = || {
             button(widget::svg(icons::bookmark()).width(18.0).height(18.0).style(
                 |theme: &Theme, _| {
                     let palette = theme.extended_palette();
@@ -720,7 +724,7 @@ impl App {
                 },
             ))
             .width(Length::Shrink)
-            .height(30.0) // Match the expanded button height
+            .height(30.0)
             .padding(6.0)
             .style(|theme: &Theme, status| {
                 let palette = theme.extended_palette();
@@ -739,6 +743,11 @@ impl App {
                 }
             })
             .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
+        };
+
+        let (outline_button, bookmark_button) = match self.sidebar_tab {
+            SidebarTab::Outline => (create_expanded_outline_button(), create_collapsed_bookmark_button()),
+            SidebarTab::Bookmark => (create_collapsed_outline_button(), create_expanded_bookmark_button()),
         };
 
         let sidebar_picker = widget::row![outline_button, bookmark_button]
