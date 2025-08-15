@@ -614,15 +614,137 @@ impl App {
     }
 
     fn view_sidebar(&self) -> Element<'_, AppMessage> {
-        let sidebar_picker = widget::row![
-            icons::icon_button(icons::table_of_contents(), icons::ButtonVariant::Primary)
-                .on_press(AppMessage::SetSidebar(SidebarTab::Outline)),
-            icons::icon_button(icons::bookmark(), icons::ButtonVariant::Primary)
-                .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark)),
-        ]
-        .height(Length::Shrink)
-        .spacing(4.0)
-        .padding(Padding::default().top(4.0).bottom(4.0));
+        let outline_button = if matches!(self.sidebar_tab, SidebarTab::Outline) {
+            button(
+                widget::row![
+                    widget::svg(icons::table_of_contents())
+                        .width(18.0)
+                        .height(18.0)
+                        .style(|theme: &Theme, _| {
+                            let palette = theme.extended_palette();
+                            widget::svg::Style {
+                                color: Some(palette.primary.base.text),
+                            }
+                        }),
+                    horizontal_space().width(8.0),
+                    text("Outline")
+                ]
+                .align_y(alignment::Vertical::Center)
+            )
+            .width(Length::Fill)
+            .height(30.0) // 18.0 (icon) + 12.0 (padding: 6.0 * 2)
+            .padding(6.0)
+            .style(|theme: &Theme, _status| {
+                let palette = theme.extended_palette();
+                button::Style {
+                    background: Some(palette.primary.base.color.into()),
+                    text_color: palette.primary.base.text,
+                    border: Border {
+                        radius: Radius::from(4.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
+        } else {
+            button(widget::svg(icons::table_of_contents()).width(18.0).height(18.0).style(
+                |theme: &Theme, _| {
+                    let palette = theme.extended_palette();
+                    widget::svg::Style {
+                        color: Some(palette.primary.base.text),
+                    }
+                },
+            ))
+            .width(Length::Shrink)
+            .height(30.0) // Match the expanded button height
+            .padding(6.0)
+            .style(|theme: &Theme, status| {
+                let palette = theme.extended_palette();
+                widget::button::Style {
+                    background: match status {
+                        widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
+                        widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
+                        widget::button::Status::Active => Some(palette.primary.base.color.into()),
+                        _ => None,
+                    },
+                    border: Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
+        };
+
+        let bookmark_button = if matches!(self.sidebar_tab, SidebarTab::Bookmark) {
+            button(
+                widget::row![
+                    text("Bookmarks").width(Length::Fill),
+                    widget::svg(icons::bookmark())
+                        .width(18.0)
+                        .height(18.0)
+                        .style(|theme: &Theme, _| {
+                            let palette = theme.extended_palette();
+                            widget::svg::Style {
+                                color: Some(palette.primary.base.text),
+                            }
+                        })
+                ]
+                .align_y(alignment::Vertical::Center)
+            )
+            .width(Length::Fill)
+            .height(30.0) // 18.0 (icon) + 12.0 (padding: 6.0 * 2)
+            .padding(6.0)
+            .style(|theme: &Theme, _status| {
+                let palette = theme.extended_palette();
+                button::Style {
+                    background: Some(palette.primary.base.color.into()),
+                    text_color: palette.primary.base.text,
+                    border: Border {
+                        radius: Radius::from(4.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
+        } else {
+            button(widget::svg(icons::bookmark()).width(18.0).height(18.0).style(
+                |theme: &Theme, _| {
+                    let palette = theme.extended_palette();
+                    widget::svg::Style {
+                        color: Some(palette.primary.base.text),
+                    }
+                },
+            ))
+            .width(Length::Shrink)
+            .height(30.0) // Match the expanded button height
+            .padding(6.0)
+            .style(|theme: &Theme, status| {
+                let palette = theme.extended_palette();
+                widget::button::Style {
+                    background: match status {
+                        widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
+                        widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
+                        widget::button::Status::Active => Some(palette.primary.base.color.into()),
+                        _ => None,
+                    },
+                    border: Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
+        };
+
+        let sidebar_picker = widget::row![outline_button, bookmark_button]
+            .height(Length::Shrink)
+            .spacing(4.0)
+            .padding(Padding::default().top(4.0).bottom(4.0));
 
         let contents: Element<'_, AppMessage> = match self.sidebar_tab {
             SidebarTab::Outline => self.view_outline(),
