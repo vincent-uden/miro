@@ -401,7 +401,6 @@ create_layout :: proc() -> clay.ClayArray(clay.RenderCommand) {
             backgroundColor = main_bg_color,
         },
         ) {
-            // TODO: Text rendering isn't totally crisp for non 2^n sizes
             clay.Text(
                 "This is the main content area. Resize the window to see how the text reflows and the layout adapts to different window sizes. The sidebar should remain fixed width while this area grows and shrinks.",
                 clay.TextConfig({textColor = COLOR_BLACK, fontSize = 63}),

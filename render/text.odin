@@ -116,8 +116,8 @@ load_character :: proc(renderer: ^TextRenderer, character: rune, font_size: u32)
     // Set texture options
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 
     // Store character for later use with composite key
     key := GlyphKey {
@@ -170,9 +170,9 @@ draw_text :: proc(
             ch = renderer.characters[key]
         }
 
-        // Position relative to baseline
-        xpos := x + f32(ch.bearing.x) * scale
-        ypos := baseline_y - f32(ch.bearing.y) * scale // bearing.y is distance from baseline to top
+        // Position relative to baseline, rounded to pixel boundaries
+        xpos := f32(i32(x + f32(ch.bearing.x) * scale + 0.5))
+        ypos := f32(i32(baseline_y - f32(ch.bearing.y) * scale + 0.5)) // bearing.y is distance from baseline to top
 
         w := f32(ch.size.x) * scale
         h := f32(ch.size.y) * scale
