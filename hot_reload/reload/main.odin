@@ -1,8 +1,8 @@
 package main
 
-import clay "../clay-odin"
-import "../render"
-import "./app"
+import clay "../../clay-odin"
+import "../../render"
+import "../app"
 import "base:runtime"
 import "core:c"
 import "core:c/libc"
@@ -182,18 +182,22 @@ main :: proc() {
     }
 
     app_api_version += 1
-    // log.info("###") Doesnt crash if the print is here
+    //Doesnt crash if the print is here
+    log.info("###")
     app_api.init()
-    // log.info("###") Does crash if the print is here
+    log.info("###") //Does crash if the print is here
 
     for {
         if !app_api.update() {
             break
         }
 
-        dll_time, dll_time_err := os.last_write_time_by_name(
-            ".\\hot_reload\\app.dll",
-        )
+        when ODIN_OS == .Windows {
+            dll_path := ".\\hot_reload\\app.dll"
+        } else {
+            dll_path := "./hot_reload/app.dll"
+        }
+        dll_time, dll_time_err := os.last_write_time_by_name(dll_path)
         reload := dll_time_err == os.ERROR_NONE && app_api.dll_time != dll_time
 
         if reload {
@@ -305,17 +309,30 @@ AppAPI :: struct {
  * required procedures of the game DLL. */
 load_app_api :: proc(api_version: int) -> (AppAPI, bool) {
     log.infof("Loading app api version {0}", api_version)
-    dll_time, dll_time_err := os.last_write_time_by_name(
-        ".\\hot_reload\\app.dll",
-    )
+    when ODIN_OS == .Windows {
+        base_dll_path := ".\\hot_reload\\app.dll"
+    } else {
+        base_dll_path := "./hot_reload/app.dll"
+    }
+    dll_time, dll_time_err := os.last_write_time_by_name(base_dll_path)
     if dll_time_err != os.ERROR_NONE {
         log.error("Could not fetch last write date of api.dll")
         return {}, false
     }
 
-    dll_name := fmt.tprintf(".\\hot_reload\\app_{0}.dll", api_version)
-    // TODO: Cross platform
-    copy_cmd := fmt.ctprintf("copy .\\hot_reload\\app.dll {0}", dll_name)
+    when ODIN_OS == .Windows {
+        dll_name := fmt.tprintf(".\\hot_reload\\app_{0}.dll", api_version)
+        src_path := ".\\hot_reload\\app.dll"
+    } else {
+        dll_name := fmt.tprintf("./hot_reload/app_{0}.dll", api_version)
+        src_path := "./hot_reload/app.dll"
+    }
+    when ODIN_OS == .Windows {
+        copy_cmd := fmt.ctprintf("copy {0} {1}", src_path, dll_name)
+    } else {
+        copy_cmd := fmt.ctprintf("cp {0} {1}", src_path, dll_name)
+    }
+
     if libc.system(copy_cmd) != 0 {
         log.errorf("Failed to copy app.dll to {0}", dll_name)
         return {}, false
@@ -364,9 +381,16 @@ unload_app_api :: proc(api: AppAPI) {
         dynlib.unload_library(api.lib)
     }
 
-    // TODO: Cross platform
-    del_cmd := fmt.ctprintf("del ./hot_reload/app_{0}.dll", api.api_version)
+    when ODIN_OS == .Windows {
+        del_cmd := fmt.ctprintf(
+            "del .\\hot_reload\\app_{0}.dll",
+            api.api_version,
+        )
+    } else {
+        del_cmd := fmt.ctprintf("rm ./hot_reload/app_{0}.dll", api.api_version)
+    }
+
     if libc.system(del_cmd) != 0 {
-        log.errorf("Failed to remove app_{0].dll", api.api_version)
+        log.errorf("Failed to remove app_{0}.dll", api.api_version)
     }
 }
