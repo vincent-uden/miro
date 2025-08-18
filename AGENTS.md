@@ -1,30 +1,43 @@
-# AGENTS.md - Miro PDF Viewer Development Guide
+# Agent Guidelines for Odin Rounded Rect Project
 
-## Build/Test Commands
-- `cargo build` - Build the project
-- `cargo run` - Run the application
-- `cargo test` - Run all tests
-- `cargo test <test_name>` - Run a specific test
-- `cargo check` - Check code without building, use this before each build since it is a lot faster
+## Build Commands
+- **Build demo**: `odin build demo`
+- **Run demo**: `./demo.bin` (after building)
+- **Run tests in package**:: `odin test <dir>`
 
-## Code Style Guidelines
-- Use `snake_case` for variables, functions, and modules
-- Use `PascalCase` for types, structs, enums, and traits
-- Prefer explicit types over `auto`/inference when clarity improves
-- Use `anyhow::Result` for error handling with context
-- Import organization: std first, external crates, then local modules
-- Use `#[derive(Debug)]` on all structs and enums
-- Prefer `match` over `if let` for complex pattern matching
-- Use `const` for compile-time constants (e.g., `const MOVE_STEP: f32 = 40.0`)
-- Use `static` with `LazyLock` for global state (e.g., `CONFIG`)
-- Implement `Default` trait where appropriate
-- Use `EnumString` derive for string-to-enum conversion
-- Prefer `PathBuf` over `&str` for file paths
-- Use `tokio::sync` primitives for async communication
-- Structure modules with `mod.rs` files for organization
-- Use the `debug!`, `info!` and `error!` from `tracing` for printing and logging
+## Code Style & Conventions
+- **Language**: Odin programming language
+- **Line width**: 100 characters (per odinfmt.json)
+- **Indentation**: Spaces, not tabs (per odinfmt.json)
+- **Import sorting**: Enabled (per odinfmt.json)
+- **Import order**: Standard library first, then vendor packages, then local packages
+- **Naming**: snake_case for variables/functions, PascalCase for types/structs
+- **Constants**: SCREAMING_SNAKE_CASE
+- **Procedures**: Use `proc` keyword, specify calling convention when needed (`"c"` for C interop)
+- **Comments**: Use `//` for single line, avoid unless necessary for clarity
+- **Error handling**: Return boolean success flags or explicit error types
+- **Foreign imports**: Platform-specific conditional compilation using `when ODIN_OS`
+- **Memory**: Manual memory management, use `make()` and `delete()` appropriately
+- **Structs**: Use struct literals with field names for clarity
+- **Arrays**: Prefer slices `[]T` over fixed arrays `[N]T` unless size is known at compile time
 
-## Development Process Guidelines
-- Don't run the graphical application unless absolutely necessary. Prefer writing tests to answer your questions instead if possible
-- Prefer `cargo check` as a first layer of validating your code
-- Run `cargo test` after you are done with each task to ensure that you haven't introduced any regressions
+## Project Structure
+- `clay-odin/`: Clay UI library bindings
+- `demo/`: Main application demo
+- `render/`: OpenGL rendering utilities
+- `shaders/`: GLSL shader files
+- `freetype/`: Font rendering (if used)
+
+## Tests
+Exampel test to base more tests on:
+```odin
+package example
+
+import "core:testing"
+
+@(test)
+my_test :: proc(t: ^testing.T) {
+    n := 2 + 2
+    testing.expect(t, n == 4, "2 + 2 failed to equal 4.")
+}
+```
