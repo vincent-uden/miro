@@ -93,15 +93,15 @@ test_character_atlas :: proc(t: ^testing.T) {
             }
         }
 
-        // log.debugf(
-        //     "Character '%c': size=%dx%d, advance=%d, bearing=(%d,%d)",
-        //     char,
-        //     bitmap.width,
-        //     bitmap.rows,
-        //     glyph.advance.x >> 6,
-        //     glyph.bitmap_left,
-        //     glyph.bitmap_top,
-        // )
+        log.debugf(
+            "Character '%c': size=%dx%d, advance=%d, bearing=(%d,%d)",
+            char,
+            bitmap.width,
+            bitmap.rows,
+            glyph.advance.x >> 6,
+            glyph.bitmap_left,
+            glyph.bitmap_top,
+        )
 
         x += i32(bitmap.width) + 2
     }

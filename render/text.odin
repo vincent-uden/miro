@@ -3,11 +3,17 @@ package render
 import clay "../clay-odin"
 import freetype "../freetype"
 import "base:runtime"
-import "core:fmt"
 import "core:c"
-import "core:strings"
+import "core:fmt"
 import glm "core:math/linalg/glsl"
+import "core:strings"
 import gl "vendor:OpenGL"
+
+
+// Debugging blurry text:
+// 
+// It does not seem to be related to the freetype rendering. Text looks sharp at both 63 and 64 
+// pixels when rendered to a bitmap in the tests.
 
 // Cache key that includes font size for multi-size support
 GlyphKey :: struct {
@@ -17,10 +23,10 @@ GlyphKey :: struct {
 
 // Character info for glyph caching
 Character :: struct {
-    texture_id: u32,     // OpenGL texture ID
-    size:       [2]i32,  // Size of glyph
-    bearing:    [2]i32,  // Offset from baseline to left/top of glyph
-    advance:    i32,     // Horizontal offset to advance to next glyph
+    texture_id: u32, // OpenGL texture ID
+    size:       [2]i32, // Size of glyph
+    bearing:    [2]i32, // Offset from baseline to left/top of glyph
+    advance:    i32, // Horizontal offset to advance to next glyph
 }
 
 TextRenderer :: struct {
@@ -41,7 +47,12 @@ init_text_renderer :: proc(renderer: ^TextRenderer, font_path: string) -> bool {
     }
 
     // Load font face
-    ft_error = freetype.new_face(renderer.ft_library, strings.clone_to_cstring(font_path), 0, &renderer.ft_face)
+    ft_error = freetype.new_face(
+        renderer.ft_library,
+        strings.clone_to_cstring(font_path),
+        0,
+        &renderer.ft_face,
+    )
     if ft_error != .Ok {
         fmt.println("Failed to load font")
         return false
@@ -109,12 +120,18 @@ load_character :: proc(renderer: ^TextRenderer, character: rune, font_size: u32)
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
 
     // Store character for later use with composite key
-    key := GlyphKey{character = character, font_size = font_size}
-    char_info := Character{
+    key := GlyphKey {
+        character = character,
+        font_size = font_size,
+    }
+    char_info := Character {
         texture_id = texture,
-        size = {i32(renderer.ft_face.glyph.bitmap.width), i32(renderer.ft_face.glyph.bitmap.rows)},
-        bearing = {renderer.ft_face.glyph.bitmap_left, renderer.ft_face.glyph.bitmap_top},
-        advance = i32(renderer.ft_face.glyph.advance.x >> 6),
+        size       = {
+            i32(renderer.ft_face.glyph.bitmap.width),
+            i32(renderer.ft_face.glyph.bitmap.rows),
+        },
+        bearing    = {renderer.ft_face.glyph.bitmap_left, renderer.ft_face.glyph.bitmap_top},
+        advance    = i32(renderer.ft_face.glyph.advance.x >> 6),
     }
     renderer.characters[key] = char_info
 
@@ -140,7 +157,10 @@ draw_text :: proc(
     baseline_y := position.y
 
     for char in text {
-        key := GlyphKey{character = char, font_size = font_size}
+        key := GlyphKey {
+            character = char,
+            font_size = font_size,
+        }
         ch, exists := renderer.characters[key]
         if !exists {
             // Try to load character if not cached
@@ -152,19 +172,18 @@ draw_text :: proc(
 
         // Position relative to baseline
         xpos := x + f32(ch.bearing.x) * scale
-        ypos := baseline_y - f32(ch.bearing.y) * scale  // bearing.y is distance from baseline to top
+        ypos := baseline_y - f32(ch.bearing.y) * scale // bearing.y is distance from baseline to top
 
         w := f32(ch.size.x) * scale
         h := f32(ch.size.y) * scale
 
         // Update VBO for each character (flip Y texture coordinates)
         vertices: [6][4]f32 = {
-            {xpos,     ypos + h, 0.0, 1.0},
-            {xpos,     ypos,     0.0, 0.0},
-            {xpos + w, ypos,     1.0, 0.0},
-
-            {xpos,     ypos + h, 0.0, 1.0},
-            {xpos + w, ypos,     1.0, 0.0},
+            {xpos, ypos + h, 0.0, 1.0},
+            {xpos, ypos, 0.0, 0.0},
+            {xpos + w, ypos, 1.0, 0.0},
+            {xpos, ypos + h, 0.0, 1.0},
+            {xpos + w, ypos, 1.0, 0.0},
             {xpos + w, ypos + h, 1.0, 1.0},
         }
 
@@ -208,14 +227,14 @@ measure_text_size :: proc(renderer: ^TextRenderer, text: string, font_size: u32)
         }
 
         glyph := renderer.ft_face.glyph
-        
+
         // Accumulate width using advance
         width += f32(glyph.advance.x >> 6)
-        
+
         // Track ascent (above baseline) and descent (below baseline)
         ascent := f32(glyph.bitmap_top)
         descent := f32(glyph.bitmap.rows) - ascent
-        
+
         max_ascent = max(max_ascent, ascent)
         max_descent = max(max_descent, descent)
     }
@@ -253,19 +272,19 @@ clay_measure_text_callback :: proc "c" (
     userData: rawptr,
 ) -> clay.Dimensions {
     context = runtime.default_context()
-    
+
     if userData == nil || text.chars == nil || text.length <= 0 || config == nil {
         // Fallback to simple estimation
         return {width = f32(text.length * i32(config.fontSize)), height = f32(config.fontSize)}
     }
-    
+
     text_renderer := cast(^TextRenderer)userData
     if text_renderer == nil {
         return {width = f32(text.length * i32(config.fontSize)), height = f32(config.fontSize)}
     }
-    
+
     text_str := string(text.chars[:text.length])
-    
+
     size := measure_text_size(text_renderer, text_str, u32(config.fontSize))
     return {width = size.x, height = size.y}
 }
