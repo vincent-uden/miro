@@ -10,3 +10,7 @@ miro
 
 /target
 *.png
+
+hot_reload/**.exe
+hot_reload/**.lib
+hot_reload/**.dll
