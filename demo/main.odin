@@ -401,14 +401,15 @@ create_layout :: proc() -> clay.ClayArray(clay.RenderCommand) {
             backgroundColor = main_bg_color,
         },
         ) {
+            // TODO: Text rendering isn't totally crisp for non 2^n sizes
             clay.Text(
                 "This is the main content area. Resize the window to see how the text reflows and the layout adapts to different window sizes. The sidebar should remain fixed width while this area grows and shrinks.",
-                clay.TextConfig({textColor = COLOR_BLACK, fontSize = 16}),
+                clay.TextConfig({textColor = COLOR_BLACK, fontSize = 63}),
             )
 
             clay.Text(
                 "Here's another paragraph of text to demonstrate text wrapping behavior. When the window becomes narrow, this text should wrap to multiple lines to fit within the available space.",
-                clay.TextConfig({textColor = COLOR_DANGER, fontSize = 14}),
+                clay.TextConfig({textColor = COLOR_DANGER, fontSize = 18}),
             )
 
             clay.Text(

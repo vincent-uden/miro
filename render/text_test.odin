@@ -1,33 +1,17 @@
 package render
 
-import "core:testing"
-import "core:fmt"
-import "core:os"
-import "core:c"
 import freetype "../freetype"
-
-// Simple PNG writer for debugging
-write_png :: proc(filename: string, width, height: i32, data: []u8) -> bool {
-    // Simple grayscale PNG writer
-    file, err := os.open(filename, os.O_WRONLY | os.O_CREATE | os.O_TRUNC, 0o644)
-    if err != os.ERROR_NONE {
-        return false
-    }
-    defer os.close(file)
-
-    // Write a simple PGM file instead (easier than PNG)
-    header := fmt.aprintf("P5\n%d %d\n255\n", width, height)
-    defer delete(header)
-    
-    os.write_string(file, header)
-    os.write(file, data)
-    return true
-}
+import "core:c"
+import "core:fmt"
+import "core:log"
+import "core:os"
+import "core:testing"
+import stb_image "vendor:stb/image"
 
 @(test)
 test_character_atlas :: proc(t: ^testing.T) {
     fmt.println("Testing character atlas generation...")
-    
+
     // Initialize FreeType
     ft_library: freetype.Library
     ft_error := freetype.init_free_type(&ft_library)
@@ -41,7 +25,7 @@ test_character_atlas :: proc(t: ^testing.T) {
     defer freetype.done_face(ft_face)
 
     // Set font size
-    font_size: u32 = 48
+    font_size: u32 = 63
     ft_error = freetype.set_pixel_sizes(ft_face, 0, font_size)
     testing.expect(t, ft_error == .Ok, "Failed to set font size")
 
@@ -52,7 +36,7 @@ test_character_atlas :: proc(t: ^testing.T) {
     defer delete(atlas_data)
 
     // Clear atlas to black
-    for i in 0..<len(atlas_data) {
+    for i in 0 ..< len(atlas_data) {
         atlas_data[i] = 0
     }
 
@@ -61,17 +45,17 @@ test_character_atlas :: proc(t: ^testing.T) {
     line_height: i32 = 0
 
     // Render characters 32-126 (printable ASCII)
-    for char in 32..=126 {
+    for char in 32 ..= 126 {
         ft_error = freetype.load_char(ft_face, c.ulong(char), {})
         if ft_error != .Ok {
-            fmt.printfln("Failed to load character: %c", char)
+            log.debugf("Failed to load character: %c", char)
             continue
         }
 
         // Render the glyph to bitmap
         ft_error = freetype.render_glyph(ft_face.glyph, .Normal)
         if ft_error != .Ok {
-            fmt.printfln("Failed to render character: %c", char)
+            log.debugf("Failed to render character: %c", char)
             continue
         }
 
@@ -96,8 +80,8 @@ test_character_atlas :: proc(t: ^testing.T) {
 
         // Copy glyph bitmap to atlas
         if bitmap.buffer != nil {
-            for row in 0..<bitmap.rows {
-                for col in 0..<bitmap.width {
+            for row in 0 ..< bitmap.rows {
+                for col in 0 ..< bitmap.width {
                     atlas_x := x + i32(col)
                     atlas_y := y + i32(row)
                     if atlas_x < atlas_width && atlas_y < atlas_height {
@@ -109,19 +93,32 @@ test_character_atlas :: proc(t: ^testing.T) {
             }
         }
 
-        fmt.printfln("Character '%c': size=%dx%d, advance=%d, bearing=(%d,%d)", 
-                    char, bitmap.width, bitmap.rows, 
-                    glyph.advance.x >> 6, glyph.bitmap_left, glyph.bitmap_top)
+        // log.debugf(
+        //     "Character '%c': size=%dx%d, advance=%d, bearing=(%d,%d)",
+        //     char,
+        //     bitmap.width,
+        //     bitmap.rows,
+        //     glyph.advance.x >> 6,
+        //     glyph.bitmap_left,
+        //     glyph.bitmap_top,
+        // )
 
         x += i32(bitmap.width) + 2
     }
 
     // Write atlas to file
-    success := write_png("character_atlas.pgm", atlas_width, atlas_height, atlas_data)
-    testing.expect(t, success, "Failed to write atlas file")
-    
-    if success {
-        fmt.println("Character atlas written to character_atlas.pgm")
+    success := stb_image.write_png(
+        "character_atlas.png",
+        atlas_width,
+        atlas_height,
+        1,
+        raw_data(atlas_data[:]),
+        0,
+    )
+    testing.expect(t, success != 0, "Failed to write atlas file")
+
+    if success != 0 {
+        fmt.println("Character atlas written to character_atlas.png")
         fmt.println("You can view this with: convert character_atlas.pgm character_atlas.png")
     }
 }
@@ -129,7 +126,7 @@ test_character_atlas :: proc(t: ^testing.T) {
 @(test)
 test_single_character :: proc(t: ^testing.T) {
     fmt.println("Testing single character rendering...")
-    
+
     // Initialize FreeType
     ft_library: freetype.Library
     ft_error := freetype.init_free_type(&ft_library)
@@ -158,30 +155,31 @@ test_single_character :: proc(t: ^testing.T) {
     glyph := ft_face.glyph
     bitmap := &glyph.bitmap
 
-    fmt.printfln("Character 'A' at %dpx:", font_size)
-    fmt.printfln("  Bitmap size: %dx%d", bitmap.width, bitmap.rows)
-    fmt.printfln("  Bearing: (%d, %d)", glyph.bitmap_left, glyph.bitmap_top)
-    fmt.printfln("  Advance: %d", glyph.advance.x >> 6)
-    fmt.printfln("  Buffer pointer: %p", bitmap.buffer)
+    log.debugf("Character 'A' at %dpx:", font_size)
+    log.debugf("  Bitmap size: %dx%d", bitmap.width, bitmap.rows)
+    log.debugf("  Bearing: (%d, %d)", glyph.bitmap_left, glyph.bitmap_top)
+    log.debugf("  Advance: %d", glyph.advance.x >> 6)
+    log.debugf("  Buffer pointer: %p", bitmap.buffer)
+    log.debugf("  Pitch: %d", bitmap.pitch)
 
     testing.expect(t, bitmap.buffer != nil, "Bitmap buffer is null")
     testing.expect(t, bitmap.width > 0, "Bitmap width is zero")
     testing.expect(t, bitmap.rows > 0, "Bitmap height is zero")
 
     if bitmap.buffer != nil && bitmap.width > 0 && bitmap.rows > 0 {
-        // Write single character to file
-        char_data := make([]u8, bitmap.width * bitmap.rows)
-        defer delete(char_data)
-        
-        for i in 0..<(bitmap.width * bitmap.rows) {
-            char_data[i] = bitmap.buffer[i]
-        }
-        
-        success := write_png("character_A.pgm", i32(bitmap.width), i32(bitmap.rows), char_data)
-        testing.expect(t, success, "Failed to write character file")
-        
-        if success {
-            fmt.println("Character 'A' written to character_A.pgm")
+        success := stb_image.write_png(
+            "character_A.png",
+            i32(bitmap.width),
+            i32(bitmap.rows),
+            1,
+            bitmap.buffer,
+            0,
+        )
+        testing.expect(t, success != 0, "Failed to write character file")
+
+        if success != 0 {
+            fmt.println("Character 'A' written to character_A.png")
         }
     }
 }
+

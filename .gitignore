@@ -9,3 +9,4 @@ miro
 # Added by cargo
 
 /target
+*.png
