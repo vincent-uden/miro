@@ -4,8 +4,12 @@ import clay "../clay-odin"
 import "../render"
 import "base:runtime"
 import "core:c"
+import "core:c/libc"
+import "core:dynlib"
 import "core:fmt"
+import "core:log"
 import glm "core:math/linalg/glsl"
+import "core:os"
 import gl "vendor:OpenGL"
 import glfw "vendor:glfw"
 
@@ -549,4 +553,65 @@ create_layout :: proc() -> clay.ClayArray(clay.RenderCommand) {
 
     // Returns a list of render commands
     return clay.EndLayout()
+}
+
+/* Contains pointers to the procedures exposed by the game DLL. */
+AppAPI :: struct {
+    init:         proc(),
+    update:       proc() -> bool,
+    shutdown:     proc(),
+    memory:       proc() -> rawptr,
+    hot_reloaded: proc(_: rawptr),
+    lib:          dynlib.Library,
+    dll_time:     os.File_Time,
+    api_version:  int,
+}
+
+/* Load the game DLL and return a new GameAPI that contains pointers to the 
+ * required procedures of the game DLL. */
+load_game_api :: proc(api_version: int) -> (AppAPI, bool) {
+    dll_time, dll_time_err := os.last_write_time_by_name("app.dll")
+    if dll_time_err != os.ERROR_NONE {
+        log.error("Could not fetch last write date of api.dll")
+        return {}, false
+    }
+
+    dll_name := fmt.tprintf("api_{0}.dll", api_version)
+    copy_cmd := fmt.ctprintf("copy api.dll {0}", dll_name)
+    if libc.system(copy_cmd) != 0 {
+        log.errorf("Failed to copy api.dll to {0}", dll_name)
+        return {}, false
+    }
+
+    lib, lib_ok := dynlib.load_library(dll_name)
+    if !lib_ok {
+        log.error("Failed loading app DLL")
+        return {}, false
+    }
+
+    api := AppAPI {
+        init         = cast(proc())(dynlib.symbol_address(lib, "app_init") or_else nil),
+        update       = cast(proc() -> bool)(dynlib.symbol_address(lib, "app_update") or_else nil),
+        shutdown     = cast(proc())(dynlib.symbol_address(lib, "app_shutdown") or_else nil),
+        memory       = cast(proc(
+        ) -> rawptr)(dynlib.symbol_address(lib, "app_memory") or_else nil),
+        hot_reloaded = cast(proc(
+            _: rawptr,
+        ))(dynlib.symbol_address(lib, "app_hot_reloaded") or_else nil),
+        lib          = lib,
+        dll_time     = dll_time,
+        api_version  = api_version,
+    }
+
+    if api.init == nil ||
+       api.update == nil ||
+       api.shutdown == nil ||
+       api.memory == nil ||
+       api.hot_reloaded == nil {
+        dynlib.unload_library(api.lib)
+        fmt.println("App DLL missing required procedure")
+        return {}, false
+    }
+
+    return api, true
 }
