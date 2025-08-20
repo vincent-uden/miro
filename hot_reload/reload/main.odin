@@ -188,10 +188,6 @@ main :: proc() {
     log.info("###") //Does crash if the print is here
 
     for {
-        if !app_api.update() {
-            break
-        }
-
         when ODIN_OS == .Windows {
             dll_path := ".\\hot_reload\\app.dll"
         } else {
@@ -216,19 +212,27 @@ main :: proc() {
             }
         }
 
-        for !glfw.WindowShouldClose(window) {
-            glfw.PollEvents()
-
-            // Update Clay with current mouse state
-            // clay.SetPointerState({f32(mouse_x), f32(mouse_y)}, mouse_left_down)
-
-            // Store previous mouse state for click detection
-            // mouse_left_was_down = mouse_left_down
-
-            // TODO: Update and draw app
-
-            glfw.SwapBuffers(window)
+        if glfw.WindowShouldClose(window) {
+            break
         }
+        glfw.PollEvents()
+        if !app_api.update() {
+            break
+        }
+        app_api.draw(
+            &rect_renderer,
+            &text_renderer,
+            window_width,
+            window_height,
+        )
+
+        // Update Clay with current mouse state
+        // clay.SetPointerState({f32(mouse_x), f32(mouse_y)}, mouse_left_down)
+
+        // Store previous mouse state for click detection
+        // mouse_left_was_down = mouse_left_down
+
+        glfw.SwapBuffers(window)
 
     }
     log.info("Shutting down")
@@ -297,6 +301,11 @@ message_callback :: proc "c" (
 AppAPI :: struct {
     init:         proc(),
     update:       proc() -> bool,
+    draw:         proc(
+        rect_renderer: ^render.RectRenderer,
+        text_renderer: ^render.TextRenderer,
+        window_width, window_height: i32,
+    ),
     shutdown:     proc(),
     memory:       proc() -> rawptr,
     hot_reloaded: proc(_: rawptr),

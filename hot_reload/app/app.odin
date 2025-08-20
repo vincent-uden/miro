@@ -4,6 +4,7 @@ package app
 import clay "../../clay-odin"
 import "../../render"
 import "core:fmt"
+import "core:log"
 import glm "core:math/linalg/glsl"
 import gl "vendor:OpenGL"
 
@@ -75,7 +76,7 @@ false when you wish to terminate the program. */
 @(export)
 app_update :: proc() -> bool {
     mem.some_state += 1
-    fmt.println(mem.some_state)
+    log.info(mem.some_state)
     return true
 }
 
