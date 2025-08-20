@@ -184,7 +184,7 @@ main :: proc() {
     app_api_version += 1
     //Doesnt crash if the print is here
     log.info("###")
-    app_api.init()
+    app_api.init(&text_renderer, window_width, window_height)
     log.info("###") //Does crash if the print is here
 
     for {
@@ -299,7 +299,10 @@ message_callback :: proc "c" (
 
 /* Contains pointers to the procedures exposed by the game DLL. */
 AppAPI :: struct {
-    init:         proc(),
+    init:         proc(
+        text_renderer: ^render.TextRenderer,
+        window_width, window_height: i32,
+    ),
     update:       proc() -> bool,
     draw:         proc(
         rect_renderer: ^render.RectRenderer,
@@ -347,36 +350,10 @@ load_app_api :: proc(api_version: int) -> (AppAPI, bool) {
         return {}, false
     }
 
-    lib, lib_ok := dynlib.load_library(dll_name)
+    api := AppAPI{}
+    _, lib_ok := dynlib.initialize_symbols(&api, dll_name, "app_", "lib")
     if !lib_ok {
         log.error("Failed loading app DLL")
-        return {}, false
-    }
-
-    api := AppAPI {
-        init         = cast(proc(
-        ))(dynlib.symbol_address(lib, "app_init") or_else nil),
-        update       = cast(proc(
-        ) -> bool)(dynlib.symbol_address(lib, "app_update") or_else nil),
-        shutdown     = cast(proc(
-        ))(dynlib.symbol_address(lib, "app_shutdown") or_else nil),
-        memory       = cast(proc(
-        ) -> rawptr)(dynlib.symbol_address(lib, "app_memory") or_else nil),
-        hot_reloaded = cast(proc(
-            _: rawptr,
-        ))(dynlib.symbol_address(lib, "app_hot_reloaded") or_else nil),
-        lib          = lib,
-        dll_time     = dll_time,
-        api_version  = api_version,
-    }
-
-    if api.init == nil ||
-       api.update == nil ||
-       api.shutdown == nil ||
-       api.memory == nil ||
-       api.hot_reloaded == nil {
-        dynlib.unload_library(api.lib)
-        fmt.println("App DLL missing required procedure")
         return {}, false
     }
 

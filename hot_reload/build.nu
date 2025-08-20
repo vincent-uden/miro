@@ -19,7 +19,7 @@ def main [...args] {
     } else { "unified" }
     
     let debug = ($args | any {|arg| $arg == "debug"})
-    let debug_flags = if $debug { ["-debug", "-opt:0"] } else { [] }
+    let debug_flags = if $debug { ["-debug", "-o:none"] } else { [] }
     
     # Show help if requested
     if $mode == "help" {
@@ -75,6 +75,12 @@ def main [...args] {
         
         if $unified_result.exit_code != 0 {
             print $"(ansi red_bold)Failed to build unified binary(ansi reset)"
+            if ($unified_result.stderr | str length) > 0 {
+                print $unified_result.stderr
+            }
+            if ($unified_result.stdout | str length) > 0 {
+                print $unified_result.stdout
+            }
             exit 1
         }
         
@@ -93,6 +99,12 @@ def main [...args] {
         
         if $dll_result.exit_code != 0 {
             print $"(ansi red_bold)Failed to build app DLL(ansi reset)"
+            if ($dll_result.stderr | str length) > 0 {
+                print $dll_result.stderr
+            }
+            if ($dll_result.stdout | str length) > 0 {
+                print $dll_result.stdout
+            }
             exit 1
         }
         
@@ -111,6 +123,12 @@ def main [...args] {
         
         if $dll_result.exit_code != 0 {
             print $"(ansi red_bold)Failed to build app DLL(ansi reset)"
+            if ($dll_result.stderr | str length) > 0 {
+                print $dll_result.stderr
+            }
+            if ($dll_result.stdout | str length) > 0 {
+                print $dll_result.stdout
+            }
             exit 1
         }
         
@@ -120,6 +138,12 @@ def main [...args] {
         
         if $reload_result.exit_code != 0 {
             print $"(ansi red_bold)Failed to build reload main binary(ansi reset)"
+            if ($reload_result.stderr | str length) > 0 {
+                print $reload_result.stderr
+            }
+            if ($reload_result.stdout | str length) > 0 {
+                print $reload_result.stdout
+            }
             exit 1
         }
         
