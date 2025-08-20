@@ -1,6 +1,7 @@
 package render
 
 import "core:fmt"
+import "core:log"
 import glm "core:math/linalg/glsl"
 import "core:os"
 import "core:strings"
@@ -11,10 +12,16 @@ Shader :: struct {
 }
 
 use_shader :: proc(shader: ^Shader) {
+    log.infof("Using shader {0}", shader.id)
     gl.UseProgram(shader.id)
 }
 
-compile_shader :: proc(vertex_src, frag_src, geo_src: ^cstring) -> (Shader, bool) {
+compile_shader :: proc(
+    vertex_src, frag_src, geo_src: ^cstring,
+) -> (
+    Shader,
+    bool,
+) {
     sVertex, sFrag, gShader: u32
 
     sVertex = gl.CreateShader(gl.VERTEX_SHADER)

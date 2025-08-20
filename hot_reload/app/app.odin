@@ -7,6 +7,7 @@ import "core:fmt"
 import "core:log"
 import glm "core:math/linalg/glsl"
 import gl "vendor:OpenGL"
+import glfw "vendor:glfw"
 
 // Nord color scheme - https://www.nordtheme.com/
 // Polar Night (dark colors)
@@ -50,6 +51,11 @@ app_init :: proc(
     text_renderer: ^render.TextRenderer,
     window_width, window_height: i32,
 ) {
+    // Load OpenGL function pointers in the DLL
+    log.info("Loading OpenGL function pointers in DLL...")
+    gl.load_up_to(4, 3, glfw.gl_set_proc_address)
+    log.info("OpenGL function pointers loaded")
+    
     min_memory_size := clay.MinMemorySize()
     // TODO: free memory
     memory := make([^]u8, min_memory_size)
@@ -138,6 +144,11 @@ app_memory :: proc() -> rawptr {
 hot reload occurs. See app_memory comments. */
 @(export)
 app_hot_reloaded :: proc(m: ^AppMemory) {
+    // Load OpenGL function pointers in the new DLL instance
+    log.info("Reloading OpenGL function pointers in new DLL instance...")
+    gl.load_up_to(4, 3, glfw.gl_set_proc_address)
+    log.info("OpenGL function pointers reloaded")
+    
     mem = m
 }
 
