@@ -1,6 +1,5 @@
 package main
 
-import clay "../../clay-odin"
 import "../../render"
 import "../app"
 import "base:runtime"
@@ -281,7 +280,7 @@ framebuffer_size_callback :: proc "c" (
     gl.Viewport(0, 0, width, height)
     window_width = width
     window_height = height
-    clay.SetLayoutDimensions({f32(width), f32(height)})
+    // Note: Clay layout dimensions will be updated by the DLL when it renders
 }
 
 message_callback :: proc "c" (
@@ -357,6 +356,8 @@ load_app_api :: proc(api_version: int) -> (AppAPI, bool) {
         return {}, false
     }
 
+    api.dll_time = dll_time
+    api.api_version = api_version
     log.infof("Successfully loaded app api version {0}", api_version)
     return api, true
 }

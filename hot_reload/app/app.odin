@@ -36,8 +36,11 @@ COLOR_DANGER := NORD11
 COLOR_BLACK := NORD0
 
 AppMemory :: struct {
-    some_state: int,
-    arena:      clay.Arena,
+    some_state:    int,
+    arena:         clay.Arena,
+    text_renderer: ^render.TextRenderer,
+    window_width:  i32,
+    window_height: i32,
 }
 
 mem: ^AppMemory
@@ -55,7 +58,7 @@ app_init :: proc(
     log.info("Loading OpenGL function pointers in DLL...")
     gl.load_up_to(4, 3, glfw.gl_set_proc_address)
     log.info("OpenGL function pointers loaded")
-    
+
     min_memory_size := clay.MinMemorySize()
     // TODO: free memory
     memory := make([^]u8, min_memory_size)
@@ -75,6 +78,9 @@ app_init :: proc(
 
     mem = new(AppMemory)
     mem.arena = arena
+    mem.text_renderer = text_renderer
+    mem.window_width = window_width
+    mem.window_height = window_height
 }
 
 /* Simulation and rendering goes here. Return
@@ -82,7 +88,6 @@ false when you wish to terminate the program. */
 @(export)
 app_update :: proc() -> bool {
     mem.some_state += 1
-    log.info(mem.some_state)
     return true
 }
 
@@ -92,6 +97,13 @@ app_draw :: proc(
     text_renderer: ^render.TextRenderer,
     window_width, window_height: i32,
 ) {
+    // Update Clay layout dimensions if window was resized
+    if mem.window_width != window_width || mem.window_height != window_height {
+        mem.window_width = window_width
+        mem.window_height = window_height
+        clay.SetLayoutDimensions({f32(window_width), f32(window_height)})
+    }
+
     // Update projection matrix if window was resized
     new_projection := glm.mat4Ortho3d(
         0.0,
@@ -148,8 +160,21 @@ app_hot_reloaded :: proc(m: ^AppMemory) {
     log.info("Reloading OpenGL function pointers in new DLL instance...")
     gl.load_up_to(4, 3, glfw.gl_set_proc_address)
     log.info("OpenGL function pointers reloaded")
-    
+
     mem = m
+
+    // Reinitialize Clay with the preserved arena
+    log.info("Reinitializing Clay after hot reload...")
+    clay.Initialize(
+        mem.arena,
+        {f32(mem.window_width), f32(mem.window_height)},
+        {handler = clay_error_handler},
+    )
+    clay.SetMeasureTextFunction(
+        render.clay_measure_text_callback,
+        mem.text_renderer,
+    )
+    log.info("Clay reinitialized")
 }
 
 clay_error_handler :: proc "c" (errorData: clay.ErrorData) {

@@ -156,7 +156,7 @@ def main [...args] {
         let files_to_clean = [
             "release.bin"
             "hot_reload.bin"
-            "hot_reload/app.dll"
+            "hot_reload/*.dll"
             "app.dll"
         ]
         

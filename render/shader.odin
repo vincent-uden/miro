@@ -12,7 +12,6 @@ Shader :: struct {
 }
 
 use_shader :: proc(shader: ^Shader) {
-    log.infof("Using shader {0}", shader.id)
     gl.UseProgram(shader.id)
 }
 
