@@ -64,7 +64,7 @@ def main [...args] {
     }
     
     if $mode == "unified" {
-        print $"(ansi blue_bold)Building unified version (statically linked)...(ansi reset)"
+        print $"(ansi blue_bold)Building unified version \(statically linked\)...(ansi reset)"
         if $debug {
             print $"  (ansi yellow)With debug symbols(ansi reset)"
         }
