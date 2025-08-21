@@ -177,6 +177,13 @@ app_hot_reloaded :: proc(m: ^AppMemory) {
     log.info("Clay reinitialized")
 }
 
+/* Updates Clay with the current mouse state. Called by both
+reload and release versions to ensure consistent behavior. */
+@(export)
+app_set_mouse_state :: proc(mouse_x, mouse_y: f32, mouse_down: bool) {
+    clay.SetPointerState({mouse_x, mouse_y}, mouse_down)
+}
+
 clay_error_handler :: proc "c" (errorData: clay.ErrorData) {
     // Do something
 }

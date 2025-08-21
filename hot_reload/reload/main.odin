@@ -93,6 +93,13 @@ main :: proc() {
             break
         }
         glfw.PollEvents()
+
+        // Update Clay with current mouse state
+        app_api.set_mouse_state(f32(common.mouse_x), f32(common.mouse_y), common.mouse_left_down)
+
+        // Store previous mouse state for click detection
+        common.mouse_left_was_down = common.mouse_left_down
+
         if !app_api.update() {
             break
         }
@@ -114,22 +121,23 @@ main :: proc() {
 
 /* Contains pointers to the procedures exposed by the game DLL. */
 AppAPI :: struct {
-    init:         proc(
+    init:            proc(
         text_renderer: ^render.TextRenderer,
         window_width, window_height: i32,
     ),
-    update:       proc() -> bool,
-    draw:         proc(
+    update:          proc() -> bool,
+    draw:            proc(
         rect_renderer: ^render.RectRenderer,
         text_renderer: ^render.TextRenderer,
         window_width, window_height: i32,
     ),
-    shutdown:     proc(),
-    memory:       proc() -> rawptr,
-    hot_reloaded: proc(_: rawptr),
-    lib:          dynlib.Library,
-    dll_time:     os.File_Time,
-    api_version:  int,
+    set_mouse_state: proc(mouse_x, mouse_y: f32, mouse_down: bool),
+    shutdown:        proc(),
+    memory:          proc() -> rawptr,
+    hot_reloaded:    proc(_: rawptr),
+    lib:             dynlib.Library,
+    dll_time:        os.File_Time,
+    api_version:     int,
 }
 
 /* Load the game DLL and return a new GameAPI that contains pointers to the 

@@ -57,7 +57,7 @@ main :: proc() {
         glfw.PollEvents()
 
         // Update Clay with current mouse state
-        clay.SetPointerState({f32(common.mouse_x), f32(common.mouse_y)}, common.mouse_left_down)
+        app.app_set_mouse_state(f32(common.mouse_x), f32(common.mouse_y), common.mouse_left_down)
 
         // Store previous mouse state for click detection
         common.mouse_left_was_down = common.mouse_left_down
