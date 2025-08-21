@@ -95,7 +95,7 @@ main :: proc() {
         glfw.PollEvents()
 
         // Update Clay with current mouse state
-        app_api.set_mouse_state(f32(common.mouse_x), f32(common.mouse_y), common.mouse_left_down)
+        app_api.set_mouse_state(f32(common.mouse_x), f32(common.mouse_y), common.mouse_left_down, common.mouse_left_was_down)
 
         // Store previous mouse state for click detection
         common.mouse_left_was_down = common.mouse_left_down
@@ -131,7 +131,7 @@ AppAPI :: struct {
         text_renderer: ^render.TextRenderer,
         window_width, window_height: i32,
     ),
-    set_mouse_state: proc(mouse_x, mouse_y: f32, mouse_down: bool),
+    set_mouse_state: proc(mouse_x, mouse_y: f32, mouse_down, mouse_was_down: bool),
     shutdown:        proc(),
     memory:          proc() -> rawptr,
     hot_reloaded:    proc(_: rawptr),

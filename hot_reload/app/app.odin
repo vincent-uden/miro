@@ -36,11 +36,13 @@ COLOR_DANGER := NORD11
 COLOR_BLACK := NORD0
 
 AppMemory :: struct {
-    some_state:    int,
-    arena:         clay.Arena,
-    text_renderer: ^render.TextRenderer,
-    window_width:  i32,
-    window_height: i32,
+    some_state:          int,
+    arena:               clay.Arena,
+    text_renderer:       ^render.TextRenderer,
+    window_width:        i32,
+    window_height:       i32,
+    mouse_left_down:     bool,
+    mouse_left_was_down: bool,
 }
 
 mem: ^AppMemory
@@ -87,7 +89,6 @@ app_init :: proc(
 false when you wish to terminate the program. */
 @(export)
 app_update :: proc() -> bool {
-    mem.some_state += 1
     return true
 }
 
@@ -180,8 +181,13 @@ app_hot_reloaded :: proc(m: ^AppMemory) {
 /* Updates Clay with the current mouse state. Called by both
 reload and release versions to ensure consistent behavior. */
 @(export)
-app_set_mouse_state :: proc(mouse_x, mouse_y: f32, mouse_down: bool) {
+app_set_mouse_state :: proc(
+    mouse_x, mouse_y: f32,
+    mouse_down, mouse_was_down: bool,
+) {
     clay.SetPointerState({mouse_x, mouse_y}, mouse_down)
+    mem.mouse_left_down = mouse_down
+    mem.mouse_left_was_down = mouse_was_down
 }
 
 clay_error_handler :: proc "c" (errorData: clay.ErrorData) {
@@ -202,27 +208,42 @@ create_layout :: proc() -> clay.ClayArray(clay.RenderCommand) {
             padding = {16, 16, 16, 16},
             childGap = 16,
             childAlignment = {x = .Center, y = .Center},
-            layoutDirection = .TopToBottom
+            layoutDirection = .TopToBottom,
         },
         backgroundColor = NORD4,
     },
     ) {
-            clay.TextDynamic( "Hot reloading demo", clay.TextConfig({textColor = NORD0, fontSize = 28}))
-            button_id := clay.ID("Button")
-            button_hovered := clay.PointerOver(button_id)
-            button_text := fmt.tprintf("Clicks: %d", mem.some_state)
-            if clay.UI()({
-                id = button_id,
-                layout = {
-                    padding = {12, 12, 12, 12},
-                    childAlignment = {x = .Center, y = .Center},
-                },
-                backgroundColor = NORD7 if button_hovered else NORD8
-            }) {
-                clay.TextDynamic( button_text, clay.TextConfig({textColor = NORD0, fontSize = 28}))
+        clay.TextDynamic(
+            "Hot reloading demo",
+            clay.TextConfig({textColor = NORD0, fontSize = 28}),
+        )
+        button_id := clay.ID("Button")
+        button_hovered := clay.PointerOver(button_id)
+        button_text := fmt.tprintf("Clicks: %d", mem.some_state)
+        if clay.UI()(
+        {
+            id = button_id,
+            layout = {
+                padding = {18, 18, 18, 12},
+                childAlignment = {x = .Center, y = .Center},
+            },
+            backgroundColor = NORD7 if button_hovered else NORD8,
+            cornerRadius = {8, 8, 8, 8},
+        },
+        ) {
+            if button_hovered &&
+               !mem.mouse_left_down &&
+               mem.mouse_left_was_down {
+                mem.some_state += 1
             }
+            clay.TextDynamic(
+                button_text,
+                clay.TextConfig({textColor = NORD0, fontSize = 28}),
+            )
+        }
     }
 
     // Returns a list of render commands
     return clay.EndLayout()
 }
+
