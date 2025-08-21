@@ -13,6 +13,7 @@ import glm "core:math/linalg/glsl"
 import "core:os"
 import gl "vendor:OpenGL"
 import glfw "vendor:glfw"
+import clay "../../clay-odin"
 
 // Custom framebuffer callback for reload (no Clay call)
 framebuffer_size_callback :: proc "c" (
@@ -101,12 +102,6 @@ main :: proc() {
             common.window_width,
             common.window_height,
         )
-
-        // Update Clay with current mouse state
-        // clay.SetPointerState({f32(common.mouse_x), f32(common.mouse_y)}, common.mouse_left_down)
-
-        // Store previous mouse state for click detection
-        // common.mouse_left_was_down = common.mouse_left_down
 
         glfw.SwapBuffers(window)
 

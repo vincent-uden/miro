@@ -2,4 +2,9 @@
     "$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
     "enable_document_symbols": true,
     "enable_hover": true,
+    "enable_format": false,
+    "enable_fake_methods": false,
+    "enable_inlay_hints": false,
+    "enable_references": true,
+    "enable_checker_only_saved": true
 }

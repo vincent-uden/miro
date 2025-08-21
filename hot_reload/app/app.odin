@@ -194,10 +194,27 @@ create_layout :: proc() -> clay.ClayArray(clay.RenderCommand) {
             },
             padding = {16, 16, 16, 16},
             childGap = 16,
+            childAlignment = {x = .Center, y = .Center},
+            layoutDirection = .TopToBottom
         },
         backgroundColor = NORD4,
     },
-    ) {}
+    ) {
+            clay.TextDynamic( "Hot reloading demo", clay.TextConfig({textColor = NORD0, fontSize = 28}))
+            button_id := clay.ID("Button")
+            button_hovered := clay.PointerOver(button_id)
+            button_text := fmt.tprintf("Clicks: %d", mem.some_state)
+            if clay.UI()({
+                id = button_id,
+                layout = {
+                    padding = {12, 12, 12, 12},
+                    childAlignment = {x = .Center, y = .Center},
+                },
+                backgroundColor = NORD7 if button_hovered else NORD8
+            }) {
+                clay.TextDynamic( button_text, clay.TextConfig({textColor = NORD0, fontSize = 28}))
+            }
+    }
 
     // Returns a list of render commands
     return clay.EndLayout()
