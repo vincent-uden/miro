@@ -115,6 +115,12 @@ pub enum AppMessage {
     MouseForwardUp,
     ShiftPressed(bool),
     CtrlPressed(bool),
+    #[strum(disabled)]
+    #[serde(skip)]
+    ModifiersChanged(iced::keyboard::Modifiers),
+    #[strum(disabled)]
+    #[serde(skip)]
+    Scroll(iced::mouse::ScrollDelta),
     BookmarkMessage(BookmarkMessage),
     #[strum(disabled)]
     #[serde(skip)]
@@ -387,6 +393,11 @@ impl App {
                 self.ctrl_pressed = pressed;
                 iced::Task::none()
             }
+            AppMessage::ModifiersChanged(modifiers) => {
+                self.shift_pressed = modifiers.shift();
+                self.ctrl_pressed = modifiers.control();
+                iced::Task::none()
+            }
             AppMessage::BookmarkMessage(BookmarkMessage::RequestNewBookmark { name }) => {
                 let path = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.path.clone());
                 let page = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.cur_page_idx);
@@ -462,6 +473,25 @@ impl App {
                 }
             }
             AppMessage::CloseActiveTab => iced::Task::done(AppMessage::CloseTab(self.pdf_idx)),
+            AppMessage::Scroll(delta) => {
+                if !self.pdfs.is_empty() {
+                    let button = match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. } | iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                            if y > 0.0 {
+                                MouseButton::ScrollUp
+                            } else if y < 0.0 {
+                                MouseButton::ScrollDown
+                            } else {
+                                return iced::Task::none();
+                            }
+                        }
+                    };
+                    if let Some(action) = self.get_mouse_action(button) {
+                        let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
+                    }
+                }
+                iced::Task::none()
+            }
             AppMessage::Exit => exit(),
         }
     }
@@ -836,10 +866,7 @@ impl App {
         let keys = listen_with(|event, status, _| match event {
             Event::Keyboard(keyboard_event) => match keyboard_event {
                 iced::keyboard::Event::ModifiersChanged(modifiers) => {
-                    // We need to handle both modifiers, but we can only return one message
-                    // We'll prioritize shift for now and handle ctrl separately
-                    // TODO: This is a limitation - we should handle both modifiers properly
-                    Some(AppMessage::ShiftPressed(modifiers.shift()))
+                    Some(AppMessage::ModifiersChanged(modifiers))
                 }
                 _ => {
                     // Handle other keyboard events for keybinds
@@ -874,18 +901,7 @@ impl App {
                     _ => None,
                 },
                 iced::mouse::Event::WheelScrolled { delta } => match status {
-                    iced::event::Status::Ignored => match delta {
-                        iced::mouse::ScrollDelta::Lines { x: _, y }
-                        | iced::mouse::ScrollDelta::Pixels { x: _, y } => {
-                            if y > 0.0 {
-                                Some(AppMessage::PdfMessage(PdfMessage::ZoomIn))
-                            } else if y < 0.0 {
-                                Some(AppMessage::PdfMessage(PdfMessage::ZoomOut))
-                            } else {
-                                None
-                            }
-                        }
-                    },
+                    iced::event::Status::Ignored => Some(AppMessage::Scroll(delta)),
                     iced::event::Status::Captured => None,
                 },
                 _ => None,

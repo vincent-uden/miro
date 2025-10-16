@@ -335,6 +335,30 @@ impl PdfViewer {
                         let _ = self.set_page(self.cur_page_idx - 1);
                     }
                     (MouseAction::PreviousPage, false) => {}
+                    (MouseAction::ZoomIn, true) => {
+                        self.scale *= 1.2;
+                    }
+                    (MouseAction::ZoomIn, false) => {}
+                    (MouseAction::ZoomOut, true) => {
+                        self.scale /= 1.2;
+                    }
+                    (MouseAction::ZoomOut, false) => {}
+                    (MouseAction::MoveUp, true) => {
+                        self.translation.y -= crate::config::MOVE_STEP / self.scale;
+                    }
+                    (MouseAction::MoveUp, false) => {}
+                    (MouseAction::MoveDown, true) => {
+                        self.translation.y += crate::config::MOVE_STEP / self.scale;
+                    }
+                    (MouseAction::MoveDown, false) => {}
+                    (MouseAction::MoveLeft, true) => {
+                        self.translation.x -= crate::config::MOVE_STEP / self.scale;
+                    }
+                    (MouseAction::MoveLeft, false) => {}
+                    (MouseAction::MoveRight, true) => {
+                        self.translation.x += crate::config::MOVE_STEP / self.scale;
+                    }
+                    (MouseAction::MoveRight, false) => {}
                 }
                 iced::Task::none()
             }

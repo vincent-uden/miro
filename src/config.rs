@@ -7,7 +7,7 @@ use strum::EnumString;
 
 use crate::{app::AppMessage, pdf::PdfMessage};
 
-const MOVE_STEP: f32 = 40.0;
+pub const MOVE_STEP: f32 = 40.0;
 
 #[derive(Debug, Clone)]
 pub struct ConfigError {
@@ -78,6 +78,8 @@ pub enum MouseButton {
     Right,
     Back,
     Forward,
+    ScrollUp,
+    ScrollDown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -101,6 +103,12 @@ pub enum MouseAction {
     Selection,
     NextPage,
     PreviousPage,
+    ZoomIn,
+    ZoomOut,
+    MoveUp,
+    MoveDown,
+    MoveLeft,
+    MoveRight,
 }
 
 pub type MouseBinding = (MouseInput, MouseAction);
@@ -203,6 +211,8 @@ impl From<BindableMessage> for AppMessage {
         }
     }
 }
+
+
 
 #[derive(Debug)]
 pub struct Config {
@@ -522,6 +532,60 @@ impl Default for Config {
                         },
                     },
                     MouseAction::PreviousPage,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::ScrollUp,
+                        modifiers: MouseModifiers::default(),
+                    },
+                    MouseAction::MoveUp,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::ScrollDown,
+                        modifiers: MouseModifiers::default(),
+                    },
+                    MouseAction::MoveDown,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::ScrollUp,
+                        modifiers: MouseModifiers {
+                            ctrl: true,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::ZoomIn,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::ScrollDown,
+                        modifiers: MouseModifiers {
+                            ctrl: true,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::ZoomOut,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::ScrollUp,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: true,
+                        },
+                    },
+                    MouseAction::MoveLeft,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::ScrollDown,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: true,
+                        },
+                    },
+                    MouseAction::MoveRight,
                 ),
             ],
             rpc_enabled: false,
