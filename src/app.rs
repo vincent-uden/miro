@@ -4,6 +4,7 @@ use iced::{
     alignment,
     border::{self, Radius},
     event::listen_with,
+    exit,
     font::{Font, Weight},
     theme::palette,
     widget::{
@@ -14,8 +15,8 @@ use iced::{
         pane_grid,
         responsive,
         row,
-        scrollable, // -
-        scrollable::{Direction, Scrollbar},
+        scrollable,
+        scrollable::{Direction, Scrollbar}, // -
         stack,
         text,
         vertical_space,
@@ -231,21 +232,25 @@ impl App {
                     iced::Task::done(AppMessage::OpenFile(path_buf))
                 }),
             AppMessage::CloseTab(i) => {
-                if let Some(sender) = &self.file_watcher {
-                    // We should never fill this up from here
-                    let _ = sender.blocking_send(WatchMessage::StopWatch(
-                        self.pdfs[self.pdf_idx].path.clone(),
-                    ));
-                }
-                self.pdfs.remove(i);
-                if self.pdf_idx >= self.pdfs.len() {
-                    if self.pdfs.is_empty() {
-                        self.pdf_idx = 0;
-                    } else {
-                        self.pdf_idx = self.pdfs.len() - 1;
+                if self.pdfs.is_empty() {
+                    exit()
+                } else {
+                    if let Some(sender) = &self.file_watcher {
+                        // We should never fill this up from here
+                        let _ = sender.blocking_send(WatchMessage::StopWatch(
+                            self.pdfs[self.pdf_idx].path.clone(),
+                        ));
                     }
+                    self.pdfs.remove(i);
+                    if self.pdf_idx >= self.pdfs.len() {
+                        if self.pdfs.is_empty() {
+                            self.pdf_idx = 0;
+                        } else {
+                            self.pdf_idx = self.pdfs.len() - 1;
+                        }
+                    }
+                    iced::Task::none()
                 }
-                iced::Task::none()
             }
             AppMessage::PreviousTab => {
                 self.pdf_idx = if self.pdf_idx == 0 {
@@ -463,6 +468,12 @@ impl App {
         let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
         let cfg = CONFIG.read().unwrap();
 
+        let exit_close_label = if self.pdfs.is_empty() {
+            "Exit"
+        } else {
+            "Close"
+        };
+
         container(row![
             menu_bar!((
                 debug_button_s("File"),
@@ -475,7 +486,7 @@ impl App {
                     AppMessage::PdfMessage(PdfMessage::PrintPdf),
                     cfg.get_binding_for_msg(BindableMessage::PrintPdf)
                 ))(menu_button_last(
-                    "Close",
+                    exit_close_label,
                     AppMessage::CloseTab(self.pdf_idx),
                     None,
                 ))))
