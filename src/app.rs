@@ -34,7 +34,7 @@ use rfd::AsyncFileDialog;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tokio::sync::mpsc;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::{
     bookmarks::{BookmarkMessage, BookmarkStore},
@@ -239,7 +239,11 @@ impl App {
                 }
                 self.pdfs.remove(i);
                 if self.pdf_idx >= self.pdfs.len() {
-                    self.pdf_idx = self.pdfs.len() - 1;
+                    if self.pdfs.is_empty() {
+                        self.pdf_idx = 0;
+                    } else {
+                        self.pdf_idx = self.pdfs.len() - 1;
+                    }
                 }
                 iced::Task::none()
             }
@@ -629,7 +633,7 @@ impl App {
                     horizontal_space().width(8.0),
                     text("Outline")
                 ]
-                .align_y(alignment::Vertical::Center)
+                .align_y(alignment::Vertical::Center),
             )
             .width(Length::Fill)
             .height(30.0)
@@ -650,14 +654,17 @@ impl App {
         };
 
         let create_collapsed_outline_button = || {
-            button(widget::svg(icons::table_of_contents()).width(18.0).height(18.0).style(
-                |theme: &Theme, _| {
-                    let palette = theme.extended_palette();
-                    widget::svg::Style {
-                        color: Some(palette.primary.base.text),
-                    }
-                },
-            ))
+            button(
+                widget::svg(icons::table_of_contents())
+                    .width(18.0)
+                    .height(18.0)
+                    .style(|theme: &Theme, _| {
+                        let palette = theme.extended_palette();
+                        widget::svg::Style {
+                            color: Some(palette.primary.base.text),
+                        }
+                    }),
+            )
             .width(Length::Shrink)
             .height(30.0)
             .padding(6.0)
@@ -666,7 +673,9 @@ impl App {
                 widget::button::Style {
                     background: match status {
                         widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
-                        widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
+                        widget::button::Status::Pressed => {
+                            Some(palette.primary.strong.color.into())
+                        }
                         widget::button::Status::Active => Some(palette.primary.base.color.into()),
                         _ => None,
                     },
@@ -694,7 +703,7 @@ impl App {
                             }
                         })
                 ]
-                .align_y(alignment::Vertical::Center)
+                .align_y(alignment::Vertical::Center),
             )
             .width(Length::Fill)
             .height(30.0)
@@ -715,14 +724,17 @@ impl App {
         };
 
         let create_collapsed_bookmark_button = || {
-            button(widget::svg(icons::bookmark()).width(18.0).height(18.0).style(
-                |theme: &Theme, _| {
-                    let palette = theme.extended_palette();
-                    widget::svg::Style {
-                        color: Some(palette.primary.base.text),
-                    }
-                },
-            ))
+            button(
+                widget::svg(icons::bookmark())
+                    .width(18.0)
+                    .height(18.0)
+                    .style(|theme: &Theme, _| {
+                        let palette = theme.extended_palette();
+                        widget::svg::Style {
+                            color: Some(palette.primary.base.text),
+                        }
+                    }),
+            )
             .width(Length::Shrink)
             .height(30.0)
             .padding(6.0)
@@ -731,7 +743,9 @@ impl App {
                 widget::button::Style {
                     background: match status {
                         widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
-                        widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
+                        widget::button::Status::Pressed => {
+                            Some(palette.primary.strong.color.into())
+                        }
                         widget::button::Status::Active => Some(palette.primary.base.color.into()),
                         _ => None,
                     },
@@ -746,8 +760,14 @@ impl App {
         };
 
         let (outline_button, bookmark_button) = match self.sidebar_tab {
-            SidebarTab::Outline => (create_expanded_outline_button(), create_collapsed_bookmark_button()),
-            SidebarTab::Bookmark => (create_collapsed_outline_button(), create_expanded_bookmark_button()),
+            SidebarTab::Outline => (
+                create_expanded_outline_button(),
+                create_collapsed_bookmark_button(),
+            ),
+            SidebarTab::Bookmark => (
+                create_collapsed_outline_button(),
+                create_expanded_bookmark_button(),
+            ),
         };
 
         let sidebar_picker = widget::row![outline_button, bookmark_button]
