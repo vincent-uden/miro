@@ -221,9 +221,15 @@ impl App {
                 println!("[DEBUG] {s}");
                 iced::Task::none()
             }
-            AppMessage::PdfMessage(msg) => self.pdfs[self.pdf_idx]
-                .update(msg)
-                .map(AppMessage::PdfMessage),
+            AppMessage::PdfMessage(msg) => {
+                if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx]
+                        .update(msg)
+                        .map(AppMessage::PdfMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
             AppMessage::OpenNewFileFinder => iced::Task::perform(
                 async {
                     AsyncFileDialog::new()
@@ -268,7 +274,9 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::NextTab => {
-                self.pdf_idx = (self.pdf_idx + 1).min(self.pdfs.len() - 1);
+                if !self.pdfs.is_empty() {
+                    self.pdf_idx = (self.pdf_idx + 1).min(self.pdfs.len() - 1);
+                }
                 iced::Task::none()
             }
             AppMessage::OpenTab(i) => {
@@ -476,7 +484,8 @@ impl App {
             AppMessage::Scroll(delta) => {
                 if !self.pdfs.is_empty() {
                     let button = match delta {
-                        iced::mouse::ScrollDelta::Lines { y, .. } | iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                        iced::mouse::ScrollDelta::Lines { y, .. }
+                        | iced::mouse::ScrollDelta::Pixels { y, .. } => {
                             if y > 0.0 {
                                 MouseButton::ScrollUp
                             } else if y < 0.0 {
@@ -487,7 +496,8 @@ impl App {
                         }
                     };
                     if let Some(action) = self.get_mouse_action(button) {
-                        let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
+                        let _ =
+                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
                 }
                 iced::Task::none()
