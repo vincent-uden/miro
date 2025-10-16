@@ -122,6 +122,7 @@ pub enum AppMessage {
     ToggleSidebar,
     SetSidebar(SidebarTab),
     OutlineGoToPage(u32),
+    Exit,
     #[default]
     None,
 }
@@ -461,6 +462,7 @@ impl App {
                 }
             }
             AppMessage::CloseActiveTab => iced::Task::done(AppMessage::CloseTab(self.pdf_idx)),
+            AppMessage::Exit => exit(),
         }
     }
 

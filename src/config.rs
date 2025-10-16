@@ -166,6 +166,7 @@ pub enum BindableMessage {
     OpenFileFinder,
     CloseTab,
     PrintPdf,
+    Exit,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -198,6 +199,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::OpenFileFinder => AppMessage::OpenNewFileFinder,
             BindableMessage::CloseTab => AppMessage::CloseActiveTab,
             BindableMessage::PrintPdf => AppMessage::PdfMessage(PdfMessage::PrintPdf),
+            BindableMessage::Exit => AppMessage::Exit,
         }
     }
 }
@@ -458,6 +460,7 @@ impl Default for Config {
                     BindableMessage::PrintPdf,
                 ),
                 Keybind::new(KeySeq::from_str("Z Z").unwrap(), BindableMessage::CloseTab),
+                Keybind::new(KeySeq::from_str("q").unwrap(), BindableMessage::Exit),
             ]),
             mouse: vec![
                 (
@@ -794,10 +797,10 @@ Bind k MoveUp
     #[test]
     pub fn demonstrate_colored_error_output() {
         use colored::control;
-        
+
         // Disable colors for consistent testing
         control::set_override(false);
-        
+
         let config_str = r#"
 Bind j InvalidAction
 UnknownCommand arg1
@@ -818,7 +821,7 @@ Set RpcPort invalid_port
         assert!(formatted.contains("Line 2:"));
         assert!(formatted.contains("Line 3:"));
         assert!(formatted.contains("Line 4:"));
-        
+
         // Re-enable colors
         control::unset_override();
     }
