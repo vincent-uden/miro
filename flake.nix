@@ -106,7 +106,7 @@
           options.programs.miro-pdf = {
             enable = mkEnableOption "Enable miro-pdf";
             package = mkOption {
-              description = "Package inclusing miro-pdf binary (e.g. miro-pdf.packages.\${pkgs.system}.default)";
+              description = "Package including miro-pdf binary (e.g. miro-pdf.packages.\${pkgs.system}.default)";
               type = types.package;
             };
             config = mkOption {
