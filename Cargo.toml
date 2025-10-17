@@ -44,6 +44,11 @@ twox-hash = { version = "2.1.1", features = ["serialize"] }
 debug = true
 strip = false
 
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
+
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/miro-pdf{binary-ext}"
 pkg-fmt = "bin"
