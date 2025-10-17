@@ -6,12 +6,14 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     nci.url = "github:yusdacra/nix-cargo-integration";
+    home-manager.url = "github:nix-community/home-manager";
   };
 
   outputs = inputs @ {flake-parts, ...}:
     flake-parts.lib.mkFlake {inherit inputs;} {
       imports = [
         inputs.nci.flakeModule
+        inputs.home-manager.flakeModules.home-manager
       ];
       systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin"];
       perSystem = {
@@ -82,6 +84,47 @@
             ]);
         });
         packages.default = crateOutputs.packages.release;
+      };
+
+      flake = {
+        homeModules.default = {
+          config,
+          lib,
+          pkgs,
+          ...
+        }: let
+          inherit
+            (lib)
+            mkEnableOption
+            mkOption
+            mkIf
+            types
+            ;
+
+          cfg = config.programs.miro-pdf;
+        in {
+          options.programs.miro-pdf = {
+            enable = mkEnableOption "Enable miro-pdf";
+            package = mkOption {
+              description = "Package inclusing miro-pdf binary (e.g. miro-pdf.packages.\${pkgs.system}.default)";
+              type = types.package;
+            };
+            config = mkOption {
+              description = "Config file text (uses assets/default.conf from the repo by default)";
+              type = types.lines;
+              default = builtins.readFile ./assets/default.conf;
+            };
+          };
+
+          config = mkIf cfg.enable {
+            home = {
+              file.".config/miro-pdf/miro.conf".text = cfg.config;
+              packages = [
+                cfg.package
+              ];
+            };
+          };
+        };
       };
     };
 }
