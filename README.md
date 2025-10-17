@@ -109,7 +109,7 @@ However, I've managed to get compilation working in github actions which is what
 
 #### Windows
 
-Building on linx require some hidden dependendencies that you probably already have. On arch they are:
+Building on linux require some hidden dependendencies that you probably already have. On arch they are:
 - `clang`
 - `unzip`
 
