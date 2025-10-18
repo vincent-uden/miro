@@ -8,20 +8,11 @@ use iced::{
     font::{Font, Weight},
     theme::palette,
     widget::{
-        self,
-        button,
-        container,
-        horizontal_space,
-        pane_grid,
-        responsive,
-        row,
-        scrollable,
-        scrollable::{Direction, Scrollbar}, // -
-        stack,
-        text,
-        vertical_space,
-        PaneGrid,
+        self, button, container, horizontal_space, pane_grid, responsive, row, scrollable,
+        scrollable::{Direction, Scrollbar},
+        stack, text, vertical_space, PaneGrid,
     },
+    window::get_scale_factor,
     Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
 use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
@@ -131,6 +122,10 @@ pub enum AppMessage {
     Exit,
     #[default]
     None,
+    #[strum(disabled)]
+    #[serde(skip)]
+    FoundWindowId(Option<iced::window::Id>),
+    FoundScaleFactor(f32),
 }
 
 impl App {
@@ -161,7 +156,7 @@ impl App {
             waiting_for_worker: vec![],
             shift_pressed: false,
             ctrl_pressed: false,
-            scale_factor: CONFIG.read().unwrap().scale_factor,
+            scale_factor: 1.0,
         }
     }
 
@@ -503,6 +498,17 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::Exit => exit(),
+            AppMessage::FoundWindowId(id) => match id {
+                Some(id) => get_scale_factor(id).map(AppMessage::FoundScaleFactor),
+                None => iced::Task::none(),
+            },
+            AppMessage::FoundScaleFactor(scale) => {
+                self.scale_factor = scale as f64;
+                for viewer in &mut self.pdfs {
+                    viewer.set_scale_factor(self.scale_factor);
+                }
+                iced::Task::none()
+            }
         }
     }
 

@@ -511,10 +511,6 @@ impl PdfViewer {
 
     pub fn set_scale_factor(&mut self, scale_factor: f64) {
         if (self.scale_factor - scale_factor).abs() > 0.01 {
-            info!(
-                "Setting scale factor from {} to {}",
-                self.scale_factor, scale_factor
-            );
             self.scale_factor = scale_factor;
             // Invalidate pixmap to force re-render at new scale factor
             self.inner_state.borrow_mut().pix = None;

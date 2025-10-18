@@ -8,7 +8,10 @@ use app::App;
 use bookmarks::BookmarkStore;
 use clap::Parser;
 use config::Config;
-use iced::{window::icon::from_file_data, Color, Font, Theme};
+use iced::{
+    window::{get_latest, get_scale_factor, icon::from_file_data},
+    Color, Font, Theme,
+};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -77,6 +80,9 @@ fn main() -> iced::Result {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
+            let file_task =
+                file_task.chain(get_latest().map(|id| app::AppMessage::FoundWindowId(id)));
+
             (state, file_task)
         })
 }
