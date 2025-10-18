@@ -1,6 +1,7 @@
 use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
+    advanced::graphics::core::window,
     alignment,
     border::{self, Radius},
     event::listen_with,
@@ -922,12 +923,19 @@ impl App {
                 },
                 _ => None,
             },
+            _ => None,
+        });
 
+        let resizes = listen_with(|event, _, _| match event {
+            Event::Window(window::Event::Resized(new_size)) => {
+                Some(AppMessage::PdfMessage(PdfMessage::ReallocPixmap))
+            }
             _ => None,
         });
 
         let mut subs = vec![
             keys,
+            resizes,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
         ];
 

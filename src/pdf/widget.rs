@@ -1,8 +1,8 @@
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
-use std::{cell::RefCell, path::PathBuf, time::Duration};
-use tracing::{error, info};
+use std::{cell::RefCell, path::PathBuf};
+use tracing::{debug, error, info};
 use open;
 
 use crate::{
@@ -56,7 +56,7 @@ pub struct PdfViewer {
     doc: Document,
     page: Page,
 
-    debounce_handle: Option<iced::task::Handle>,
+    old_bounds: RefCell<Rect<f32>>,
 
     gradient_cache: [[u8; 4]; 256],
 }
@@ -119,8 +119,8 @@ impl PdfViewer {
             document_outline,
             doc,
             page,
-            debounce_handle: None,
             gradient_cache,
+            old_bounds: RefCell::new(Rect::default()),
         })
     }
 
@@ -164,18 +164,7 @@ impl PdfViewer {
             }
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.borrow_mut().bounds = rectangle;
-                let (out, handle) = iced::Task::perform(
-                    async {
-                        tokio::time::sleep(Duration::from_millis(150)).await;
-                    },
-                    |_| PdfMessage::ReallocPixmap,
-                )
-                .abortable();
-                if let Some(handle) = self.debounce_handle.as_mut() {
-                    handle.abort();
-                }
-                self.debounce_handle = Some(handle);
-                out
+                iced::Task::done(PdfMessage::ReallocPixmap)
             }
             PdfMessage::None => iced::Task::none(),
             PdfMessage::MouseMoved(vector) => {
@@ -547,7 +536,9 @@ impl PdfViewer {
         ctm.scale(effective_scale, effective_scale);
         ctm.pre_translate(-self.translation.x, -self.translation.y);
 
-        if state.pix.is_none() {
+        let mut old_bounds = self.old_bounds.borrow_mut();
+        // The bounds check here saves one frame of jitter on resizing the window for some reason
+        if *old_bounds != state.bounds || state.pix.is_none() {
             let render_width = (state.bounds.width() * self.scale_factor as f32).round() as i32;
             let render_height = (state.bounds.height() * self.scale_factor as f32).round() as i32;
 
@@ -555,6 +546,8 @@ impl PdfViewer {
                 Pixmap::new_with_w_h(&Colorspace::device_rgb(), render_width, render_height, true)
                     .unwrap(),
             );
+
+            *old_bounds = state.bounds;
         }
         let bounds = state.bounds;
         let device = {

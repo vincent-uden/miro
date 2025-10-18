@@ -6,6 +6,7 @@ use iced::{
     widget::image::FilterMethod,
 };
 use mupdf::{DisplayList, Pixmap};
+use tracing::debug;
 
 use crate::{
     geometry::{Rect, Vector},
@@ -381,8 +382,6 @@ where
                     position: _,
                     size: _,
                 } => Some(PdfMessage::UpdateBounds(bounds.into())),
-                iced::window::Event::Moved(_) => Some(PdfMessage::UpdateBounds(bounds.into())),
-                iced::window::Event::Resized(_) => Some(PdfMessage::UpdateBounds(bounds.into())),
                 _ => None,
             },
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {

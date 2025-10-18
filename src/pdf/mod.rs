@@ -29,7 +29,7 @@ pub enum PdfMessage {
     MouseAction(MouseAction, bool), // action and whether it's pressed (true) or released (false)
     ToggleLinkHitboxes,
     ActivateLink(usize), // Activate link by index
-    CloseLinkHitboxes, // Close/hide link hitboxes
+    CloseLinkHitboxes,   // Close/hide link hitboxes
     FileChanged,
     ReallocPixmap,
     PrintPdf,
