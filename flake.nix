@@ -2,128 +2,126 @@
   description = "miro-pdf";
 
   inputs = {
-    flake-parts.url = "github:hercules-ci/flake-parts";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-    nci.url = "github:yusdacra/nix-cargo-integration";
-    home-manager.url = "github:nix-community/home-manager";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    systems.url = "github:nix-systems/default";
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+      inputs.systems.follows = "systems";
+    };
+    crane.url = "github:ipetkov/crane";
   };
 
-  outputs = inputs @ {flake-parts, ...}:
-    flake-parts.lib.mkFlake {inherit inputs;} {
-      imports = [
-        inputs.nci.flakeModule
-        inputs.home-manager.flakeModules.home-manager
-      ];
-      systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin"];
-      perSystem = {
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    crane,
+    ...
+  }:
+    flake-utils.lib.eachDefaultSystem (
+      system: let
+        pkgs = nixpkgs.legacyPackages.${system};
+        inherit (nixpkgs) lib;
+
+        craneLib = crane.mkLib pkgs;
+      in {
+        formatter = pkgs.alejandra;
+
+        packages.default = let
+          unfilteredRoot = ./.;
+
+          libs = with pkgs; [
+            wayland
+            libGL
+            xorg.libX11
+            libxkbcommon
+          ];
+        in
+          craneLib.buildPackage {
+            src = lib.fileset.toSource {
+              root = unfilteredRoot;
+
+              fileset = lib.fileset.unions [
+                # Default files from crane (Rust and cargo files)
+                (craneLib.fileset.commonCargoSources unfilteredRoot)
+
+                # Example of a folder for images, icons, etc
+                (lib.fileset.maybeMissing ./assets)
+              ];
+            };
+
+            strictDeps = true;
+
+            nativeBuildInputs = with pkgs; [
+              fontconfig
+              pkg-config
+              clang
+              libclang
+              unzip
+              gperf
+              makeWrapper
+            ];
+
+            LIBCLANG_PATH = lib.makeLibraryPath [pkgs.libclang.lib];
+
+            buildInputs = with pkgs;
+              [
+                fontconfig
+                vulkan-loader
+              ]
+              ++ libs;
+
+            postInstall = ''
+              wrapProgram "$out/bin/miro-pdf" \
+              --set LD_LIBRARY_PATH "${lib.makeLibraryPath libs}"
+            '';
+
+            meta = {
+              description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings";
+              homepage = "https://github.com/vincent-uden/miro";
+              license = lib.licenses.agpl3Only;
+              maintainers = with lib.maintainers; [
+                tukanoidd
+                Vortriz
+              ];
+              mainProgram = "miro-pdf";
+            };
+          };
+
+        devShell = craneLib.devShell {
+          packages = with pkgs; [rust-analyzer];
+        };
+      }
+    )
+    // {
+      homeModules.default = {
         config,
-        self',
-        inputs',
+        lib,
         pkgs,
-        system,
         ...
       }: let
-        crateOutputs = config.nci.outputs.miro-pdf;
+        cfg = config.programs.miro-pdf;
       in {
-        nci = {
-          projects.miro-pdf.path = ./.;
-          crates.miro-pdf = let
-            commonInputs = with pkgs; [
-              fontconfig
-            ];
-            commonNativeBuildInputs =
-              commonInputs
-              ++ (with pkgs; [
-                pkg-config
-                libclang.lib
-                clang
-              ]);
-          in {
-            runtimeLibs =
-              commonInputs
-              ++ (with pkgs;
-                with xorg; [
-                  vulkan-loader
-                  libGL
+        options.programs.miro-pdf = {
+          enable = lib.mkEnableOption "Enable miro-pdf";
 
-                  wayland
-                  libX11
-                  libxkbcommon
-                ]);
-            depsDrvConfig = {
-              mkDerivation = {
-                nativeBuildInputs =
-                  commonNativeBuildInputs
-                  ++ (with pkgs; [
-                    unzip
-                    python3
-                    gperf
-                  ]);
-              };
-              env = {
-                LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-              };
-            };
-            drvConfig = {
-              mkDerivation = {
-                nativeBuildInputs = commonNativeBuildInputs;
-              };
-              env = {
-                LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-              };
-            };
+          package = lib.mkOption {
+            description = "Package including miro-pdf binary (e.g. miro-pdf.packages.\${pkgs.system}.default)";
+            type = lib.types.package;
+            default = self.packages.${pkgs.system}.default;
+          };
+
+          config = lib.mkOption {
+            description = "Config file text (uses assets/default.conf from the repo by default)";
+            type = lib.types.lines;
+            default = builtins.readFile ./assets/default.conf;
           };
         };
 
-        devShells.default = crateOutputs.devShell.overrideAttrs (old: {
-          packages =
-            (old.packages or [])
-            ++ (with pkgs; [
-              rust-analyzer
-            ]);
-        });
-        packages.default = crateOutputs.packages.release;
-      };
+        config = lib.mkIf cfg.enable {
+          home.packages = [cfg.package];
 
-      flake = {
-        homeModules.default = {
-          config,
-          lib,
-          pkgs,
-          ...
-        }: let
-          inherit
-            (lib)
-            mkEnableOption
-            mkOption
-            mkIf
-            types
-            ;
-
-          cfg = config.programs.miro-pdf;
-        in {
-          options.programs.miro-pdf = {
-            enable = mkEnableOption "Enable miro-pdf";
-            package = mkOption {
-              description = "Package including miro-pdf binary (e.g. miro-pdf.packages.\${pkgs.system}.default)";
-              type = types.package;
-            };
-            config = mkOption {
-              description = "Config file text (uses assets/default.conf from the repo by default)";
-              type = types.lines;
-              default = builtins.readFile ./assets/default.conf;
-            };
-          };
-
-          config = mkIf cfg.enable {
-            home = {
-              file.".config/miro-pdf/miro.conf".text = cfg.config;
-              packages = [
-                cfg.package
-              ];
-            };
-          };
+          xdg.configFile."miro-pdf/miro.conf".text = cfg.config;
         };
       };
     };
