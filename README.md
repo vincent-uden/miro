@@ -67,6 +67,7 @@ Set <setting> <value>
 Available settings:
 - `Rpc <True|False>` - Enable/disable RPC server
 - `RpcPort <number>` - Set RPC server port
+- `ScaleFactor <number>` - Set scale factor
 
 #### Error Handling
 
