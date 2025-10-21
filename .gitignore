@@ -5,8 +5,9 @@ mupdf/release/**/*
 miro
 *.o
 
+# Nix
+result*
+.direnv
 
 # Added by cargo
-
 /target
-.direnv
