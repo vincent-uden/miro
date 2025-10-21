@@ -7,6 +7,7 @@ use iced::{
     event::listen_with,
     exit,
     font::{Font, Weight},
+    keyboard::Modifiers,
     theme::palette,
     widget::{
         self, button, container, horizontal_space, pane_grid, responsive, row, scrollable,
@@ -25,6 +26,7 @@ use iced_fonts::required::{RequiredIcons, icon_to_string};
 use keybinds::{KeySeq, Keybind};
 use rfd::AsyncFileDialog;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use strum::EnumString;
 use tokio::sync::mpsc;
 use tracing::{debug, error};
@@ -884,6 +886,36 @@ impl App {
             Event::Keyboard(keyboard_event) => match keyboard_event {
                 iced::keyboard::Event::ModifiersChanged(modifiers) => {
                     Some(AppMessage::ModifiersChanged(modifiers))
+                }
+                iced::keyboard::Event::KeyPressed {
+                    key: _,
+                    modified_key: iced::keyboard::Key::Character(ref modified),
+                    physical_key: _,
+                    location: _,
+                    modifiers: _,
+                    text: _,
+                } => {
+                    let e = if modified == "+" {
+                        iced::keyboard::Event::KeyPressed {
+                            key: iced::keyboard::Key::Character(SmolStr::new_static("+")),
+                            modified_key: iced::keyboard::Key::Character(SmolStr::new_static("+")),
+                            physical_key: iced::keyboard::key::Physical::Code(
+                                iced::keyboard::key::Code::Minus,
+                            ),
+                            location: iced::keyboard::Location::Standard,
+                            modifiers: Modifiers::empty(),
+                            text: Some(SmolStr::new_static("+")),
+                        }
+                    } else {
+                        keyboard_event
+                    };
+                    let mut config = CONFIG.write().unwrap();
+                    match status {
+                        iced::event::Status::Ignored => {
+                            config.keyboard.dispatch(e).map(|x| (*x).into())
+                        }
+                        iced::event::Status::Captured => None,
+                    }
                 }
                 _ => {
                     // Handle other keyboard events for keybinds
