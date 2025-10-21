@@ -1,6 +1,6 @@
 # miro
 
-A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings.
+A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable keybindings.
 
 ![An image of the pdf reader](/assets/screenshot.png)
 
@@ -107,10 +107,12 @@ The Visual Studio project embedded in this crate requires Visual Studio 2019 whi
 
 However, I've managed to get compilation working in github actions which is what produces the release binaries which do function correctly on Windows systems.
 
-#### Windows
+#### Linux
 
 Building on linux require some hidden dependendencies that you probably already have. On arch they are:
 - `clang`
 - `unzip`
 
+#### macOS
 
+While I don't test the software for macOS since I don't own a mac. It should work although only supporting building from source or crates.io. No binary releases are made.
