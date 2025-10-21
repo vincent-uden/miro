@@ -14,17 +14,17 @@ arboard = { version = "3.6.0", features = ["wayland-data-control"] }
 
 async-watcher = "0.3.0"
 axum = "0.8.4"
-clap = {version = "4.5.32", features = ["derive"] }
-code-timing-macros = {version = "0.0.6", features = ["release", "tracing"]}
+clap = { version = "4.5.32", features = ["derive"] }
+code-timing-macros = { version = "0.0.6", features = ["release", "tracing"] }
 colored = "2.1.0"
 colorgrad = "0.7.1"
 home = "0.5.11"
-iced = {version = "0.13.1", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg"] }
+iced = { version = "0.13.1", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg"] }
 iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
 keybinds = { version = "0.1.1", features = ["iced", "serde"] }
 logos = "0.15.0"
-mupdf = { version = "0.5.0", git = "https://github.com/messense/mupdf-rs", rev="2425c1405b326165b06834dcc1ca859015f92787"}
+mupdf = { version = "0.5.0", git = "https://github.com/messense/mupdf-rs", rev = "2425c1405b326165b06834dcc1ca859015f92787" }
 num = "0.4.3"
 once_cell = "1.21.3"
 open = "5.3.1"
@@ -39,6 +39,9 @@ tracing = "0.1.41"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 twox-hash = { version = "2.1.1", features = ["serialize"] }
+
+[build-dependencies]
+embed-resource = "3.0.6"
 
 [profile.bench]
 debug = true
