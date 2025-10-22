@@ -2949,6 +2949,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "smol_str",
  "strum",
  "tokio",
  "toml 0.8.20",
