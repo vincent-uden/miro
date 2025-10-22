@@ -23,6 +23,7 @@
       wayland
       xorg.libX11
     ];
+  libsPath = lib.makeLibraryPath libs;
 
   commonArgs = {
     src = lib.fileset.toSource {
@@ -61,8 +62,12 @@ in
       inherit cargoArtifacts;
 
       postFixup = ''
-        patchelf $out/bin/miro-pdf --add-rpath ${lib.makeLibraryPath libs}
+        patchelf $out/bin/miro-pdf --add-rpath ${libsPath}
       '';
+
+      passthru = {
+        runtimeLibsPath = libsPath;
+      };
 
       meta = {
         description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings";

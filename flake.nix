@@ -36,7 +36,13 @@
         checks = {inherit miro-pdf;};
 
         devShells.default = craneLib.devShell {
+          inputsFrom = [miro-pdf];
+
           packages = with pkgs; [rust-analyzer];
+
+          shellHook = ''
+            export LD_LIBRARY_PATH=${miro-pdf.passthru.runtimeLibsPath}:$LD_LIBRARY_PATH
+          '';
         };
       }
     )
