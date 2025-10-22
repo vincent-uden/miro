@@ -109,7 +109,7 @@ However, I've managed to get compilation working in github actions which is what
 
 #### Linux
 
-Building on linux require some hidden dependendencies that you probably already have. On arch they are:
+Building on linux require some hidden dependencies that you probably already have. On arch they are:
 - `clang`
 - `unzip`
 
