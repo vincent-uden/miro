@@ -1,7 +1,6 @@
 {
   lib,
   craneLib,
-  makeWrapper,
   rustPlatform,
   wayland,
   libGL,
@@ -38,16 +37,13 @@
 
     nativeBuildInputs = [
       pkg-config
-      makeWrapper
       rustPlatform.bindgenHook
     ];
 
-    buildInputs =
-      [
-        fontconfig
-        vulkan-loader
-      ]
-      ++ libs;
+    buildInputs = [
+      fontconfig
+      vulkan-loader
+    ];
 
     # prevent bindgen from rebuilding unnecessarily
     # see https://crane.dev/faq/rebuilds-bindgen.html
@@ -60,9 +56,8 @@ in
     // {
       inherit cargoArtifacts;
 
-      postInstall = ''
-        wrapProgram "$out/bin/miro-pdf" \
-        --set LD_LIBRARY_PATH "${lib.makeLibraryPath libs}"
+      postFixup = ''
+        patchelf $out/bin/miro-pdf --add-rpath ${lib.makeLibraryPath libs}
       '';
 
       meta = {
