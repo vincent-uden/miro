@@ -21,8 +21,8 @@
     xorg.libX11
     libxkbcommon
   ];
-in
-  craneLib.buildPackage {
+
+  commonArgs = {
     src = lib.fileset.toSource {
       root = unfilteredRoot;
 
@@ -52,20 +52,27 @@ in
         vulkan-loader
       ]
       ++ libs;
+  };
 
-    postInstall = ''
-      wrapProgram "$out/bin/miro-pdf" \
-      --set LD_LIBRARY_PATH "${lib.makeLibraryPath libs}"
-    '';
+  cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+in
+  craneLib.buildPackage (commonArgs
+    // {
+      inherit cargoArtifacts;
 
-    meta = {
-      description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings";
-      homepage = "https://github.com/vincent-uden/miro";
-      license = lib.licenses.agpl3Only;
-      maintainers = with lib.maintainers; [
-        tukanoidd
-        Vortriz
-      ];
-      mainProgram = "miro-pdf";
-    };
-  }
+      postInstall = ''
+        wrapProgram "$out/bin/miro-pdf" \
+        --set LD_LIBRARY_PATH "${lib.makeLibraryPath libs}"
+      '';
+
+      meta = {
+        description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings";
+        homepage = "https://github.com/vincent-uden/miro";
+        license = lib.licenses.agpl3Only;
+        maintainers = with lib.maintainers; [
+          tukanoidd
+          Vortriz
+        ];
+        mainProgram = "miro-pdf";
+      };
+    })
