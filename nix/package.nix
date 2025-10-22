@@ -1,30 +1,31 @@
 {
   lib,
+  stdenv,
   craneLib,
-  makeWrapper,
+  rustPlatform,
   wayland,
   libGL,
   xorg,
   libxkbcommon,
   fontconfig,
   pkg-config,
-  clang,
-  libclang,
-  unzip,
-  gperf,
   vulkan-loader,
   ...
 }: let
   unfilteredRoot = ../.;
 
-  libs = [
-    wayland
-    libGL
-    xorg.libX11
-    libxkbcommon
-  ];
-in
-  craneLib.buildPackage {
+  libs =
+    [
+      libGL
+      libxkbcommon
+    ]
+    ++ lib.optionals stdenv.hostPlatform.isLinux [
+      wayland
+      xorg.libX11
+    ];
+  libsPath = lib.makeLibraryPath libs;
+
+  commonArgs = {
     src = lib.fileset.toSource {
       root = unfilteredRoot;
 
@@ -40,37 +41,42 @@ in
     strictDeps = true;
 
     nativeBuildInputs = [
-      fontconfig
       pkg-config
-      clang
-      libclang
-      unzip
-      gperf
-      makeWrapper
+      rustPlatform.bindgenHook
     ];
 
-    LIBCLANG_PATH = lib.makeLibraryPath [libclang.lib];
+    buildInputs = [
+      fontconfig
+      vulkan-loader
+    ];
 
-    buildInputs =
-      [
-        fontconfig
-        vulkan-loader
-      ]
-      ++ libs;
+    # prevent bindgen from rebuilding unnecessarily
+    # see https://crane.dev/faq/rebuilds-bindgen.html
+    NIX_OUTPATH_USED_AS_RANDOM_SEED = "_miro-pdf_";
+  };
 
-    postInstall = ''
-      wrapProgram "$out/bin/miro-pdf" \
-      --set LD_LIBRARY_PATH "${lib.makeLibraryPath libs}"
-    '';
+  cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+in
+  craneLib.buildPackage (commonArgs
+    // {
+      inherit cargoArtifacts;
 
-    meta = {
-      description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings";
-      homepage = "https://github.com/vincent-uden/miro";
-      license = lib.licenses.agpl3Only;
-      maintainers = with lib.maintainers; [
-        tukanoidd
-        Vortriz
-      ];
-      mainProgram = "miro-pdf";
-    };
-  }
+      postFixup = ''
+        patchelf $out/bin/miro-pdf --add-rpath ${libsPath}
+      '';
+
+      passthru = {
+        runtimeLibsPath = libsPath;
+      };
+
+      meta = {
+        description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings";
+        homepage = "https://github.com/vincent-uden/miro";
+        license = lib.licenses.agpl3Only;
+        maintainers = with lib.maintainers; [
+          tukanoidd
+          Vortriz
+        ];
+        mainProgram = "miro-pdf";
+      };
+    })

@@ -23,13 +23,26 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         craneLib = crane.mkLib pkgs;
+
+        miro-pdf = pkgs.callPackage ./nix/package.nix {inherit craneLib;};
       in {
         formatter = pkgs.alejandra;
 
-        packages.default = pkgs.callPackage ./nix/package.nix {inherit craneLib;};
+        packages = {
+          inherit miro-pdf;
+          default = miro-pdf;
+        };
 
-        devShell = craneLib.devShell {
+        checks = {inherit miro-pdf;};
+
+        devShells.default = craneLib.devShell {
+          inputsFrom = [miro-pdf];
+
           packages = with pkgs; [rust-analyzer];
+
+          shellHook = ''
+            export LD_LIBRARY_PATH=${miro-pdf.passthru.runtimeLibsPath}:$LD_LIBRARY_PATH
+          '';
         };
       }
     )
