@@ -1,5 +1,6 @@
 {
   lib,
+  stdenv,
   craneLib,
   rustPlatform,
   wayland,
@@ -13,12 +14,15 @@
 }: let
   unfilteredRoot = ../.;
 
-  libs = [
-    wayland
-    libGL
-    xorg.libX11
-    libxkbcommon
-  ];
+  libs =
+    [
+      libGL
+      libxkbcommon
+    ]
+    ++ lib.optionals stdenv.hostPlatform.isLinux [
+      wayland
+      xorg.libX11
+    ];
 
   commonArgs = {
     src = lib.fileset.toSource {
