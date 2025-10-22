@@ -2,7 +2,7 @@
 name = "miro-pdf"
 version = "0.6.3"
 edition = "2024"
-license = "LICENSE"
+license = "AGPL-3.0"
 description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings."
 homepage = "https://vincentuden.xyz"
 repository = "https://github.com/vincent-uden/miro"
