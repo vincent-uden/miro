@@ -23,10 +23,15 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         craneLib = crane.mkLib pkgs;
+
+        miro-pdf = pkgs.callPackage ./nix/package.nix {inherit craneLib;};
       in {
         formatter = pkgs.alejandra;
 
-        packages.default = pkgs.callPackage ./nix/package.nix {inherit craneLib;};
+        packages = {
+          inherit miro-pdf;
+          default = miro-pdf;
+        };
 
         devShell = craneLib.devShell {
           packages = with pkgs; [rust-analyzer];
