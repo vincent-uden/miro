@@ -202,7 +202,7 @@ impl App {
                     }
                 };
                 if let Some(sender) = self.file_watcher.as_ref() {
-                    // We should never fill this up from here, thus blocking is allright
+                    // We should never fill this up from here, thus blocking is alright
                     let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
                 }
                 out

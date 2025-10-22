@@ -552,7 +552,7 @@ impl PdfViewer {
         let bounds = state.bounds;
         let device = {
             let pix = state.pix.as_mut().unwrap();
-            // TODO: Might contain undefined behvaiour. Seems to work fine in release mode.
+            // TODO: Might contain undefined behaviour. Seems to work fine in release mode.
             // But in debug mode on my laptop (at least) this produces UB
             let samples = pix.samples_mut();
             samples.fill(255);
