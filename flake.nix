@@ -35,7 +35,7 @@
 
         checks = {inherit miro-pdf;};
 
-        devShell = craneLib.devShell {
+        devShells.default = craneLib.devShell {
           packages = with pkgs; [rust-analyzer];
         };
       }
