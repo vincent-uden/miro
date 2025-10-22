@@ -10,8 +10,6 @@
   pkg-config,
   clang,
   libclang,
-  unzip,
-  gperf,
   vulkan-loader,
   ...
 }: let
@@ -40,12 +38,9 @@ in
     strictDeps = true;
 
     nativeBuildInputs = [
-      fontconfig
       pkg-config
       clang
       libclang
-      unzip
-      gperf
       makeWrapper
     ];
 
