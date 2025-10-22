@@ -2,14 +2,13 @@
   lib,
   craneLib,
   makeWrapper,
+  rustPlatform,
   wayland,
   libGL,
   xorg,
   libxkbcommon,
   fontconfig,
   pkg-config,
-  clang,
-  libclang,
   vulkan-loader,
   ...
 }: let
@@ -39,12 +38,9 @@
 
     nativeBuildInputs = [
       pkg-config
-      clang
-      libclang
       makeWrapper
+      rustPlatform.bindgenHook
     ];
-
-    LIBCLANG_PATH = lib.makeLibraryPath [libclang.lib];
 
     buildInputs =
       [
@@ -52,6 +48,10 @@
         vulkan-loader
       ]
       ++ libs;
+
+    # prevent bindgen from rebuilding unnecessarily
+    # see https://crane.dev/faq/rebuilds-bindgen.html
+    NIX_OUTPATH_USED_AS_RANDOM_SEED = "_miro-pdf_";
   };
 
   cargoArtifacts = craneLib.buildDepsOnly commonArgs;
