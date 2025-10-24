@@ -10,7 +10,7 @@ use iced::{
     keyboard::Modifiers,
     theme::palette,
     widget::{
-        self, button, container, horizontal_space, pane_grid, responsive, row, scrollable,
+        self, button, container, horizontal_space, pane_grid, row, scrollable,
         scrollable::{Direction, Scrollbar},
         stack, text, vertical_space, PaneGrid,
     },
@@ -994,12 +994,14 @@ fn view_outline_items<'a>(items: &'a [OutlineItem], level: u32) -> widget::Colum
 
         let item_button = if let Some(page) = item.page {
             button(
-                container(text(&item.title).style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    text::Style {
-                        color: Some(palette.primary.base.color),
-                    }
-                }))
+                container(text(&item.title).shaping(text::Shaping::Advanced).style(
+                    |theme: &Theme| {
+                        let palette = theme.extended_palette();
+                        text::Style {
+                            color: Some(palette.primary.base.color),
+                        }
+                    },
+                ))
                 .padding(Padding::default().left(indent as f32)),
             )
             .style(|_: &Theme, _| widget::button::Style {
@@ -1010,12 +1012,14 @@ fn view_outline_items<'a>(items: &'a [OutlineItem], level: u32) -> widget::Colum
             .on_press(AppMessage::OutlineGoToPage(page))
         } else {
             button(
-                container(text(&item.title).style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    text::Style {
-                        color: Some(palette.background.weak.color),
-                    }
-                }))
+                container(text(&item.title).shaping(text::Shaping::Advanced).style(
+                    |theme: &Theme| {
+                        let palette = theme.extended_palette();
+                        text::Style {
+                            color: Some(palette.background.weak.color),
+                        }
+                    },
+                ))
                 .padding(Padding::default().left(indent as f32)),
             )
             .style(|_: &Theme, _| widget::button::Style {
@@ -1187,12 +1191,14 @@ fn file_tab<'a>(
         widget::row![
             base_button(
                 widget::row![
-                    text(file_name).font(Font {
-                        family: iced::font::Family::Name("Geist"),
-                        weight: Weight::Semibold,
-                        ..Default::default()
-                    }),
-                    text(page_progress)
+                    text(file_name)
+                        .font(Font {
+                            family: iced::font::Family::Name("Geist"),
+                            weight: Weight::Semibold,
+                            ..Default::default()
+                        })
+                        .shaping(text::Shaping::Advanced),
+                    text(page_progress).shaping(text::Shaping::Advanced)
                 ]
                 .spacing(8.0),
                 on_press
