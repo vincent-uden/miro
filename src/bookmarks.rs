@@ -127,7 +127,7 @@ impl BookmarkStore {
 
     fn view_bookmark_set<'a>(&self, set: &'a BookmarkSet) -> iced::Element<'a, BookmarkMessage> {
         let mut marks = widget::column![
-            text(set.path.file_name().unwrap().to_string_lossy()),
+            text(set.path.file_name().unwrap().to_string_lossy()).shaping(text::Shaping::Advanced),
             vertical_space().height(4.0)
         ];
         for mark in &set.marks {
@@ -135,11 +135,13 @@ impl BookmarkStore {
                 button(widget::row![
                     hover(
                         text(&mark.name)
+                            .shaping(text::Shaping::Advanced)
                             .style(|_: &Theme| widget::text::Style {
                                 color: Some(iced::Color::from_rgb(0.5, 0.5, 0.5)),
                             })
                             .width(Length::Fill),
                         text(&mark.name)
+                            .shaping(text::Shaping::Advanced)
                             .style(|theme: &Theme| {
                                 let palette = theme.extended_palette();
                                 widget::text::Style {
