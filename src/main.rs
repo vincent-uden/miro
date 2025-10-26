@@ -22,6 +22,7 @@ mod bookmarks;
 mod config;
 mod geometry;
 mod icons;
+mod jumplist;
 mod pdf;
 mod rpc;
 mod watch;
