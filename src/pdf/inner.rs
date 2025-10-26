@@ -376,6 +376,7 @@ where
         _viewport: &iced::Rectangle,
     ) -> iced::advanced::graphics::core::event::Status {
         let bounds = layout.bounds();
+        let mut event_handled = false;
         let out = match event {
             iced::Event::Window(event) => match event {
                 iced::window::Event::Opened {
@@ -389,6 +390,7 @@ where
                     // Handle Escape key to close links (hardcoded, not configurable)
                     iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => {
                         if modifiers.is_empty() && self.link_hitboxes.is_some() {
+                            event_handled = true;
                             Some(PdfMessage::CloseLinkHitboxes)
                         } else {
                             None
@@ -398,6 +400,7 @@ where
                         if let Some(keys) = &self.link_keys
                             && !keys.is_empty()
                         {
+                            event_handled = true;
                             self.pending_link_key.push_str(key_char);
                             if self.pending_link_key.len() >= keys[0].len() {
                                 match keys.iter().position(|k| **k == self.pending_link_key) {
@@ -421,7 +424,11 @@ where
         } else if self.state.bounds.size() == Vector::zero() || self.state.bounds != bounds.into() {
             shell.publish(PdfMessage::UpdateBounds(bounds.into()));
         }
-        iced::event::Status::Ignored
+        if event_handled {
+            iced::event::Status::Captured
+        } else {
+            iced::event::Status::Ignored
+        }
     }
 
     fn mouse_interaction(
