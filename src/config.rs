@@ -433,6 +433,14 @@ impl Default for Config {
                     BindableMessage::PreviousTab,
                 ),
                 Keybind::new(KeyInput::from_str("L").unwrap(), BindableMessage::NextTab),
+                Keybind::new(
+                    KeyInput::from_str("Alt+Left").unwrap(),
+                    BindableMessage::JumpBack,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Alt+Right").unwrap(),
+                    BindableMessage::JumpForward,
+                ),
                 Keybind::new(KeyInput::from_str("0").unwrap(), BindableMessage::ZoomHome),
                 Keybind::new(KeyInput::from_str("_").unwrap(), BindableMessage::ZoomFit),
                 Keybind::new(KeyInput::from_str("-").unwrap(), BindableMessage::ZoomOut),
@@ -460,14 +468,6 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Ctrl+p").unwrap(),
                     BindableMessage::PrintPdf,
-                ),
-                Keybind::new(
-                    KeyInput::from_str("Alt+Left").unwrap(),
-                    BindableMessage::JumpBack,
-                ),
-                Keybind::new(
-                    KeyInput::from_str("Alt+Right").unwrap(),
-                    BindableMessage::JumpForward,
                 ),
                 Keybind::new(KeySeq::from_str("Z Z").unwrap(), BindableMessage::CloseTab),
                 Keybind::new(KeySeq::from_str("q").unwrap(), BindableMessage::Exit),
