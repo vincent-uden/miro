@@ -175,6 +175,8 @@ pub enum BindableMessage {
     CloseTab,
     PrintPdf,
     Exit,
+    JumpBack,
+    JumpForward,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -208,6 +210,8 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::CloseTab => AppMessage::CloseActiveTab,
             BindableMessage::PrintPdf => AppMessage::PdfMessage(PdfMessage::PrintPdf),
             BindableMessage::Exit => AppMessage::Exit,
+            BindableMessage::JumpBack => AppMessage::JumpBack,
+            BindableMessage::JumpForward => AppMessage::JumpForward,
         }
     }
 }
@@ -456,6 +460,14 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Ctrl+p").unwrap(),
                     BindableMessage::PrintPdf,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Alt+Left").unwrap(),
+                    BindableMessage::JumpBack,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Alt+Right").unwrap(),
+                    BindableMessage::JumpForward,
                 ),
                 Keybind::new(KeySeq::from_str("Z Z").unwrap(), BindableMessage::CloseTab),
                 Keybind::new(KeySeq::from_str("q").unwrap(), BindableMessage::Exit),
