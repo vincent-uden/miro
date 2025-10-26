@@ -16,6 +16,7 @@ pub enum PdfMessage {
     NextPage,
     PreviousPage,
     SetPage(i32),
+    SetTranslation(Vector<f32>),
     ZoomIn,
     ZoomOut,
     ZoomHome,

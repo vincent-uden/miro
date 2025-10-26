@@ -34,7 +34,7 @@ pub struct PdfViewer {
     pub label: String,
     pub page_progress: String,
     pub cur_page_idx: i32,
-    translation: Vector<f32>, // In document space
+    pub translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     inner_state: RefCell<inner::State>,
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
@@ -136,6 +136,10 @@ impl PdfViewer {
             }
             PdfMessage::SetPage(page) => {
                 self.set_page(page).unwrap();
+                iced::Task::none()
+            }
+            PdfMessage::SetTranslation(translation) => {
+                self.translation = translation;
                 iced::Task::none()
             }
             PdfMessage::ZoomIn => {
@@ -423,6 +427,19 @@ impl PdfViewer {
             self.doc.page_count().unwrap_or(0),
         );
         task
+    }
+
+    pub fn is_jumpable_action(&self, message: &PdfMessage) -> bool {
+        match message {
+            PdfMessage::ActivateLink(index) => {
+                if let Some(link) = self.link_hitboxes.get(*index) {
+                    matches!(link.link_type, LinkType::InternalPage(_))
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {

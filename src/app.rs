@@ -36,9 +36,10 @@ use crate::{
     config::{BindableMessage, MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
-    pdf::{PdfMessage, widget::PdfViewer, outline_extraction::OutlineItem},
+    jumplist::{JumpLocation, Jumplist},
+    pdf::{outline_extraction::OutlineItem, widget::PdfViewer, PdfMessage},
     rpc::rpc_server,
-    watch::{WatchMessage, WatchNotification, file_watcher},
+    watch::{file_watcher, WatchMessage, WatchNotification},
     CONFIG,
 };
 
@@ -74,6 +75,7 @@ pub struct App {
     shift_pressed: bool,
     ctrl_pressed: bool,
     scale_factor: f64,
+    jumplist: Jumplist,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -129,6 +131,9 @@ pub enum AppMessage {
     #[serde(skip)]
     FoundWindowId(Option<iced::window::Id>),
     FoundScaleFactor(f32),
+    JumpTo(JumpLocation),
+    JumpBack,
+    JumpForward,
 }
 
 impl App {
@@ -160,6 +165,7 @@ impl App {
             shift_pressed: false,
             ctrl_pressed: false,
             scale_factor: 1.0,
+            jumplist: Jumplist::new(),
         }
     }
 
@@ -221,9 +227,18 @@ impl App {
             }
             AppMessage::PdfMessage(msg) => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx]
-                        .update(msg)
-                        .map(AppMessage::PdfMessage)
+                    if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
+                        self.record_location();
+                        let pdf_msg = self.pdfs[self.pdf_idx]
+                            .update(msg)
+                            .map(AppMessage::PdfMessage);
+                        self.record_location();
+                        pdf_msg
+                    } else {
+                        self.pdfs[self.pdf_idx]
+                            .update(msg)
+                            .map(AppMessage::PdfMessage)
+                    }
                 } else {
                     iced::Task::none()
                 }
@@ -416,26 +431,21 @@ impl App {
                 }
             }
             AppMessage::BookmarkMessage(BookmarkMessage::GoTo { path, page }) => {
-                match self
-                    .pdfs
-                    .iter_mut()
-                    .enumerate()
-                    .find(|(_, pdf)| pdf.path == path)
-                {
-                    Some((i, pdf)) => iced::Task::done(AppMessage::OpenTab(i)).chain(
-                        pdf.update(PdfMessage::SetPage(page))
-                            .map(AppMessage::PdfMessage),
-                    ),
-                    None => {
-                        self.waiting_for_worker.push(AppMessage::BookmarkMessage(
-                            BookmarkMessage::GoTo {
-                                path: path.clone(),
-                                page,
-                            },
-                        ));
-                        iced::Task::done(AppMessage::OpenFile(path))
-                    }
+                if let Some(pdf_index) = self.pdfs.iter().position(|pdf| pdf.path == path) {
+                    self.record_location();
+                    self.pdf_idx = pdf_index;
+                    let pdf_msg = self.pdfs[pdf_index]
+                        .update(PdfMessage::SetPage(page))
+                        .map(AppMessage::PdfMessage);
+                    self.record_location();
+                    return pdf_msg;
                 }
+                self.waiting_for_worker
+                    .push(AppMessage::BookmarkMessage(BookmarkMessage::GoTo {
+                        path: path.clone(),
+                        page,
+                    }));
+                iced::Task::done(AppMessage::OpenFile(path))
             }
             AppMessage::BookmarkMessage(bookmark_message) => self
                 .bookmark_store
@@ -471,9 +481,12 @@ impl App {
             }
             AppMessage::OutlineGoToPage(page) => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx]
+                    self.record_location();
+                    let pdf_msg = self.pdfs[self.pdf_idx]
                         .update(PdfMessage::SetPage(page as i32))
-                        .map(AppMessage::PdfMessage)
+                        .map(AppMessage::PdfMessage);
+                    self.record_location();
+                    pdf_msg
                 } else {
                     iced::Task::none()
                 }
@@ -512,7 +525,52 @@ impl App {
                 }
                 iced::Task::none()
             }
+            AppMessage::JumpTo(location) => {
+                match self
+                    .pdfs
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, pdf)| pdf.path == location.pdf_path)
+                {
+                    Some((i, pdf)) => {
+                        self.pdf_idx = i;
+                        pdf.update(PdfMessage::SetPage(location.page))
+                            .map(AppMessage::PdfMessage)
+                            .chain(
+                                pdf.update(PdfMessage::SetTranslation(location.translation))
+                                    .map(AppMessage::PdfMessage),
+                            )
+                    }
+                    None => {
+                        self.waiting_for_worker
+                            .push(AppMessage::JumpTo(location.clone()));
+                        iced::Task::done(AppMessage::OpenFile(location.pdf_path))
+                    }
+                }
+            }
+            AppMessage::JumpBack => {
+                if let Some(location) = self.jumplist.jump_back() {
+                    return iced::Task::done(AppMessage::JumpTo(location.clone()));
+                }
+                iced::Task::none()
+            }
+            AppMessage::JumpForward => {
+                if let Some(location) = self.jumplist.jump_forward() {
+                    return iced::Task::done(AppMessage::JumpTo(location.clone()));
+                }
+                iced::Task::none()
+            }
         }
+    }
+
+    fn record_location(&mut self) {
+        if let Some(pdf) = self.pdfs.get(self.pdf_idx) {
+            self.jumplist.push(JumpLocation {
+                pdf_path: pdf.path.clone(),
+                page: pdf.cur_page_idx,
+                translation: pdf.translation,
+            })
+        };
     }
 
     fn create_menu_bar(&self) -> Element<'_, AppMessage> {
