@@ -71,7 +71,6 @@ pub struct App {
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
     sidebar_tab: SidebarTab,
-    waiting_for_worker: Vec<AppMessage>,
     shift_pressed: bool,
     ctrl_pressed: bool,
     scale_factor: f64,
@@ -161,7 +160,6 @@ impl App {
             bookmark_store,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,
-            waiting_for_worker: vec![],
             shift_pressed: false,
             ctrl_pressed: false,
             scale_factor: 1.0,
@@ -440,12 +438,12 @@ impl App {
                     self.record_location();
                     return pdf_msg;
                 }
-                self.waiting_for_worker
-                    .push(AppMessage::BookmarkMessage(BookmarkMessage::GoTo {
+                iced::Task::done(AppMessage::OpenFile(path.clone())).chain(iced::Task::done(
+                    AppMessage::BookmarkMessage(BookmarkMessage::GoTo {
                         path: path.clone(),
                         page,
-                    }));
-                iced::Task::done(AppMessage::OpenFile(path))
+                    }),
+                ))
             }
             AppMessage::BookmarkMessage(bookmark_message) => self
                 .bookmark_store
@@ -541,11 +539,8 @@ impl App {
                                     .map(AppMessage::PdfMessage),
                             )
                     }
-                    None => {
-                        self.waiting_for_worker
-                            .push(AppMessage::JumpTo(location.clone()));
-                        iced::Task::done(AppMessage::OpenFile(location.pdf_path))
-                    }
+                    None => iced::Task::done(AppMessage::OpenFile(location.pdf_path.clone()))
+                        .chain(iced::Task::done(AppMessage::JumpTo(location))),
                 }
             }
             AppMessage::JumpBack => {
