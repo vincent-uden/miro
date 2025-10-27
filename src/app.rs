@@ -29,16 +29,17 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use strum::EnumString;
 use tokio::sync::mpsc;
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{
     bookmarks::{BookmarkMessage, BookmarkStore},
     config::{BindableMessage, MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
-    pdf::{PdfMessage, widget::PdfViewer, outline_extraction::OutlineItem},
+    jumplist::{JumpLocation, Jumplist},
+    pdf::{outline_extraction::OutlineItem, widget::PdfViewer, PdfMessage},
     rpc::rpc_server,
-    watch::{WatchMessage, WatchNotification, file_watcher},
+    watch::{file_watcher, WatchMessage, WatchNotification},
     CONFIG,
 };
 
@@ -70,10 +71,10 @@ pub struct App {
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
     sidebar_tab: SidebarTab,
-    waiting_for_worker: Vec<AppMessage>,
     shift_pressed: bool,
     ctrl_pressed: bool,
     scale_factor: f64,
+    jumplist: Jumplist,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -129,6 +130,9 @@ pub enum AppMessage {
     #[serde(skip)]
     FoundWindowId(Option<iced::window::Id>),
     FoundScaleFactor(f32),
+    JumpTo(JumpLocation),
+    JumpBack,
+    JumpForward,
 }
 
 impl App {
@@ -156,10 +160,10 @@ impl App {
             bookmark_store,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,
-            waiting_for_worker: vec![],
             shift_pressed: false,
             ctrl_pressed: false,
             scale_factor: 1.0,
+            jumplist: Jumplist::new(),
         }
     }
 
@@ -221,9 +225,18 @@ impl App {
             }
             AppMessage::PdfMessage(msg) => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx]
-                        .update(msg)
-                        .map(AppMessage::PdfMessage)
+                    if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
+                        self.record_location();
+                        let pdf_msg = self.pdfs[self.pdf_idx]
+                            .update(msg)
+                            .map(AppMessage::PdfMessage);
+                        self.record_location();
+                        pdf_msg
+                    } else {
+                        self.pdfs[self.pdf_idx]
+                            .update(msg)
+                            .map(AppMessage::PdfMessage)
+                    }
                 } else {
                     iced::Task::none()
                 }
@@ -416,26 +429,21 @@ impl App {
                 }
             }
             AppMessage::BookmarkMessage(BookmarkMessage::GoTo { path, page }) => {
-                match self
-                    .pdfs
-                    .iter_mut()
-                    .enumerate()
-                    .find(|(_, pdf)| pdf.path == path)
-                {
-                    Some((i, pdf)) => iced::Task::done(AppMessage::OpenTab(i)).chain(
-                        pdf.update(PdfMessage::SetPage(page))
-                            .map(AppMessage::PdfMessage),
-                    ),
-                    None => {
-                        self.waiting_for_worker.push(AppMessage::BookmarkMessage(
-                            BookmarkMessage::GoTo {
-                                path: path.clone(),
-                                page,
-                            },
-                        ));
-                        iced::Task::done(AppMessage::OpenFile(path))
-                    }
+                if let Some(pdf_index) = self.pdfs.iter().position(|pdf| pdf.path == path) {
+                    self.record_location();
+                    self.pdf_idx = pdf_index;
+                    let pdf_msg = self.pdfs[pdf_index]
+                        .update(PdfMessage::SetPage(page))
+                        .map(AppMessage::PdfMessage);
+                    self.record_location();
+                    return pdf_msg;
                 }
+                iced::Task::done(AppMessage::OpenFile(path.clone())).chain(iced::Task::done(
+                    AppMessage::BookmarkMessage(BookmarkMessage::GoTo {
+                        path: path.clone(),
+                        page,
+                    }),
+                ))
             }
             AppMessage::BookmarkMessage(bookmark_message) => self
                 .bookmark_store
@@ -450,18 +458,16 @@ impl App {
                     if let Some(sidebar_id) = self.get_sidebar_pane_id() {
                         self.pane_state.close(sidebar_id);
                     }
-                } else {
-                    if let Some(pdf_id) = self.get_pdf_pane_id() {
-                        if let Some((_, split)) = self.pane_state.split(
-                            pane_grid::Axis::Vertical,
-                            pdf_id,
-                            Pane {
-                                pane_type: PaneType::Sidebar,
-                            },
-                        ) {
-                            self.pane_state.resize(split, 0.7);
-                        }
-                    }
+                } else if let Some(pdf_id) = self.get_pdf_pane_id()
+                    && let Some((_, split)) = self.pane_state.split(
+                        pane_grid::Axis::Vertical,
+                        pdf_id,
+                        Pane {
+                            pane_type: PaneType::Sidebar,
+                        },
+                    )
+                {
+                    self.pane_state.resize(split, 0.7);
                 }
                 iced::Task::none()
             }
@@ -471,9 +477,12 @@ impl App {
             }
             AppMessage::OutlineGoToPage(page) => {
                 if !self.pdfs.is_empty() {
-                    self.pdfs[self.pdf_idx]
+                    self.record_location();
+                    let pdf_msg = self.pdfs[self.pdf_idx]
                         .update(PdfMessage::SetPage(page as i32))
-                        .map(AppMessage::PdfMessage)
+                        .map(AppMessage::PdfMessage);
+                    self.record_location();
+                    pdf_msg
                 } else {
                     iced::Task::none()
                 }
@@ -512,7 +521,49 @@ impl App {
                 }
                 iced::Task::none()
             }
+            AppMessage::JumpTo(location) => {
+                match self
+                    .pdfs
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, pdf)| pdf.path == location.pdf_path)
+                {
+                    Some((i, pdf)) => {
+                        self.pdf_idx = i;
+                        pdf.update(PdfMessage::SetPage(location.page))
+                            .map(AppMessage::PdfMessage)
+                            .chain(
+                                pdf.update(PdfMessage::SetTranslation(location.translation))
+                                    .map(AppMessage::PdfMessage),
+                            )
+                    }
+                    None => iced::Task::done(AppMessage::OpenFile(location.pdf_path.clone()))
+                        .chain(iced::Task::done(AppMessage::JumpTo(location))),
+                }
+            }
+            AppMessage::JumpBack => {
+                if let Some(location) = self.jumplist.jump_back() {
+                    return iced::Task::done(AppMessage::JumpTo(location.clone()));
+                }
+                iced::Task::none()
+            }
+            AppMessage::JumpForward => {
+                if let Some(location) = self.jumplist.jump_forward() {
+                    return iced::Task::done(AppMessage::JumpTo(location.clone()));
+                }
+                iced::Task::none()
+            }
         }
+    }
+
+    fn record_location(&mut self) {
+        if let Some(pdf) = self.pdfs.get(self.pdf_idx) {
+            self.jumplist.push(JumpLocation {
+                pdf_path: pdf.path.clone(),
+                page: pdf.cur_page_idx,
+                translation: pdf.translation,
+            })
+        };
     }
 
     fn create_menu_bar(&self) -> Element<'_, AppMessage> {
@@ -594,7 +645,7 @@ impl App {
                     bar_background: theme.extended_palette().background.weak.color.into(),
                     menu_border: Border {
                         radius: Radius::new(0.0).bottom(8.0),
-                        color: theme.extended_palette().background.strong.color.into(),
+                        color: theme.extended_palette().background.strong.color,
                         width: 2.0,
                     },
                     bar_shadow: Shadow::default(),
@@ -617,7 +668,7 @@ impl App {
                 theme.extended_palette().background.weak.color,
             )),
             border: Border {
-                color: theme.extended_palette().background.strong.color.into(),
+                color: theme.extended_palette().background.strong.color,
                 width: 2.0,
                 radius: 0.0.into(),
             },
@@ -959,7 +1010,7 @@ impl App {
         });
 
         let resizes = listen_with(|event, _, _| match event {
-            Event::Window(window::Event::Resized(new_size)) => {
+            Event::Window(window::Event::Resized(_)) => {
                 Some(AppMessage::PdfMessage(PdfMessage::ReallocPixmap))
             }
             _ => None,
@@ -1171,9 +1222,8 @@ fn menu_button_last(
             background: Some(Background::Color(pair.color)),
             border: Border {
                 radius: Radius::default().bottom(8.0),
-                color: theme.extended_palette().background.strong.color.into(),
+                color: theme.extended_palette().background.strong.color,
                 width: 0.0,
-                ..Default::default()
             },
             ..Default::default()
         }

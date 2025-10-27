@@ -135,8 +135,8 @@ impl FromStr for MouseInput {
         }
 
         // Strip "Mouse" prefix if present
-        let button_name = if button_str.starts_with("Mouse") {
-            &button_str[5..]
+        let button_name = if let Some(stripped) = button_str.strip_prefix("Mouse") {
+            stripped
         } else {
             button_str
         };
@@ -175,6 +175,8 @@ pub enum BindableMessage {
     CloseTab,
     PrintPdf,
     Exit,
+    JumpBack,
+    JumpForward,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -208,6 +210,8 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::CloseTab => AppMessage::CloseActiveTab,
             BindableMessage::PrintPdf => AppMessage::PdfMessage(PdfMessage::PrintPdf),
             BindableMessage::Exit => AppMessage::Exit,
+            BindableMessage::JumpBack => AppMessage::JumpBack,
+            BindableMessage::JumpForward => AppMessage::JumpForward,
         }
     }
 }
@@ -429,6 +433,14 @@ impl Default for Config {
                     BindableMessage::PreviousTab,
                 ),
                 Keybind::new(KeyInput::from_str("L").unwrap(), BindableMessage::NextTab),
+                Keybind::new(
+                    KeyInput::from_str("Alt+Left").unwrap(),
+                    BindableMessage::JumpBack,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Alt+Right").unwrap(),
+                    BindableMessage::JumpForward,
+                ),
                 Keybind::new(KeyInput::from_str("0").unwrap(), BindableMessage::ZoomHome),
                 Keybind::new(KeyInput::from_str("_").unwrap(), BindableMessage::ZoomFit),
                 Keybind::new(KeyInput::from_str("-").unwrap(), BindableMessage::ZoomOut),

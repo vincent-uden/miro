@@ -6,7 +6,6 @@ use iced::{
     widget::image::FilterMethod,
 };
 use mupdf::{DisplayList, Pixmap};
-use tracing::debug;
 
 use crate::{
     geometry::{Rect, Vector},
@@ -205,7 +204,7 @@ where
         &self,
         _tree: &iced::advanced::widget::Tree,
         renderer: &mut Renderer,
-        theme: &iced::Theme,
+        _theme: &iced::Theme,
         _style: &iced::advanced::renderer::Style,
         layout: iced::advanced::Layout<'_>,
         _cursor: iced::advanced::mouse::Cursor,
@@ -378,13 +377,17 @@ where
         let bounds = layout.bounds();
         let mut event_handled = false;
         let out = match event {
-            iced::Event::Window(event) => match event {
-                iced::window::Event::Opened {
+            iced::Event::Window(event) => {
+                if let iced::window::Event::Opened {
                     position: _,
                     size: _,
-                } => Some(PdfMessage::UpdateBounds(bounds.into())),
-                _ => None,
-            },
+                } = event
+                {
+                    Some(PdfMessage::UpdateBounds(bounds.into()))
+                } else {
+                    None
+                }
+            }
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 match key {
                     // Handle Escape key to close links (hardcoded, not configurable)
@@ -403,10 +406,9 @@ where
                             event_handled = true;
                             self.pending_link_key.push_str(key_char);
                             if self.pending_link_key.len() >= keys[0].len() {
-                                match keys.iter().position(|k| **k == self.pending_link_key) {
-                                    Some(k) => Some(PdfMessage::ActivateLink(k)),
-                                    None => None,
-                                }
+                                keys.iter()
+                                    .position(|k| **k == self.pending_link_key)
+                                    .map(PdfMessage::ActivateLink)
                             } else {
                                 None
                             }
