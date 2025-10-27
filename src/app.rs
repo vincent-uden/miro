@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use strum::EnumString;
 use tokio::sync::mpsc;
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{
     bookmarks::{BookmarkMessage, BookmarkStore},
@@ -458,18 +458,16 @@ impl App {
                     if let Some(sidebar_id) = self.get_sidebar_pane_id() {
                         self.pane_state.close(sidebar_id);
                     }
-                } else {
-                    if let Some(pdf_id) = self.get_pdf_pane_id() {
-                        if let Some((_, split)) = self.pane_state.split(
-                            pane_grid::Axis::Vertical,
-                            pdf_id,
-                            Pane {
-                                pane_type: PaneType::Sidebar,
-                            },
-                        ) {
-                            self.pane_state.resize(split, 0.7);
-                        }
-                    }
+                } else if let Some(pdf_id) = self.get_pdf_pane_id()
+                    && let Some((_, split)) = self.pane_state.split(
+                        pane_grid::Axis::Vertical,
+                        pdf_id,
+                        Pane {
+                            pane_type: PaneType::Sidebar,
+                        },
+                    )
+                {
+                    self.pane_state.resize(split, 0.7);
                 }
                 iced::Task::none()
             }
@@ -647,7 +645,7 @@ impl App {
                     bar_background: theme.extended_palette().background.weak.color.into(),
                     menu_border: Border {
                         radius: Radius::new(0.0).bottom(8.0),
-                        color: theme.extended_palette().background.strong.color.into(),
+                        color: theme.extended_palette().background.strong.color,
                         width: 2.0,
                     },
                     bar_shadow: Shadow::default(),
@@ -670,7 +668,7 @@ impl App {
                 theme.extended_palette().background.weak.color,
             )),
             border: Border {
-                color: theme.extended_palette().background.strong.color.into(),
+                color: theme.extended_palette().background.strong.color,
                 width: 2.0,
                 radius: 0.0.into(),
             },
@@ -1012,7 +1010,7 @@ impl App {
         });
 
         let resizes = listen_with(|event, _, _| match event {
-            Event::Window(window::Event::Resized(new_size)) => {
+            Event::Window(window::Event::Resized(_)) => {
                 Some(AppMessage::PdfMessage(PdfMessage::ReallocPixmap))
             }
             _ => None,
@@ -1224,9 +1222,8 @@ fn menu_button_last(
             background: Some(Background::Color(pair.color)),
             border: Border {
                 radius: Radius::default().bottom(8.0),
-                color: theme.extended_palette().background.strong.color.into(),
+                color: theme.extended_palette().background.strong.color,
                 width: 0.0,
-                ..Default::default()
             },
             ..Default::default()
         }

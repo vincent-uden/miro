@@ -11,7 +11,7 @@ use bookmarks::BookmarkStore;
 use clap::Parser;
 use config::Config;
 use iced::{
-    window::{get_latest, get_scale_factor, icon::from_file_data},
+    window::{get_latest, icon::from_file_data},
     Color, Font, Theme,
 };
 use tracing::info;
@@ -28,7 +28,6 @@ mod rpc;
 mod watch;
 
 const DARK_THEME: Theme = Theme::TokyoNight;
-const LIGHT_THEME: Theme = Theme::Light;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 
@@ -83,8 +82,7 @@ fn main() -> iced::Result {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
-            let file_task =
-                file_task.chain(get_latest().map(|id| app::AppMessage::FoundWindowId(id)));
+            let file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
 
             (state, file_task)
         })

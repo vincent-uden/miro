@@ -2,7 +2,7 @@ use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
 use std::{cell::RefCell, path::PathBuf};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use open;
 
 use crate::{

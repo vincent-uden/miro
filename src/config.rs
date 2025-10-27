@@ -135,8 +135,8 @@ impl FromStr for MouseInput {
         }
 
         // Strip "Mouse" prefix if present
-        let button_name = if button_str.starts_with("Mouse") {
-            &button_str[5..]
+        let button_name = if let Some(stripped) = button_str.strip_prefix("Mouse") {
+            stripped
         } else {
             button_str
         };
