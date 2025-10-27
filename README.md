@@ -16,6 +16,7 @@ A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable
 - Internal links (such as a table of contents)
 - External links (email, webisites, etc. copies on click)
 - Bookmarks
+- Jumplist
 - Optional RPC server to control the viewer from another program
 - Print via the default web browser
 - Open links using keyboard controls
