@@ -456,16 +456,16 @@ impl Default for Config {
                     BindableMessage::ToggleDarkModeUi,
                 ),
                 Keybind::new(
-                    KeyInput::from_str("Ctrl+k").unwrap(),
-                    BindableMessage::TogglePageBorders,
-                ),
-                Keybind::new(
                     KeyInput::from_str("Ctrl+b").unwrap(),
                     BindableMessage::ToggleSidebar,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Ctrl+l").unwrap(),
                     BindableMessage::ToggleLinkHitboxes,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+k").unwrap(),
+                    BindableMessage::TogglePageBorders,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Ctrl+o").unwrap(),
