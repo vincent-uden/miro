@@ -577,7 +577,7 @@ impl App {
     }
 
     fn create_menu_bar(&self) -> Element<'_, AppMessage> {
-        let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
+        let menu_tpl_1 = |items| Menu::new(items).max_width(205.0).offset(0.0).spacing(0.0);
         let cfg = CONFIG.read().unwrap();
 
         let exit_close_label = if self.pdfs.is_empty() {
@@ -620,6 +620,14 @@ impl App {
                     },
                     AppMessage::ToggleDarkModePdf,
                     cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
+                ))(menu_button(
+                    if self.draw_page_borders {
+                        "No Page Borders"
+                    } else {
+                        "Page Borders"
+                    },
+                    AppMessage::TogglePageBorders,
+                    cfg.get_binding_for_msg(BindableMessage::TogglePageBorders)
                 ))(menu_button(
                     "Zoom In",
                     AppMessage::PdfMessage(PdfMessage::ZoomIn),
