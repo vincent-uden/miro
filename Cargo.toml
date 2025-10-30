@@ -24,7 +24,7 @@ iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
 iced_fonts = "0.2.0"
 keybinds = { version = "0.1.1", features = ["iced", "serde"] }
 logos = "0.15.0"
-mupdf = { version = "0.5.0", git = "https://github.com/messense/mupdf-rs", rev = "2425c1405b326165b06834dcc1ca859015f92787" }
+mupdf = { version = "0.6.0", git = "https://github.com/messense/mupdf-rs", rev = "a6b83b4dc558130a873005d00a7264ada5ec0ebf" }
 num = "0.4.3"
 once_cell = "1.21.3"
 open = "5.3.1"

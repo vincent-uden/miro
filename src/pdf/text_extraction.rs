@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mupdf::{Page, Rect as MupdfRect, TextPage, TextPageOptions};
+use mupdf::{Page, Rect as MupdfRect, TextPage, TextPageFlags};
 
 use crate::geometry::{Rect, Vector};
 
@@ -20,7 +20,7 @@ impl<'a> TextExtractor<'a> {
     }
 
     pub fn extract_text_in_rect(&self, selection_rect: MupdfRect) -> Result<TextSelection> {
-        let text_page = self.page.to_text_page(TextPageOptions::empty())?;
+        let text_page = self.page.to_text_page(TextPageFlags::empty())?;
 
         let mut selected_text = String::new();
         let mut bounds = Vec::new();
@@ -72,13 +72,13 @@ impl<'a> TextExtractor<'a> {
 
     #[allow(dead_code)]
     pub fn extract_all_text(&self) -> Result<String> {
-        let text = self.page.to_text()?;
+        let text = self.page.to_text_page(TextPageFlags::empty())?.to_text()?;
         Ok(text)
     }
 
     #[allow(dead_code)]
     pub fn get_text_page(&self) -> Result<TextPage> {
-        let text_page = self.page.to_text_page(TextPageOptions::empty())?;
+        let text_page = self.page.to_text_page(TextPageFlags::empty())?;
         Ok(text_page)
     }
 }
