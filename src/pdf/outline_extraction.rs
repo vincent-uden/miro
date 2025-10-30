@@ -42,7 +42,7 @@ fn convert_outline_recursive(outline: &Outline, level: u32) -> Result<Vec<Outlin
     let mut items = Vec::new();
     let mut current_item = OutlineItem {
         title: outline.title.clone(),
-        page: outline.page,
+        page: outline.dest.map(|d| d.loc.page_number),
         level,
         children: Vec::new(),
     };

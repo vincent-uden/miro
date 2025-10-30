@@ -57,7 +57,7 @@ fn categorize_link(link: &Link) -> LinkType {
     } else if link.uri.starts_with("mailto:") {
         LinkType::Email
     } else if link.uri.starts_with("#page=") || link.uri.starts_with("#nameddest=") {
-        LinkType::InternalPage(link.page)
+        LinkType::InternalPage(link.dest.map(|d| d.loc.page_number).unwrap_or(0))
     } else if link.uri.chars().all(|c| c.is_ascii_digit()) {
         if let Ok(page_num) = link.uri.parse::<u32>() {
             LinkType::InternalPage(page_num)
@@ -72,7 +72,7 @@ fn categorize_link(link: &Link) -> LinkType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mupdf::{Document, Link, Rect as MupdfRect};
+    use mupdf::{document::Location, Document, Link, Rect as MupdfRect};
 
     fn create_mock_link(uri: &str, page: u32) -> Link {
         Link {
@@ -83,7 +83,14 @@ mod tests {
                 y1: 20.0,
             },
             uri: uri.to_string(),
-            page,
+            dest: Some(mupdf::link::LinkDestination {
+                loc: Location {
+                    chapter: 1,
+                    page_in_chapter: 0,
+                    page_number: page,
+                },
+                kind: mupdf::DestinationKind::Fit,
+            }),
         }
     }
 
