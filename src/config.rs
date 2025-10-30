@@ -169,6 +169,7 @@ pub enum BindableMessage {
     PreviousTab,
     ToggleDarkModePdf,
     ToggleDarkModeUi,
+    TogglePageBorders,
     ToggleSidebar,
     ToggleLinkHitboxes,
     OpenFileFinder,
@@ -202,6 +203,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::PreviousTab => AppMessage::PreviousTab,
             BindableMessage::ToggleDarkModePdf => AppMessage::ToggleDarkModePdf,
             BindableMessage::ToggleDarkModeUi => AppMessage::ToggleDarkModeUi,
+            BindableMessage::TogglePageBorders => AppMessage::TogglePageBorders,
             BindableMessage::ToggleSidebar => AppMessage::ToggleSidebar,
             BindableMessage::ToggleLinkHitboxes => {
                 AppMessage::PdfMessage(PdfMessage::ToggleLinkHitboxes)
@@ -452,6 +454,10 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Ctrl+i").unwrap(),
                     BindableMessage::ToggleDarkModeUi,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+k").unwrap(),
+                    BindableMessage::TogglePageBorders,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Ctrl+b").unwrap(),

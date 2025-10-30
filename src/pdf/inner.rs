@@ -96,6 +96,7 @@ pub struct PageViewer<'a> {
     translation: Vector<f32>,
     scale: f32,
     invert_colors: bool,
+    draw_page_borders: bool,
     text_selection_rect: Option<Rect<f32>>,
     link_hitboxes: Option<&'a Vec<LinkInfo>>,
     link_keys: Option<Vec<String>>,
@@ -114,6 +115,7 @@ impl<'a> PageViewer<'a> {
             translation: Vector::zero(),
             scale: 1.0,
             invert_colors: false,
+            draw_page_borders: false,
             text_selection_rect: None,
             link_hitboxes: None,
             link_keys: None,
@@ -160,6 +162,11 @@ impl<'a> PageViewer<'a> {
 
     pub fn invert_colors(mut self, invert: bool) -> Self {
         self.invert_colors = invert;
+        self
+    }
+
+    pub fn draw_page_borders(mut self, draw: bool) -> Self {
+        self.draw_page_borders = draw;
         self
     }
 
@@ -222,7 +229,6 @@ where
         // It is probably possible to modify the mupdf-rs library to store the pixels in a Bytes
         // struct. This would allow for zero-copy sharing of the bytes in the image handle, rather
         // than the expensive clone we are doing now.
-
         let scaled_page_size = self.state.page_size.scaled(self.scale);
         let pdf_center = Vector::new(
             (viewport_bounds.width - scaled_page_size.x) / 2.0,
@@ -231,16 +237,23 @@ where
         let top_left =
             pdf_center - self.translation.scaled(self.scale) + viewport_bounds.position().into();
         let page_bounds = iced::Rectangle::new(top_left.into(), scaled_page_size.into());
+        let pdf_layer_bounds = if self.draw_page_borders {
+            page_bounds
+        } else {
+            viewport_bounds
+        };
 
         let draw_background = |renderer: &mut Renderer| {
-            renderer.fill_quad(
-                Quad {
-                    bounds: viewport_bounds.into(),
-                    border: Border::default(),
-                    shadow: Shadow::default(),
-                },
-                get_background_color(self.invert_colors),
-            );
+            if self.draw_page_borders {
+                renderer.fill_quad(
+                    Quad {
+                        bounds: viewport_bounds.into(),
+                        border: Border::default(),
+                        shadow: Shadow::default(),
+                    },
+                    get_background_color(self.invert_colors),
+                );
+            }
         };
 
         let draw_pdf = |renderer: &mut Renderer| {
@@ -377,7 +390,7 @@ where
         };
 
         renderer.with_layer(viewport_bounds, draw_background);
-        renderer.with_layer(page_bounds, draw_pdf);
+        renderer.with_layer(pdf_layer_bounds, draw_pdf);
         renderer.with_layer(viewport_bounds, draw_selection);
         renderer.with_layer(viewport_bounds, draw_link_hitboxes);
         renderer.with_layer(viewport_bounds, draw_key_hints);

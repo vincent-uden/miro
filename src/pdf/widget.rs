@@ -36,6 +36,7 @@ pub struct PdfViewer {
     pub cur_page_idx: i32,
     pub translation: Vector<f32>, // In document space
     pub invert_colors: bool,
+    pub draw_page_borders: bool,
     inner_state: RefCell<inner::State>,
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
     /// corner of the screen, it must account for that offset.
@@ -103,6 +104,7 @@ impl PdfViewer {
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: false,
+            draw_page_borders: true,
             inner_state: RefCell::new(inner::State {
                 bounds: Rect::default(),
                 page_size: page.bounds()?.size().into(),
@@ -448,6 +450,7 @@ impl PdfViewer {
             .translation(self.translation)
             .scale(self.scale)
             .invert_colors(self.invert_colors)
+            .draw_page_borders(self.draw_page_borders)
             .text_selection(self.current_selection_rect())
             .link_hitboxes(if self.show_link_hitboxes {
                 Some(&self.link_hitboxes)
