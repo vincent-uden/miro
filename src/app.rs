@@ -68,6 +68,7 @@ pub struct App {
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
     pub dark_mode: bool,
     pub invert_pdf: bool,
+    pub draw_page_borders: bool,
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
     sidebar_tab: SidebarTab,
@@ -97,6 +98,7 @@ pub enum AppMessage {
     FileWatcher(WatchNotification),
     ToggleDarkModeUi,
     ToggleDarkModePdf,
+    TogglePageBorders,
     MouseMoved(Vector<f32>),
     MouseLeftDown,
     MouseRightDown,
@@ -157,6 +159,7 @@ impl App {
             file_watcher: None,
             dark_mode: true,
             invert_pdf: false,
+            draw_page_borders: true,
             bookmark_store,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,
@@ -316,6 +319,13 @@ impl App {
                 self.invert_pdf = !self.invert_pdf;
                 for pdf in &mut self.pdfs {
                     pdf.invert_colors = self.invert_pdf;
+                }
+                iced::Task::none()
+            }
+            AppMessage::TogglePageBorders => {
+                self.draw_page_borders = !self.draw_page_borders;
+                for pdf in &mut self.pdfs {
+                    pdf.draw_page_borders = self.draw_page_borders;
                 }
                 iced::Task::none()
             }
@@ -567,7 +577,7 @@ impl App {
     }
 
     fn create_menu_bar(&self) -> Element<'_, AppMessage> {
-        let menu_tpl_1 = |items| Menu::new(items).max_width(180.0).offset(0.0).spacing(0.0);
+        let menu_tpl_1 = |items| Menu::new(items).max_width(205.0).offset(0.0).spacing(0.0);
         let cfg = CONFIG.read().unwrap();
 
         let exit_close_label = if self.pdfs.is_empty() {
@@ -610,6 +620,14 @@ impl App {
                     },
                     AppMessage::ToggleDarkModePdf,
                     cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
+                ))(menu_button(
+                    if self.draw_page_borders {
+                        "No Page Borders"
+                    } else {
+                        "Page Borders"
+                    },
+                    AppMessage::TogglePageBorders,
+                    cfg.get_binding_for_msg(BindableMessage::TogglePageBorders)
                 ))(menu_button(
                     "Zoom In",
                     AppMessage::PdfMessage(PdfMessage::ZoomIn),

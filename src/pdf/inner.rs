@@ -67,6 +67,14 @@ fn get_link_colors(link_type: &LinkType) -> (iced::Color, iced::Color) {
     }
 }
 
+fn get_background_color(invert_colors: bool) -> iced::Color {
+    if invert_colors {
+        iced::Color::from_rgb8(21, 22, 32)
+    } else {
+        iced::Color::from_rgb8(220, 219, 218)
+    }
+}
+
 /// Contains the state required to rasterize the currently shown page of a pdf.
 #[derive(Debug)]
 pub struct State {
@@ -88,6 +96,7 @@ pub struct PageViewer<'a> {
     translation: Vector<f32>,
     scale: f32,
     invert_colors: bool,
+    draw_page_borders: bool,
     text_selection_rect: Option<Rect<f32>>,
     link_hitboxes: Option<&'a Vec<LinkInfo>>,
     link_keys: Option<Vec<String>>,
@@ -106,6 +115,7 @@ impl<'a> PageViewer<'a> {
             translation: Vector::zero(),
             scale: 1.0,
             invert_colors: false,
+            draw_page_borders: false,
             text_selection_rect: None,
             link_hitboxes: None,
             link_keys: None,
@@ -152,6 +162,11 @@ impl<'a> PageViewer<'a> {
 
     pub fn invert_colors(mut self, invert: bool) -> Self {
         self.invert_colors = invert;
+        self
+    }
+
+    pub fn draw_page_borders(mut self, draw: bool) -> Self {
+        self.draw_page_borders = draw;
         self
     }
 
@@ -214,6 +229,33 @@ where
         // It is probably possible to modify the mupdf-rs library to store the pixels in a Bytes
         // struct. This would allow for zero-copy sharing of the bytes in the image handle, rather
         // than the expensive clone we are doing now.
+        let scaled_page_size = self.state.page_size.scaled(self.scale);
+        let pdf_center = Vector::new(
+            (viewport_bounds.width - scaled_page_size.x) / 2.0,
+            (viewport_bounds.height - scaled_page_size.y) / 2.0,
+        );
+        let top_left =
+            pdf_center - self.translation.scaled(self.scale) + viewport_bounds.position().into();
+        let page_bounds = iced::Rectangle::new(top_left.into(), scaled_page_size.into());
+        let pdf_layer_bounds = if self.draw_page_borders {
+            page_bounds
+        } else {
+            viewport_bounds
+        };
+
+        let draw_background = |renderer: &mut Renderer| {
+            if self.draw_page_borders {
+                renderer.fill_quad(
+                    Quad {
+                        bounds: viewport_bounds.into(),
+                        border: Border::default(),
+                        shadow: Shadow::default(),
+                    },
+                    get_background_color(self.invert_colors),
+                );
+            }
+        };
+
         let draw_pdf = |renderer: &mut Renderer| {
             if let Some(pix) = &self.state.pix {
                 renderer.draw_image(
@@ -255,11 +297,6 @@ where
             if let Some(links) = self.link_hitboxes {
                 for link in links {
                     let doc_rect = link.bounds;
-                    let scaled_page_size = self.state.page_size.scaled(self.scale);
-                    let pdf_center = Vector::new(
-                        (viewport_bounds.width - scaled_page_size.x) / 2.0,
-                        (viewport_bounds.height - scaled_page_size.y) / 2.0,
-                    );
 
                     let link_bounds = Rect::from_points(
                         (doc_rect.x0 - self.translation).scaled(self.scale)
@@ -292,11 +329,6 @@ where
             if let (Some(links), Some(keys)) = (self.link_hitboxes, &self.link_keys) {
                 for (link, key) in links.iter().zip(keys.iter()) {
                     let doc_rect = link.bounds;
-                    let scaled_page_size = self.state.page_size.scaled(self.scale);
-                    let pdf_center = Vector::new(
-                        (viewport_bounds.width - scaled_page_size.x) / 2.0,
-                        (viewport_bounds.height - scaled_page_size.y) / 2.0,
-                    );
 
                     let link_bounds = Rect::from_points(
                         (doc_rect.x0 - self.translation).scaled(self.scale)
@@ -357,7 +389,8 @@ where
             }
         };
 
-        renderer.with_layer(viewport_bounds, draw_pdf);
+        renderer.with_layer(viewport_bounds, draw_background);
+        renderer.with_layer(pdf_layer_bounds, draw_pdf);
         renderer.with_layer(viewport_bounds, draw_selection);
         renderer.with_layer(viewport_bounds, draw_link_hitboxes);
         renderer.with_layer(viewport_bounds, draw_key_hints);
