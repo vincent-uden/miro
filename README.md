@@ -25,17 +25,11 @@ A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable
 
 The configuration file is located at `~/.config/miro-pdf/miro.conf` (or `.config/miro-pdf/miro.conf` in the home directory of your operating system). An example configuration file is located at `/assets/default.conf` which contains all the default bindings for the program.
 
+Every binding that is possible is bound at least once in the default configuration file.
+
 ### Configuration File Format
 
-The configuration file uses a simple text format with three types of commands:
-
-#### Comments and Empty Lines
-```
-# This is a comment
-# Comments start with # and are ignored during parsing
-
-# Empty lines are also ignored
-```
+The configuration file uses a simple text format with three types of commands and comments:
 
 #### Key Bindings
 ```
@@ -47,7 +41,7 @@ Key sequences can be:
 - Modified keys: `Ctrl+r`, `Shift+Tab`
 - Key chords (multiple keys): `"Z Z"` (quotes required for sequences with spaces)
 
-All available actions are bound in the example config file.
+All available actions are bound in the example config file. If you need a more exact view of the syntax it is documented in the [keybinds-rs](https://github.com/rhysd/keybinds-rs/blob/main/doc/binding_syntax.md) crate.
 
 #### Mouse Bindings
 ```
@@ -68,8 +62,17 @@ Set <setting> <value>
 Available settings:
 - `Rpc <True|False>` - Enable/disable RPC server
 - `RpcPort <number>` - Set RPC server port
+- `TrackpadSensitivity <float>` - Set a multiplier on panning with a trackpad
 
-#### Error Handling
+#### Comments and Empty Lines
+```
+# This is a comment
+# Comments start with # and are ignored during parsing
+
+# Empty lines are also ignored
+```
+
+### Error Handling
 
 The configuration parser provides detailed error messages with line numbers when parsing fails. Errors on one line don't prevent parsing of other lines
 
