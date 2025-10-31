@@ -183,7 +183,9 @@ pub enum BindableMessage {
 impl From<BindableMessage> for AppMessage {
     fn from(val: BindableMessage) -> Self {
         match val {
-            BindableMessage::MoveUp => AppMessage::PdfMessage(PdfMessage::Move(Vector::new(0.0, -MOVE_STEP))),
+            BindableMessage::MoveUp => {
+                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(0.0, -MOVE_STEP)))
+            }
             BindableMessage::MoveDown => {
                 AppMessage::PdfMessage(PdfMessage::Move(Vector::new(0.0, MOVE_STEP)))
             }
@@ -224,6 +226,7 @@ pub struct Config {
     pub mouse: Vec<MouseBinding>,
     pub rpc_enabled: bool,
     pub rpc_port: u32,
+    pub trackpad_sensitivity: f32,
 }
 
 impl Config {
@@ -231,6 +234,7 @@ impl Config {
         Config {
             keyboard: Keybinds::new(vec![]),
             mouse: Vec::new(),
+            trackpad_sensitivity: 1.0,
             ..Default::default()
         }
     }
@@ -355,6 +359,11 @@ impl Config {
                             format!("Invalid port number: '{value}'. Must be a valid integer")
                         })?;
                     }
+                    "TrackpadSensitivity" => {
+                        config.trackpad_sensitivity = value.parse::<f32>().map_err(|_| {
+                            format!("Invalid float value for TrackpadSensitivity: '{value}'. Must be a valid number")
+                        })?;
+                    }
                     _ => return Err(format!("Unknown setting: {setting}")),
                 }
             }
@@ -413,6 +422,7 @@ impl Config {
         }
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
+        base.trackpad_sensitivity = overrider.trackpad_sensitivity;
         base
     }
 }
@@ -596,6 +606,7 @@ impl Default for Config {
             ],
             rpc_enabled: false,
             rpc_port: 7890,
+            trackpad_sensitivity: 1.0,
         }
     }
 }
@@ -645,6 +656,7 @@ mod tests {
             mouse: Vec::new(),
             rpc_enabled: false,
             rpc_port: 7890,
+            trackpad_sensitivity: 1.0,
         };
     }
 
@@ -671,6 +683,10 @@ mod tests {
         // Check other settings
         assert_eq!(config.rpc_enabled, default_cfg.rpc_enabled);
         assert_eq!(config.rpc_port, default_cfg.rpc_port);
+        assert_eq!(
+            config.trackpad_sensitivity,
+            default_cfg.trackpad_sensitivity
+        );
     }
 
     #[test]
@@ -891,6 +907,29 @@ Set RpcPort invalid_port
 
         // Re-enable colors
         control::unset_override();
+    }
+
+    #[test]
+    pub fn can_parse_trackpad_sensitivity() {
+        let config_str = "Set TrackpadSensitivity 0.5";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(!result.has_errors());
+        assert_eq!(result.config.trackpad_sensitivity, 0.5);
+    }
+
+    #[test]
+    pub fn error_handling_invalid_trackpad_sensitivity() {
+        let config_str = "Set TrackpadSensitivity invalid";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid float value for TrackpadSensitivity")
+        );
     }
 
     #[test]

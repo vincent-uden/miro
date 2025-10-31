@@ -500,23 +500,25 @@ impl App {
             AppMessage::CloseActiveTab => iced::Task::done(AppMessage::CloseTab(self.pdf_idx)),
             AppMessage::Scroll(delta) => {
                 if !self.pdfs.is_empty() {
-                    let button = match delta {
+                    match delta {
                         iced::mouse::ScrollDelta::Lines { y, .. } => {
-                            if y > 0.0 {
+                            let button = if y > 0.0 {
                                 MouseButton::ScrollUp
                             } else if y < 0.0 {
                                 MouseButton::ScrollDown
                             } else {
                                 return iced::Task::none();
+                            };
+                            if let Some(action) = self.get_mouse_action(button) {
+                                let _ = self.pdfs[self.pdf_idx]
+                                    .update(PdfMessage::MouseAction(action, true));
                             }
                         }
-                        _ => {
-                            return iced::Task::none();
+                        iced::mouse::ScrollDelta::Pixels { x, y } => {
+                            let sensitivity = CONFIG.read().unwrap().trackpad_sensitivity;
+                            let move_vec = Vector::new(-x * sensitivity, y * sensitivity);
+                            let _ = self.pdfs[self.pdf_idx].update(PdfMessage::Move(move_vec));
                         }
-                    };
-                    if let Some(action) = self.get_mouse_action(button) {
-                        let _ =
-                            self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                     }
                 }
                 iced::Task::none()
@@ -1022,8 +1024,12 @@ impl App {
                 },
                 iced::mouse::Event::WheelScrolled { delta } => match status {
                     iced::event::Status::Ignored => match delta {
-                        iced::mouse::ScrollDelta::Lines { x, y } => Some(AppMessage::Scroll(delta)),
-                        iced::mouse::ScrollDelta::Pixels { x, y } => todo!(),
+                        iced::mouse::ScrollDelta::Lines { x: _, y: _ } => {
+                            Some(AppMessage::Scroll(delta))
+                        }
+                        iced::mouse::ScrollDelta::Pixels { x: _, y: _ } => {
+                            Some(AppMessage::Scroll(delta))
+                        }
                     },
                     iced::event::Status::Captured => None,
                 },
