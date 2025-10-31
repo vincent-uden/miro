@@ -501,8 +501,7 @@ impl App {
             AppMessage::Scroll(delta) => {
                 if !self.pdfs.is_empty() {
                     let button = match delta {
-                        iced::mouse::ScrollDelta::Lines { y, .. }
-                        | iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                        iced::mouse::ScrollDelta::Lines { y, .. } => {
                             if y > 0.0 {
                                 MouseButton::ScrollUp
                             } else if y < 0.0 {
@@ -510,6 +509,9 @@ impl App {
                             } else {
                                 return iced::Task::none();
                             }
+                        }
+                        _ => {
+                            return iced::Task::none();
                         }
                     };
                     if let Some(action) = self.get_mouse_action(button) {
@@ -1019,7 +1021,10 @@ impl App {
                     _ => None,
                 },
                 iced::mouse::Event::WheelScrolled { delta } => match status {
-                    iced::event::Status::Ignored => Some(AppMessage::Scroll(delta)),
+                    iced::event::Status::Ignored => match delta {
+                        iced::mouse::ScrollDelta::Lines { x, y } => Some(AppMessage::Scroll(delta)),
+                        iced::mouse::ScrollDelta::Pixels { x, y } => todo!(),
+                    },
                     iced::event::Status::Captured => None,
                 },
                 _ => None,

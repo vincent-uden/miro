@@ -160,12 +160,9 @@ impl PdfViewer {
                 self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
                 iced::Task::none()
             }
-            PdfMessage::MoveHorizontal(delta) => {
-                self.translation.x += delta / self.scale;
-                iced::Task::none()
-            }
-            PdfMessage::MoveVertical(delta) => {
-                self.translation.y += delta / self.scale;
+            PdfMessage::Move(vec) => {
+                self.translation.x += vec.x / self.scale;
+                self.translation.y += vec.y / self.scale;
                 iced::Task::none()
             }
             PdfMessage::UpdateBounds(rectangle) => {

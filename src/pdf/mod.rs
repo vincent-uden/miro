@@ -21,8 +21,7 @@ pub enum PdfMessage {
     ZoomOut,
     ZoomHome,
     ZoomFit,
-    MoveHorizontal(f32),
-    MoveVertical(f32),
+    Move(Vector<f32>),
     UpdateBounds(Rect<f32>),
     MouseMoved(Vector<f32>),
     MouseLeftDown(bool),            // bool indicates if Shift is pressed

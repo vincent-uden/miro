@@ -5,7 +5,7 @@ use colored::Colorize;
 use keybinds::{KeyInput, KeySeq, Keybind, Keybinds};
 use strum::EnumString;
 
-use crate::{app::AppMessage, pdf::PdfMessage};
+use crate::{app::AppMessage, geometry::Vector, pdf::PdfMessage};
 
 pub const MOVE_STEP: f32 = 40.0;
 
@@ -183,15 +183,15 @@ pub enum BindableMessage {
 impl From<BindableMessage> for AppMessage {
     fn from(val: BindableMessage) -> Self {
         match val {
-            BindableMessage::MoveUp => AppMessage::PdfMessage(PdfMessage::MoveVertical(-MOVE_STEP)),
+            BindableMessage::MoveUp => AppMessage::PdfMessage(PdfMessage::Move(Vector::new(0.0, -MOVE_STEP))),
             BindableMessage::MoveDown => {
-                AppMessage::PdfMessage(PdfMessage::MoveVertical(MOVE_STEP))
+                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(0.0, MOVE_STEP)))
             }
             BindableMessage::MoveLeft => {
-                AppMessage::PdfMessage(PdfMessage::MoveHorizontal(-MOVE_STEP))
+                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(-MOVE_STEP, 0.0)))
             }
             BindableMessage::MoveRight => {
-                AppMessage::PdfMessage(PdfMessage::MoveHorizontal(MOVE_STEP))
+                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(MOVE_STEP, 0.0)))
             }
             BindableMessage::NextPage => AppMessage::PdfMessage(PdfMessage::NextPage),
             BindableMessage::PreviousPage => AppMessage::PdfMessage(PdfMessage::PreviousPage),
