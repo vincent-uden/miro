@@ -14,7 +14,7 @@ A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable
 - Automatic hot-reloading of any viewed pdf (especially useful when writing anything that compiles into pdfs like Latex/Typst/etc.)
 - Text copying in documents
 - Internal links (such as a table of contents)
-- External links (email, webisites, etc. copies on click)
+- External links (email, websites, etc. copies on click)
 - Bookmarks
 - Jumplist
 - Optional RPC server to control the viewer from another program
