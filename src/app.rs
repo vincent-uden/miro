@@ -159,7 +159,7 @@ impl App {
             file_watcher: None,
             dark_mode: true,
             invert_pdf: false,
-            draw_page_borders: true,
+            draw_page_borders: CONFIG.read().unwrap().page_borders,
             bookmark_store,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,

@@ -13,7 +13,7 @@ use crate::{
         outline_extraction::OutlineExtractor,
         text_extraction::TextExtractor,
     },
-    DARK_THEME,
+    CONFIG, DARK_THEME,
 };
 
 use super::{
@@ -104,7 +104,7 @@ impl PdfViewer {
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: false,
-            draw_page_borders: true,
+            draw_page_borders: CONFIG.read().unwrap().page_borders,
             inner_state: RefCell::new(inner::State {
                 bounds: Rect::default(),
                 page_size: page.bounds()?.size().into(),
