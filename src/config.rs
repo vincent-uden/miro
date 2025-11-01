@@ -4,7 +4,6 @@ use std::{fs, path::PathBuf, str::FromStr, fmt};
 use colored::Colorize;
 use keybinds::{KeyInput, KeySeq, Keybind, Keybinds};
 use strum::EnumString;
-
 use crate::{app::AppMessage, geometry::Vector, pdf::PdfMessage};
 
 pub const MOVE_STEP: f32 = 40.0;
@@ -227,6 +226,7 @@ pub struct Config {
     pub rpc_enabled: bool,
     pub rpc_port: u32,
     pub trackpad_sensitivity: f32,
+    pub page_borders: bool,
 }
 
 impl Config {
@@ -343,6 +343,17 @@ impl Config {
                 let value = &parts[2];
 
                 match setting.as_str() {
+                    "PageBorders" => {
+                        config.page_borders = match value.as_str() {
+                            "True" | "true" | "1" => true,
+                            "False" | "false" | "0" => false,
+                            _ => {
+                                return Err(format!(
+                                    "Invalid boolean value for PageBorders: '{value}'. Use True/False"
+                                ));
+                            }
+                        };
+                    }
                     "Rpc" => {
                         config.rpc_enabled = match value.as_str() {
                             "True" | "true" | "1" => true,
@@ -423,6 +434,7 @@ impl Config {
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
         base.trackpad_sensitivity = overrider.trackpad_sensitivity;
+        base.page_borders = overrider.page_borders;
         base
     }
 }
@@ -607,6 +619,7 @@ impl Default for Config {
             rpc_enabled: false,
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
+            page_borders: true,
         }
     }
 }
@@ -657,6 +670,7 @@ mod tests {
             rpc_enabled: false,
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
+            page_borders: true,
         };
     }
 
