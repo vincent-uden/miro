@@ -68,7 +68,7 @@ fn main() -> iced::Result {
         );
     }
 
-    iced::application("App", App::update, App::view)
+    iced::application("Miro", App::update, App::view)
         .antialiasing(true)
         .theme(theme)
         .font(iced_fonts::REQUIRED_FONT_BYTES)
