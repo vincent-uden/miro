@@ -230,6 +230,7 @@ pub struct Config {
     pub page_borders: bool,
     pub dark_mode: bool,
     pub invert_pdf: bool,
+    pub open_sidebar: bool,
 }
 
 impl Config {
@@ -352,6 +353,9 @@ impl Config {
                     "DarkModeUi" => {
                         config.dark_mode = Self::parse_boolean("DarkModeUi", value)?;
                     }
+                    "OpenSidebar" => {
+                        config.open_sidebar = Self::parse_boolean("OpenSidebar", value)?;
+                    }
                     "PageBorders" => {
                         config.page_borders = Self::parse_boolean("PageBorders", value)?;
                     }
@@ -440,6 +444,7 @@ impl Config {
         base.page_borders = overrider.page_borders;
         base.dark_mode = overrider.dark_mode;
         base.invert_pdf = overrider.invert_pdf;
+        base.open_sidebar = overrider.open_sidebar;
         base
     }
 }
@@ -627,6 +632,7 @@ impl Default for Config {
             page_borders: true,
             dark_mode: true,
             invert_pdf: false,
+            open_sidebar: false,
         }
     }
 }
@@ -680,6 +686,7 @@ mod tests {
             page_borders: true,
             dark_mode: true,
             invert_pdf: false,
+            open_sidebar: false,
         };
     }
 
