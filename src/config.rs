@@ -717,6 +717,10 @@ mod tests {
             config.trackpad_sensitivity,
             default_cfg.trackpad_sensitivity
         );
+        assert_eq!(config.page_borders, default_cfg.page_borders);
+        assert_eq!(config.dark_mode, default_cfg.dark_mode);
+        assert_eq!(config.invert_pdf, default_cfg.invert_pdf);
+        assert_eq!(config.open_sidebar, default_cfg.open_sidebar);
     }
 
     #[test]
