@@ -227,6 +227,8 @@ pub struct Config {
     pub rpc_port: u32,
     pub trackpad_sensitivity: f32,
     pub page_borders: bool,
+    pub dark_mode: bool,
+    pub invert_pdf: bool,
 }
 
 impl Config {
@@ -343,6 +345,28 @@ impl Config {
                 let value = &parts[2];
 
                 match setting.as_str() {
+                    "DarkModePdf" => {
+                        config.invert_pdf = match value.as_str() {
+                            "True" | "true" | "1" => true,
+                            "False" | "false" | "0" => false,
+                            _ => {
+                                return Err(format!(
+                                    "Invalid boolean value for PageBorders: '{value}'. Use True/False"
+                                ));
+                            }
+                        };
+                    }
+                    "DarkModeUi" => {
+                        config.dark_mode = match value.as_str() {
+                            "True" | "true" | "1" => true,
+                            "False" | "false" | "0" => false,
+                            _ => {
+                                return Err(format!(
+                                    "Invalid boolean value for PageBorders: '{value}'. Use True/False"
+                                ));
+                            }
+                        };
+                    }
                     "PageBorders" => {
                         config.page_borders = match value.as_str() {
                             "True" | "true" | "1" => true,
@@ -435,6 +459,8 @@ impl Config {
         base.rpc_port = overrider.rpc_port;
         base.trackpad_sensitivity = overrider.trackpad_sensitivity;
         base.page_borders = overrider.page_borders;
+        base.dark_mode = overrider.dark_mode;
+        base.invert_pdf = overrider.invert_pdf;
         base
     }
 }
@@ -620,6 +646,8 @@ impl Default for Config {
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
             page_borders: true,
+            dark_mode: true,
+            invert_pdf: false,
         }
     }
 }
@@ -671,6 +699,8 @@ mod tests {
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
             page_borders: true,
+            dark_mode: true,
+            invert_pdf: false,
         };
     }
 
