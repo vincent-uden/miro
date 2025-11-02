@@ -347,48 +347,16 @@ impl Config {
 
                 match setting.as_str() {
                     "DarkModePdf" => {
-                        config.invert_pdf = match value.as_str() {
-                            "True" | "true" | "1" => true,
-                            "False" | "false" | "0" => false,
-                            _ => {
-                                return Err(format!(
-                                    "Invalid boolean value for PageBorders: '{value}'. Use True/False"
-                                ));
-                            }
-                        };
+                        config.invert_pdf = Self::parse_boolean("DarkModePdf", value)?;
                     }
                     "DarkModeUi" => {
-                        config.dark_mode = match value.as_str() {
-                            "True" | "true" | "1" => true,
-                            "False" | "false" | "0" => false,
-                            _ => {
-                                return Err(format!(
-                                    "Invalid boolean value for PageBorders: '{value}'. Use True/False"
-                                ));
-                            }
-                        };
+                        config.dark_mode = Self::parse_boolean("DarkModeUi", value)?;
                     }
                     "PageBorders" => {
-                        config.page_borders = match value.as_str() {
-                            "True" | "true" | "1" => true,
-                            "False" | "false" | "0" => false,
-                            _ => {
-                                return Err(format!(
-                                    "Invalid boolean value for PageBorders: '{value}'. Use True/False"
-                                ));
-                            }
-                        };
+                        config.page_borders = Self::parse_boolean("PageBorders", value)?;
                     }
                     "Rpc" => {
-                        config.rpc_enabled = match value.as_str() {
-                            "True" | "true" | "1" => true,
-                            "False" | "false" | "0" => false,
-                            _ => {
-                                return Err(format!(
-                                    "Invalid boolean value for Rpc: '{value}'. Use True/False"
-                                ));
-                            }
-                        };
+                        config.rpc_enabled = Self::parse_boolean("Rpc", value)?;
                     }
                     "RpcPort" => {
                         config.rpc_port = value.parse::<u32>().map_err(|_| {
@@ -406,6 +374,16 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    fn parse_boolean(value_name: &'static str, value: &str) -> Result<bool, String> {
+        match value {
+            "True" | "true" | "1" => Ok(true),
+            "False" | "false" | "0" => Ok(false),
+            _ => Err(format!(
+                "Invalid boolean value for {value_name}: '{value}'. Use True/False"
+            )),
+        }
     }
 
     fn parse_line_parts(line: &str) -> Result<Vec<String>, String> {
