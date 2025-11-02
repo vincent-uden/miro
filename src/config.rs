@@ -4,7 +4,6 @@ use std::{fs, path::PathBuf, str::FromStr, fmt};
 use colored::Colorize;
 use keybinds::{KeyInput, KeySeq, Keybind, Keybinds};
 use strum::EnumString;
-
 use crate::{app::AppMessage, geometry::Vector, pdf::PdfMessage};
 
 pub const MOVE_STEP: f32 = 40.0;
@@ -227,6 +226,9 @@ pub struct Config {
     pub rpc_enabled: bool,
     pub rpc_port: u32,
     pub trackpad_sensitivity: f32,
+    pub page_borders: bool,
+    pub dark_mode: bool,
+    pub invert_pdf: bool,
 }
 
 impl Config {
@@ -343,16 +345,17 @@ impl Config {
                 let value = &parts[2];
 
                 match setting.as_str() {
+                    "DarkModePdf" => {
+                        config.invert_pdf = Self::parse_boolean("DarkModePdf", value)?;
+                    }
+                    "DarkModeUi" => {
+                        config.dark_mode = Self::parse_boolean("DarkModeUi", value)?;
+                    }
+                    "PageBorders" => {
+                        config.page_borders = Self::parse_boolean("PageBorders", value)?;
+                    }
                     "Rpc" => {
-                        config.rpc_enabled = match value.as_str() {
-                            "True" | "true" | "1" => true,
-                            "False" | "false" | "0" => false,
-                            _ => {
-                                return Err(format!(
-                                    "Invalid boolean value for Rpc: '{value}'. Use True/False"
-                                ));
-                            }
-                        };
+                        config.rpc_enabled = Self::parse_boolean("Rpc", value)?;
                     }
                     "RpcPort" => {
                         config.rpc_port = value.parse::<u32>().map_err(|_| {
@@ -370,6 +373,16 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    fn parse_boolean(value_name: &'static str, value: &str) -> Result<bool, String> {
+        match value {
+            "True" | "true" | "1" => Ok(true),
+            "False" | "false" | "0" => Ok(false),
+            _ => Err(format!(
+                "Invalid boolean value for {value_name}: '{value}'. Use True/False"
+            )),
+        }
     }
 
     fn parse_line_parts(line: &str) -> Result<Vec<String>, String> {
@@ -423,6 +436,9 @@ impl Config {
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
         base.trackpad_sensitivity = overrider.trackpad_sensitivity;
+        base.page_borders = overrider.page_borders;
+        base.dark_mode = overrider.dark_mode;
+        base.invert_pdf = overrider.invert_pdf;
         base
     }
 }
@@ -607,6 +623,9 @@ impl Default for Config {
             rpc_enabled: false,
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
+            page_borders: true,
+            dark_mode: true,
+            invert_pdf: false,
         }
     }
 }
@@ -657,6 +676,9 @@ mod tests {
             rpc_enabled: false,
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
+            page_borders: true,
+            dark_mode: true,
+            invert_pdf: false,
         };
     }
 
