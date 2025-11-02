@@ -103,7 +103,7 @@ impl PdfViewer {
             page_progress: String::new(),
             cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
-            invert_colors: false,
+            invert_colors: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
             inner_state: RefCell::new(inner::State {
                 bounds: Rect::default(),
