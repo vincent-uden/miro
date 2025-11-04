@@ -550,8 +550,9 @@ impl PdfViewer {
         let mut ctm = Matrix::IDENTITY;
 
         let effective_scale = self.scale * self.scale_factor as f32;
-        let centering_vector =
-            (state.bounds.size() - self.page_size().scaled(self.scale)).scaled(0.5);
+        let centering_vector = (state.bounds.size().scaled(self.scale_factor as f32)
+            - self.page_size().scaled(effective_scale))
+        .scaled(0.5);
         ctm.pre_translate(centering_vector.x, centering_vector.y);
 
         ctm.scale(effective_scale, effective_scale);
