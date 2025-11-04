@@ -154,10 +154,14 @@ impl PdfViewer {
             }
             PdfMessage::ZoomHome => {
                 self.scale = 1.0;
+                self.translation.x = 0.0;
+                self.translation.y = 0.0;
                 iced::Task::none()
             }
             PdfMessage::ZoomFit => {
                 self.scale = self.zoom_fit_ratio().unwrap_or(1.0);
+                self.translation.x = 0.0;
+                self.translation.y = 0.0;
                 iced::Task::none()
             }
             PdfMessage::Move(vec) => {
