@@ -150,16 +150,20 @@ impl App {
     }
 
     pub fn new(bookmark_store: BookmarkStore) -> Self {
-        let (ps, _p) = pane_grid::State::new(Pane {
+        let (mut ps, pdf_id) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
         });
+        if CONFIG.read().unwrap().open_sidebar {
+            Self::open_sidebar(&mut ps, pdf_id);
+        }
+
         Self {
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
-            dark_mode: true,
-            invert_pdf: false,
-            draw_page_borders: true,
+            dark_mode: CONFIG.read().unwrap().dark_mode,
+            invert_pdf: CONFIG.read().unwrap().invert_pdf,
+            draw_page_borders: CONFIG.read().unwrap().page_borders,
             bookmark_store,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,
@@ -191,6 +195,18 @@ impl App {
             .iter()
             .find(|(_, pane)| matches!(pane.pane_type, PaneType::Sidebar))
             .map(|(id, _)| *id)
+    }
+
+    fn open_sidebar(pane_state: &mut pane_grid::State<Pane>, pdf_id: pane_grid::Pane) {
+        if let Some((_, split)) = pane_state.split(
+            pane_grid::Axis::Vertical,
+            pdf_id,
+            Pane {
+                pane_type: PaneType::Sidebar,
+            },
+        ) {
+            pane_state.resize(split, 0.7);
+        }
     }
 
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
@@ -468,16 +484,8 @@ impl App {
                     if let Some(sidebar_id) = self.get_sidebar_pane_id() {
                         self.pane_state.close(sidebar_id);
                     }
-                } else if let Some(pdf_id) = self.get_pdf_pane_id()
-                    && let Some((_, split)) = self.pane_state.split(
-                        pane_grid::Axis::Vertical,
-                        pdf_id,
-                        Pane {
-                            pane_type: PaneType::Sidebar,
-                        },
-                    )
-                {
-                    self.pane_state.resize(split, 0.7);
+                } else if let Some(pdf_id) = self.get_pdf_pane_id() {
+                    Self::open_sidebar(&mut self.pane_state, pdf_id);
                 }
                 iced::Task::none()
             }

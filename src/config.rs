@@ -227,6 +227,10 @@ pub struct Config {
     pub rpc_enabled: bool,
     pub rpc_port: u32,
     pub trackpad_sensitivity: f32,
+    pub page_borders: bool,
+    pub dark_mode: bool,
+    pub invert_pdf: bool,
+    pub open_sidebar: bool,
 }
 
 impl Config {
@@ -343,16 +347,20 @@ impl Config {
                 let value = &parts[2];
 
                 match setting.as_str() {
+                    "DarkModePdf" => {
+                        config.invert_pdf = Self::parse_boolean("DarkModePdf", value)?;
+                    }
+                    "DarkModeUi" => {
+                        config.dark_mode = Self::parse_boolean("DarkModeUi", value)?;
+                    }
+                    "OpenSidebar" => {
+                        config.open_sidebar = Self::parse_boolean("OpenSidebar", value)?;
+                    }
+                    "PageBorders" => {
+                        config.page_borders = Self::parse_boolean("PageBorders", value)?;
+                    }
                     "Rpc" => {
-                        config.rpc_enabled = match value.as_str() {
-                            "True" | "true" | "1" => true,
-                            "False" | "false" | "0" => false,
-                            _ => {
-                                return Err(format!(
-                                    "Invalid boolean value for Rpc: '{value}'. Use True/False"
-                                ));
-                            }
-                        };
+                        config.rpc_enabled = Self::parse_boolean("Rpc", value)?;
                     }
                     "RpcPort" => {
                         config.rpc_port = value.parse::<u32>().map_err(|_| {
@@ -370,6 +378,16 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    fn parse_boolean(value_name: &'static str, value: &str) -> Result<bool, String> {
+        match value {
+            "True" | "true" | "1" => Ok(true),
+            "False" | "false" | "0" => Ok(false),
+            _ => Err(format!(
+                "Invalid boolean value for {value_name}: '{value}'. Use True/False"
+            )),
+        }
     }
 
     fn parse_line_parts(line: &str) -> Result<Vec<String>, String> {
@@ -423,6 +441,10 @@ impl Config {
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
         base.trackpad_sensitivity = overrider.trackpad_sensitivity;
+        base.page_borders = overrider.page_borders;
+        base.dark_mode = overrider.dark_mode;
+        base.invert_pdf = overrider.invert_pdf;
+        base.open_sidebar = overrider.open_sidebar;
         base
     }
 }
@@ -607,6 +629,10 @@ impl Default for Config {
             rpc_enabled: false,
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
+            page_borders: true,
+            dark_mode: true,
+            invert_pdf: false,
+            open_sidebar: false,
         }
     }
 }
@@ -657,6 +683,10 @@ mod tests {
             rpc_enabled: false,
             rpc_port: 7890,
             trackpad_sensitivity: 1.0,
+            page_borders: true,
+            dark_mode: true,
+            invert_pdf: false,
+            open_sidebar: false,
         };
     }
 
@@ -687,6 +717,10 @@ mod tests {
             config.trackpad_sensitivity,
             default_cfg.trackpad_sensitivity
         );
+        assert_eq!(config.page_borders, default_cfg.page_borders);
+        assert_eq!(config.dark_mode, default_cfg.dark_mode);
+        assert_eq!(config.invert_pdf, default_cfg.invert_pdf);
+        assert_eq!(config.open_sidebar, default_cfg.open_sidebar);
     }
 
     #[test]

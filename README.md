@@ -64,6 +64,19 @@ Available settings:
 - `RpcPort <number>` - Set RPC server port
 - `TrackpadSensitivity <float>` - Set a multiplier on panning with a trackpad
 
+#### Default Settings
+```
+Set <setting> <value>
+```
+
+Default settings apply only at application startup. They can later be toggled with key bindings.
+
+Available default settings:
+- `DarkModePdf <True|False>` - Enable/disable dark mode rendering of the PDF
+- `DarkModeUi <True|False>` - Enable/disable dark mode for the UI
+- `OpenSidebar <True|False>` - Open sidebar
+- `PageBorders <True|False>` - Enable/disable page borders
+
 #### Comments and Empty Lines
 ```
 # This is a comment
