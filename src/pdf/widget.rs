@@ -469,6 +469,7 @@ impl PdfViewer {
 
         let mut state = self.inner_state.borrow_mut();
 
+        state.page_size = bounds.size().into();
         // Regenerate DisplayList for the new page
         state.list = DisplayList::new(bounds)?;
         let list_dev = Device::from_display_list(&state.list)?;
@@ -574,8 +575,6 @@ impl PdfViewer {
         let bounds = state.bounds;
         let device = {
             let pix = state.pix.as_mut().unwrap();
-            // TODO: Might contain undefined behaviour. Seems to work fine in release mode.
-            // But in debug mode on my laptop (at least) this produces UB
             let samples = pix.samples_mut();
             samples.fill(255);
             Device::from_pixmap(pix)?
