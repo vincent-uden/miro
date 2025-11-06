@@ -126,7 +126,13 @@ However, I've managed to get compilation working in github actions which is what
 
 #### Linux
 
-Building on linux require some hidden dependencies that you probably already have. On arch they are:
+Mupdf-rs requries headers for fontconfig. The packages are:
+
+- `libfontconfig1-dev` on Ubuntu/Debian
+- `fontconfig-devel` on Fedora
+- `fontconfig` on Arch and derivatives
+
+Building on linux also requires some hidden dependencies that you probably already have.
 - `clang`
 - `unzip`
 
