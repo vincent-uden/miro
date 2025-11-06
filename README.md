@@ -114,7 +114,7 @@ On linux, the commands below would clone the repository, compile the project and
 git clone https://github.com/vincent-uden/miro.git
 cd miro
 cargo r --release
-cp ./target/release/miro /usr/bin/miro
+cp ./target/release/miro-pdf /usr/bin/miro-pdf
 ```
 #### Windows
 
