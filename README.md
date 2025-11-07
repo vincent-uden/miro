@@ -1,6 +1,6 @@
 # miro
 
-A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable keybindings.
+A native pdf viewer for Windows 10/11, macOS and Linux (Wayland/X11) with configurable keybindings.
 
 ![An image of the pdf reader](/assets/screenshot.png)
 
