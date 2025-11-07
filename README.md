@@ -86,6 +86,20 @@ Configuration parsing errors:
 ### Pre-compiled binary
 Head over to [releases](https://github.com/vincent-uden/miro/releases) and download the latest binary for your platform, then place it somewhere in your path.
 
+#### Nix Cachix Binary Cache
+```nix
+nix.settings = {
+  substituters = [
+    "https://miro-pdf.cachix.org"
+    # Others...
+  ];
+  trusted-public-keys = [
+    "miro-pdf.cachix.org-1:4XzXt3PjR8lGUo00nhzAGQLdRa73iPQNTRD5tfIZf4k="
+    # Others...
+  ];
+};
+```
+
 ### Crates.io
 This is pretty much the same as the following option, but doesn't require cloning the repo. See [building from source](#building-from-source) for possible complications when compiling for Windows. I've had **no** problems compiling on Linux thus far.
 ```sh
