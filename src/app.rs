@@ -259,8 +259,6 @@ impl App {
             AppMessage::PdfMessage(msg) => {
                 if !self.pdfs.is_empty() {
                     let config = CONFIG.read().unwrap();
-                    // DEBUG: Print the value of config.autofit at runtime
-                    println!("[DEBUG] config.autofit = {}", config.autofit);
                     // If Autofit is enabled and the message is SetPage, UpdateBounds, or ReallocPixmap, chain a ZoomFit
                     if config.autofit {
                         match msg {
