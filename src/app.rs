@@ -263,6 +263,8 @@ impl App {
                     if config.autofit {
                         match msg {
                             PdfMessage::SetPage(_)
+                            | PdfMessage::NextPage
+                            | PdfMessage::PreviousPage
                             | PdfMessage::UpdateBounds(_)
                             | PdfMessage::ReallocPixmap => {
                                 self.pdfs[self.pdf_idx]
