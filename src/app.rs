@@ -138,6 +138,20 @@ pub enum AppMessage {
 }
 
 impl App {
+    fn handle_jumpable_action(&mut self, msg: PdfMessage) -> iced::Task<AppMessage> {
+        if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
+            self.record_location();
+            let pdf_msg = self.pdfs[self.pdf_idx]
+                .update(msg)
+                .map(AppMessage::PdfMessage);
+            self.record_location();
+            pdf_msg
+        } else {
+            self.pdfs[self.pdf_idx]
+                .update(msg)
+                .map(AppMessage::PdfMessage)
+        }
+    }
     fn get_mouse_action(&self, button: MouseButton) -> Option<MouseAction> {
         let input = MouseInput {
             button,
@@ -260,34 +274,10 @@ impl App {
                                         .update(PdfMessage::ZoomFit)
                                         .map(AppMessage::PdfMessage))
                             }
-                            _ => {
-                                if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
-                                    self.record_location();
-                                    let pdf_msg = self.pdfs[self.pdf_idx]
-                                        .update(msg)
-                                        .map(AppMessage::PdfMessage);
-                                    self.record_location();
-                                    pdf_msg
-                                } else {
-                                    self.pdfs[self.pdf_idx]
-                                        .update(msg)
-                                        .map(AppMessage::PdfMessage)
-                                }
-                            }
+                            _ => self.handle_jumpable_action(msg),
                         }
                     } else {
-                        if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
-                            self.record_location();
-                            let pdf_msg = self.pdfs[self.pdf_idx]
-                                .update(msg)
-                                .map(AppMessage::PdfMessage);
-                            self.record_location();
-                            pdf_msg
-                        } else {
-                            self.pdfs[self.pdf_idx]
-                                .update(msg)
-                                .map(AppMessage::PdfMessage)
-                        }
+                        self.handle_jumpable_action(msg)
                     }
                 } else {
                     iced::Task::none()
