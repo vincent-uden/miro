@@ -210,7 +210,7 @@ impl App {
     }
 
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
-        match message {
+    match message {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 let out = match PdfViewer::from_path(path_buf.clone()) {
@@ -244,17 +244,50 @@ impl App {
             }
             AppMessage::PdfMessage(msg) => {
                 if !self.pdfs.is_empty() {
-                    if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
-                        self.record_location();
-                        let pdf_msg = self.pdfs[self.pdf_idx]
-                            .update(msg)
-                            .map(AppMessage::PdfMessage);
-                        self.record_location();
-                        pdf_msg
+                    let config = CONFIG.read().unwrap();
+                    // DEBUG: Print the value of config.autofit at runtime
+                    println!("[DEBUG] config.autofit = {}", config.autofit);
+                    // If Autofit is enabled and the message is SetPage, UpdateBounds, or ReallocPixmap, chain a ZoomFit
+                    if config.autofit {
+                        match msg {
+                            PdfMessage::SetPage(_)
+                            | PdfMessage::UpdateBounds(_)
+                            | PdfMessage::ReallocPixmap => {
+                                self.pdfs[self.pdf_idx]
+                                    .update(msg)
+                                    .map(AppMessage::PdfMessage)
+                                    .chain(self.pdfs[self.pdf_idx]
+                                        .update(PdfMessage::ZoomFit)
+                                        .map(AppMessage::PdfMessage))
+                            }
+                            _ => {
+                                if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
+                                    self.record_location();
+                                    let pdf_msg = self.pdfs[self.pdf_idx]
+                                        .update(msg)
+                                        .map(AppMessage::PdfMessage);
+                                    self.record_location();
+                                    pdf_msg
+                                } else {
+                                    self.pdfs[self.pdf_idx]
+                                        .update(msg)
+                                        .map(AppMessage::PdfMessage)
+                                }
+                            }
+                        }
                     } else {
-                        self.pdfs[self.pdf_idx]
-                            .update(msg)
-                            .map(AppMessage::PdfMessage)
+                        if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
+                            self.record_location();
+                            let pdf_msg = self.pdfs[self.pdf_idx]
+                                .update(msg)
+                                .map(AppMessage::PdfMessage);
+                            self.record_location();
+                            pdf_msg
+                        } else {
+                            self.pdfs[self.pdf_idx]
+                                .update(msg)
+                                .map(AppMessage::PdfMessage)
+                        }
                     }
                 } else {
                     iced::Task::none()
