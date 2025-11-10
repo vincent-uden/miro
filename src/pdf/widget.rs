@@ -130,15 +130,15 @@ impl PdfViewer {
         let task: iced::Task<PdfMessage> = match message {
             PdfMessage::NextPage => {
                 self.set_page(self.cur_page_idx + 1).unwrap();
-                iced::Task::done(PdfMessage::ZoomFit)
+                iced::Task::none()
             }
             PdfMessage::PreviousPage => {
                 self.set_page(self.cur_page_idx - 1).unwrap();
-                iced::Task::done(PdfMessage::ZoomFit)
+                iced::Task::none()
             }
             PdfMessage::SetPage(page) => {
                 self.set_page(page).unwrap();
-                iced::Task::done(PdfMessage::ZoomFit)
+                iced::Task::none()
             }
             PdfMessage::SetTranslation(translation) => {
                 self.translation = translation;
