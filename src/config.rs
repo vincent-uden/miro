@@ -231,6 +231,7 @@ pub struct Config {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     pub open_sidebar: bool,
+    pub autofit: bool,
 }
 
 impl Config {
@@ -372,7 +373,12 @@ impl Config {
                             format!("Invalid float value for TrackpadSensitivity: '{value}'. Must be a valid number")
                         })?;
                     }
-                    _ => return Err(format!("Unknown setting: {setting}")),
+                    "Autofit" => {
+                        config.autofit = Self::parse_boolean("Autofit", value)?;
+                    }
+                    _ => {
+                        return Err(format!("Unknown setting: {setting}"));
+                    }
                 }
             }
         }
@@ -445,6 +451,7 @@ impl Config {
         base.dark_mode = overrider.dark_mode;
         base.invert_pdf = overrider.invert_pdf;
         base.open_sidebar = overrider.open_sidebar;
+        base.autofit = overrider.autofit;
         base
     }
 }
@@ -633,6 +640,7 @@ impl Default for Config {
             dark_mode: true,
             invert_pdf: false,
             open_sidebar: false,
+            autofit: false,
         }
     }
 }
@@ -687,6 +695,7 @@ mod tests {
             dark_mode: true,
             invert_pdf: false,
             open_sidebar: false,
+            autofit: false,
         };
     }
 
