@@ -258,20 +258,22 @@ where
 
         let draw_pdf = |renderer: &mut Renderer| {
             if let Some(pix) = &self.state.pix {
-                renderer.draw_image(
-                    image::Image {
-                        handle: image::Handle::from_rgba(
-                            pix.width(),
-                            pix.height(),
-                            pix.samples().to_vec(),
-                        ),
-                        filter_method: FilterMethod::Nearest,
-                        rotation: iced::Radians::from(0.0),
-                        opacity: 1.0,
-                        snap: true,
-                    },
-                    viewport_bounds,
-                );
+                if pix.width() > 0 && pix.height() > 0 {
+                    renderer.draw_image(
+                        image::Image {
+                            handle: image::Handle::from_rgba(
+                                pix.width(),
+                                pix.height(),
+                                pix.samples().to_vec(),
+                            ),
+                            filter_method: FilterMethod::Nearest,
+                            rotation: iced::Radians::from(0.0),
+                            opacity: 1.0,
+                            snap: true,
+                        },
+                        viewport_bounds,
+                    );
+                }
             }
         };
 
