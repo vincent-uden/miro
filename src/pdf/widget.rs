@@ -56,6 +56,11 @@ pub struct PdfViewer {
 
     doc: Document,
     page: Page,
+    // Two-page state
+    pub two_page_mode: bool,
+    pub cover_page: bool,
+    right_page: Option<Page>,
+    right_list: Option<DisplayList>,
 
     old_bounds: RefCell<Rect<f32>>,
 
@@ -94,7 +99,7 @@ impl PdfViewer {
         let mut gradient_cache = [[0; 4]; 256];
         generate_gradient_cache(&mut gradient_cache, &bg_color);
 
-        Ok(Self {
+        let mut viewer = Self {
             scale: 1.0,
             scale_factor: 1.0,
             name,
@@ -121,19 +126,42 @@ impl PdfViewer {
             document_outline,
             doc,
             page,
+            two_page_mode: false,
+            cover_page: false,
+            right_page: None,
+            right_list: None,
             gradient_cache,
             old_bounds: RefCell::new(Rect::default()),
-        })
+        };
+        // Ensure consistent initialization of layout-dependent fields
+        viewer.set_page(0)?;
+        Ok(viewer)
     }
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
         let task: iced::Task<PdfMessage> = match message {
             PdfMessage::NextPage => {
-                self.set_page(self.cur_page_idx + 1).unwrap();
+                if self.two_page_mode {
+                    if self.cover_page && self.cur_page_idx == 0 {
+                        self.set_page(1).unwrap();
+                    } else {
+                        self.set_page(self.cur_page_idx + 2).unwrap();
+                    }
+                } else {
+                    self.set_page(self.cur_page_idx + 1).unwrap();
+                }
                 iced::Task::none()
             }
             PdfMessage::PreviousPage => {
-                self.set_page(self.cur_page_idx - 1).unwrap();
+                if self.two_page_mode {
+                    if self.cover_page && self.cur_page_idx == 1 {
+                        self.set_page(0).unwrap();
+                    } else {
+                        self.set_page(self.cur_page_idx - 2).unwrap();
+                    }
+                } else {
+                    self.set_page(self.cur_page_idx - 1).unwrap();
+                }
                 iced::Task::none()
             }
             PdfMessage::SetPage(page) => {
@@ -172,6 +200,21 @@ impl PdfViewer {
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.borrow_mut().bounds = rectangle;
                 iced::Task::done(PdfMessage::ReallocPixmap)
+            }
+            PdfMessage::ToggleTwoPage => {
+                self.two_page_mode = !self.two_page_mode;
+                // Re-anchor page index and recompute lists and sizes
+                let page = self.cur_page_idx;
+                self.set_page(page).unwrap();
+                iced::Task::none()
+            }
+            PdfMessage::ToggleCoverPage => {
+                self.cover_page = !self.cover_page;
+                if self.two_page_mode {
+                    let page = self.cur_page_idx;
+                    self.set_page(page).unwrap();
+                }
+                iced::Task::none()
             }
             PdfMessage::None => iced::Task::none(),
             PdfMessage::MouseMoved(vector) => {
@@ -294,8 +337,22 @@ impl PdfViewer {
                         if let (Some(start_pos), Some(end_pos)) =
                             (self.text_selection_start, self.last_mouse_pos)
                         {
-                            let doc_start = self.screen_to_document_coords(start_pos);
-                            let doc_end = self.screen_to_document_coords(end_pos);
+                            let mut doc_start = self.screen_to_document_coords(start_pos);
+                            let mut doc_end = self.screen_to_document_coords(end_pos);
+
+                            // Limit selection to a single page. If both points are on the right page,
+                            // adjust coordinates and use right_page for extraction.
+                            let mut use_right = false;
+                            let left_w = self.page_size().x;
+                            if self.two_page_mode
+                                && doc_start.x > left_w
+                                && doc_end.x > left_w
+                                && self.right_page.is_some()
+                            {
+                                doc_start.x -= left_w;
+                                doc_end.x -= left_w;
+                                use_right = true;
+                            }
 
                             let selection_rect = Rect::from_points(
                                 Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
@@ -305,10 +362,18 @@ impl PdfViewer {
                             if selection_rect.width() > MIN_SELECTION
                                 && selection_rect.height() > MIN_SELECTION
                             {
-                                let extractor = TextExtractor::new(&self.page);
-                                let selection = extractor
-                                    .extract_text_in_rect(selection_rect.into())
-                                    .unwrap();
+                                let selection = if use_right {
+                                    let extractor =
+                                        TextExtractor::new(self.right_page.as_ref().unwrap());
+                                    extractor
+                                        .extract_text_in_rect(selection_rect.into())
+                                        .unwrap()
+                                } else {
+                                    let extractor = TextExtractor::new(&self.page);
+                                    extractor
+                                        .extract_text_in_rect(selection_rect.into())
+                                        .unwrap()
+                                };
                                 info!("Copied: \"{}\" at {:?}", selection.text, selection.bounds);
                                 arboard::Clipboard::new().map_or_else(
                                     |e| error!("{e}"),
@@ -324,11 +389,27 @@ impl PdfViewer {
                         self.text_selection_start = None;
                     }
                     (MouseAction::NextPage, true) => {
-                        let _ = self.set_page(self.cur_page_idx + 1);
+                        if self.two_page_mode {
+                            if self.cover_page && self.cur_page_idx == 0 {
+                                let _ = self.set_page(1);
+                            } else {
+                                let _ = self.set_page(self.cur_page_idx + 2);
+                            }
+                        } else {
+                            let _ = self.set_page(self.cur_page_idx + 1);
+                        }
                     }
                     (MouseAction::NextPage, false) => {}
                     (MouseAction::PreviousPage, true) => {
-                        let _ = self.set_page(self.cur_page_idx - 1);
+                        if self.two_page_mode {
+                            if self.cover_page && self.cur_page_idx == 1 {
+                                let _ = self.set_page(0);
+                            } else {
+                                let _ = self.set_page(self.cur_page_idx - 2);
+                            }
+                        } else {
+                            let _ = self.set_page(self.cur_page_idx - 1);
+                        }
                     }
                     (MouseAction::PreviousPage, false) => {}
                     (MouseAction::ZoomIn, true) => {
@@ -463,22 +544,83 @@ impl PdfViewer {
     }
 
     fn set_page(&mut self, idx: i32) -> Result<()> {
-        self.cur_page_idx = idx.clamp(0, self.doc.page_count()? - 1);
+        let page_count = self.doc.page_count()?;
+        let idx = idx.clamp(0, page_count - 1);
+        // Anchor index depending on two-page & cover
+        let anchor = if self.two_page_mode {
+            if self.cover_page {
+                if idx == 0 { 0 } else if idx % 2 == 1 { idx } else { idx - 1 }
+            } else {
+                if idx % 2 == 0 { idx } else { idx - 1 }
+            }
+        } else {
+            idx
+        };
+        self.cur_page_idx = anchor;
+
+        // Load left page
         self.page = self.doc.load_page(self.cur_page_idx)?;
-        let bounds = self.page.bounds()?;
+        let left_bounds = self.page.bounds()?;
 
-        let mut state = self.inner_state.borrow_mut();
+        // Left page display list
+        {
+            let mut state = self.inner_state.borrow_mut();
+            state.page_size = left_bounds.size().into();
+            state.list = DisplayList::new(left_bounds)?;
+            let list_dev = Device::from_display_list(&state.list)?;
+            let ctm = Matrix::IDENTITY;
+            self.page.run(&list_dev, &ctm)?;
+        }
 
-        state.page_size = bounds.size().into();
-        // Regenerate DisplayList for the new page
-        state.list = DisplayList::new(bounds)?;
-        let list_dev = Device::from_display_list(&state.list)?;
-        let ctm = Matrix::IDENTITY;
-        self.page.run(&list_dev, &ctm)?;
+        // Right page (if in range and two-page mode)
+        self.right_page = None;
+        self.right_list = None;
+        let mut combined_links: Vec<LinkInfo> = Vec::new();
+        // Extract left links first
+        {
+            let extractor = LinkExtractor::new(&self.page);
+            let left_links = extractor.extract_all_links()?;
+            combined_links.extend(left_links);
+        }
 
-        let extractor = LinkExtractor::new(&self.page);
-        self.link_hitboxes = extractor.extract_all_links()?;
+        let left_size: Vector<f32> = left_bounds.size().into();
 
+        if self.two_page_mode {
+            let right_idx = self.cur_page_idx + 1;
+            if right_idx < page_count {
+                let rp = self.doc.load_page(right_idx)?;
+                let rb = rp.bounds()?;
+                let list = DisplayList::new(rb)?;
+                let list_dev = Device::from_display_list(&list)?;
+                let ctm = Matrix::IDENTITY;
+                rp.run(&list_dev, &ctm)?;
+                self.right_page = Some(rp);
+                self.right_list = Some(list);
+
+                // Extract right links and offset by left width (doc units)
+                let extractor = LinkExtractor::new(self.right_page.as_ref().unwrap());
+                let mut right_links = extractor.extract_all_links()?;
+                for l in &mut right_links {
+                    l.bounds.x0.x += left_size.x;
+                    l.bounds.x1.x += left_size.x;
+                }
+                combined_links.extend(right_links);
+
+                // Update combined page size in state
+                let mut state = self.inner_state.borrow_mut();
+                let right_size: Vector<f32> = rb.size().into();
+                state.page_size = Vector::new(left_size.x + right_size.x, left_size.y.max(right_size.y));
+            } else {
+                // Only left page exists; treat as single
+                let mut state = self.inner_state.borrow_mut();
+                state.page_size = left_size;
+            }
+        } else {
+            let mut state = self.inner_state.borrow_mut();
+            state.page_size = left_size;
+        }
+
+        self.link_hitboxes = combined_links;
         Ok(())
     }
 
@@ -491,19 +633,36 @@ impl PdfViewer {
     }
 
     fn page_size(&self) -> Vector<f32> {
+        // Single-page size of the left/anchor page
         let page_bounds: geometry::Rect<f32> = self.page.bounds().unwrap().into();
         page_bounds.size()
     }
 
+    fn spread_size(&self) -> Vector<f32> {
+        if self.two_page_mode {
+            let left_size = self.page_size();
+            if let Some(ref rp) = self.right_page {
+                let r_bounds: geometry::Rect<f32> = rp.bounds().unwrap().into();
+                let r_size = r_bounds.size();
+                Vector::new(left_size.x + r_size.x, left_size.y.max(r_size.y))
+            } else {
+                left_size
+            }
+        } else {
+            self.page_size()
+        }
+    }
+
     fn zoom_fit_ratio(&mut self) -> Result<f32> {
-        let vertical_scale = self.inner_state.borrow().bounds.height() / self.page_size().y;
-        let horizontal_scale = self.inner_state.borrow().bounds.width() / self.page_size().x;
+        let size = self.spread_size();
+        let vertical_scale = self.inner_state.borrow().bounds.height() / size.y;
+        let horizontal_scale = self.inner_state.borrow().bounds.width() / size.x;
         Ok(vertical_scale.min(horizontal_scale))
     }
 
     fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
         let centering_vector = (self.inner_state.borrow().bounds.size()
-            - self.page_size().scaled(self.scale))
+            - self.spread_size().scaled(self.scale))
         .scaled(0.5);
         screen_pos -= self.inner_state.borrow().bounds.x0; // screen scale
         screen_pos -= centering_vector; // screen scale
@@ -548,16 +707,17 @@ impl PdfViewer {
 
     fn draw_pdf_to_pixmap(&self) -> Result<()> {
         let mut state = self.inner_state.borrow_mut();
-        let mut ctm = Matrix::IDENTITY;
+        // Build transforms per page
 
         let effective_scale = self.scale * self.scale_factor as f32;
         let centering_vector = (state.bounds.size().scaled(self.scale_factor as f32)
-            - self.page_size().scaled(effective_scale))
+            - self.spread_size().scaled(effective_scale))
         .scaled(0.5);
-        ctm.pre_translate(centering_vector.x, centering_vector.y);
-
-        ctm.scale(effective_scale, effective_scale);
-        ctm.pre_translate(-self.translation.x, -self.translation.y);
+        // Left page transform
+        let mut ctm_left = Matrix::IDENTITY;
+        ctm_left.pre_translate(centering_vector.x, centering_vector.y);
+        ctm_left.scale(effective_scale, effective_scale);
+        ctm_left.pre_translate(-self.translation.x, -self.translation.y);
 
         let mut old_bounds = self.old_bounds.borrow_mut();
         // The bounds check here saves one frame of jitter on resizing the window for some reason
@@ -579,9 +739,10 @@ impl PdfViewer {
             samples.fill(255);
             Device::from_pixmap(pix)?
         };
+        // Render left page
         state.list.run(
             &device,
-            &ctm,
+            &ctm_left,
             mupdf::Rect {
                 x0: 0.0,
                 y0: 0.0,
@@ -589,6 +750,26 @@ impl PdfViewer {
                 y1: bounds.height() * self.scale_factor as f32,
             },
         )?;
+        // Render right page if present
+        if let (true, Some(list), Some(_rp)) = (self.two_page_mode, &self.right_list, &self.right_page) {
+            let left_w = self.page_size().x;
+            let mut ctm_right = Matrix::IDENTITY;
+            ctm_right.pre_translate(centering_vector.x, centering_vector.y);
+            ctm_right.scale(effective_scale, effective_scale);
+            // Shift by left page width (doc units)
+            ctm_right.pre_translate(left_w, 0.0);
+            ctm_right.pre_translate(-self.translation.x, -self.translation.y);
+            list.run(
+                &device,
+                &ctm_right,
+                mupdf::Rect {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: bounds.width() * self.scale_factor as f32,
+                    y1: bounds.height() * self.scale_factor as f32,
+                },
+            )?;
+        }
         let pix = state.pix.as_mut().unwrap();
         if self.invert_colors {
             cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);

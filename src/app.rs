@@ -1,7 +1,7 @@
 use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
-    advanced::graphics::core::window,
+    advanced::graphics::core::window as core_window,
     alignment,
     border::{self, Radius},
     event::listen_with,
@@ -14,7 +14,7 @@ use iced::{
         scrollable::{Direction, Scrollbar},
         stack, text, vertical_space, PaneGrid,
     },
-    window::get_scale_factor,
+    window::{self, get_scale_factor},
     Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
 use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
@@ -69,6 +69,7 @@ pub struct App {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     pub draw_page_borders: bool,
+    fullscreen: bool,
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
     sidebar_tab: SidebarTab,
@@ -76,6 +77,8 @@ pub struct App {
     ctrl_pressed: bool,
     scale_factor: f64,
     jumplist: Jumplist,
+    window_id: Option<window::Id>,
+    restore_sidebar_on_exit: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -99,6 +102,9 @@ pub enum AppMessage {
     ToggleDarkModeUi,
     ToggleDarkModePdf,
     TogglePageBorders,
+    // Two-page spread controls
+    ToggleTwoPage,
+    ToggleCoverPage,
     MouseMoved(Vector<f32>),
     MouseLeftDown,
     MouseRightDown,
@@ -123,6 +129,8 @@ pub enum AppMessage {
     #[serde(skip)]
     PaneResize(pane_grid::ResizeEvent),
     ToggleSidebar,
+    ToggleFullscreen,
+    ExitFullscreen,
     SetSidebar(SidebarTab),
     OutlineGoToPage(u32),
     Exit,
@@ -130,7 +138,7 @@ pub enum AppMessage {
     None,
     #[strum(disabled)]
     #[serde(skip)]
-    FoundWindowId(Option<iced::window::Id>),
+    FoundWindowId(Option<window::Id>),
     FoundScaleFactor(f32),
     JumpTo(JumpLocation),
     JumpBack,
@@ -164,6 +172,7 @@ impl App {
             dark_mode: CONFIG.read().unwrap().dark_mode,
             invert_pdf: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
+            fullscreen: false,
             bookmark_store,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,
@@ -171,6 +180,8 @@ impl App {
             ctrl_pressed: false,
             scale_factor: 1.0,
             jumplist: Jumplist::new(),
+            window_id: None,
+            restore_sidebar_on_exit: false,
         }
     }
 
@@ -206,6 +217,37 @@ impl App {
             },
         ) {
             pane_state.resize(split, 0.7);
+        }
+    }
+
+    fn set_fullscreen(&mut self, fullscreen: bool) -> iced::Task<AppMessage> {
+        if self.fullscreen == fullscreen {
+            return iced::Task::none();
+        }
+
+        if fullscreen {
+            self.restore_sidebar_on_exit = self.has_sidebar_pane();
+            if let Some(sidebar_id) = self.get_sidebar_pane_id() {
+                self.pane_state.close(sidebar_id);
+            }
+        } else if self.restore_sidebar_on_exit {
+            if let Some(pdf_id) = self.get_pdf_pane_id() {
+                Self::open_sidebar(&mut self.pane_state, pdf_id);
+            }
+            self.restore_sidebar_on_exit = false;
+        }
+
+        self.fullscreen = fullscreen;
+
+        if let Some(id) = self.window_id {
+            let mode = if fullscreen {
+                window::Mode::Fullscreen
+            } else {
+                window::Mode::Windowed
+            };
+            window::change_mode::<AppMessage>(id, mode)
+        } else {
+            iced::Task::none()
         }
     }
 
@@ -345,6 +387,22 @@ impl App {
                 }
                 iced::Task::none()
             }
+            AppMessage::ToggleTwoPage => {
+                if let Some(pdf) = self.pdfs.get_mut(self.pdf_idx) {
+                    return pdf
+                        .update(PdfMessage::ToggleTwoPage)
+                        .map(AppMessage::PdfMessage);
+                }
+                iced::Task::none()
+            }
+            AppMessage::ToggleCoverPage => {
+                if let Some(pdf) = self.pdfs.get_mut(self.pdf_idx) {
+                    return pdf
+                        .update(PdfMessage::ToggleCoverPage)
+                        .map(AppMessage::PdfMessage);
+                }
+                iced::Task::none()
+            }
             AppMessage::None => iced::Task::none(),
             AppMessage::MouseMoved(vector) => {
                 if !self.pdfs.is_empty() {
@@ -480,15 +538,23 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::ToggleSidebar => {
-                if self.has_sidebar_pane() {
-                    if let Some(sidebar_id) = self.get_sidebar_pane_id() {
-                        self.pane_state.close(sidebar_id);
+                if self.fullscreen {
+                    self.restore_sidebar_on_exit = !self.restore_sidebar_on_exit;
+                    iced::Task::none()
+                } else {
+                    if self.has_sidebar_pane() {
+                        if let Some(sidebar_id) = self.get_sidebar_pane_id() {
+                            self.pane_state.close(sidebar_id);
+                        }
+                    } else if let Some(pdf_id) = self.get_pdf_pane_id() {
+                        Self::open_sidebar(&mut self.pane_state, pdf_id);
                     }
-                } else if let Some(pdf_id) = self.get_pdf_pane_id() {
-                    Self::open_sidebar(&mut self.pane_state, pdf_id);
+                    self.restore_sidebar_on_exit = self.has_sidebar_pane();
+                    iced::Task::none()
                 }
-                iced::Task::none()
             }
+            AppMessage::ToggleFullscreen => self.set_fullscreen(!self.fullscreen),
+            AppMessage::ExitFullscreen => self.set_fullscreen(false),
             AppMessage::SetSidebar(sidebar_tab) => {
                 self.sidebar_tab = sidebar_tab;
                 iced::Task::none()
@@ -533,7 +599,16 @@ impl App {
             }
             AppMessage::Exit => exit(),
             AppMessage::FoundWindowId(id) => match id {
-                Some(id) => get_scale_factor(id).map(AppMessage::FoundScaleFactor),
+                Some(id) => {
+                    self.window_id = Some(id);
+                    let scale_task = get_scale_factor(id).map(AppMessage::FoundScaleFactor);
+                    if self.fullscreen {
+                        window::change_mode::<AppMessage>(id, window::Mode::Fullscreen)
+                            .chain(scale_task)
+                    } else {
+                        scale_task
+                    }
+                }
                 None => iced::Task::none(),
             },
             AppMessage::FoundScaleFactor(scale) => {
@@ -656,6 +731,30 @@ impl App {
                     "Fit To Screen",
                     AppMessage::PdfMessage(PdfMessage::ZoomFit),
                     cfg.get_binding_for_msg(BindableMessage::ZoomFit)
+                ))(menu_button(
+                    if self.pdfs.get(self.pdf_idx).map(|p| p.two_page_mode).unwrap_or(false) {
+                        "Single Page"
+                    } else {
+                        "Two-Page"
+                    },
+                    AppMessage::ToggleTwoPage,
+                    None,
+                ))(menu_button(
+                    if self.pdfs.get(self.pdf_idx).map(|p| p.cover_page).unwrap_or(false) {
+                        "Cover: On"
+                    } else {
+                        "Cover: Off"
+                    },
+                    AppMessage::ToggleCoverPage,
+                    None,
+                ))(menu_button(
+                    if self.fullscreen {
+                        "Exit Fullscreen"
+                    } else {
+                        "Fullscreen"
+                    },
+                    AppMessage::ToggleFullscreen,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleFullscreen)
                 ))(menu_button_last(
                     if self.has_sidebar_pane() {
                         "Close sidebar"
@@ -731,26 +830,29 @@ impl App {
             pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
                 PaneType::Pdf => {
-                    let menu_bar = self.create_menu_bar();
                     let pdf_content = if self.pdfs.is_empty() {
                         vertical_space().into()
                     } else {
                         self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
                     };
-                    let tabs = self.create_tabs();
-
-                    widget::column![
-                        menu_bar,
-                        stack![
-                            pdf_content,
-                            container(tabs)
-                                .align_y(alignment::Vertical::Bottom)
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .padding(8.0)
+                    if self.fullscreen {
+                        pdf_content
+                    } else {
+                        let menu_bar = self.create_menu_bar();
+                        let tabs = self.create_tabs();
+                        widget::column![
+                            menu_bar,
+                            stack![
+                                pdf_content,
+                                container(tabs)
+                                    .align_y(alignment::Vertical::Bottom)
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                                    .padding(8.0)
+                            ]
                         ]
-                    ]
-                    .into()
+                        .into()
+                    }
                 }
             })
             .style(|_theme: &Theme| Default::default())
@@ -964,52 +1066,66 @@ impl App {
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
         let keys = listen_with(|event, status, _| match event {
-            Event::Keyboard(keyboard_event) => match keyboard_event {
-                iced::keyboard::Event::ModifiersChanged(modifiers) => {
-                    Some(AppMessage::ModifiersChanged(modifiers))
-                }
-                iced::keyboard::Event::KeyPressed {
-                    key: _,
-                    modified_key: iced::keyboard::Key::Character(ref modified),
-                    physical_key: _,
-                    location: _,
-                    modifiers: _,
-                    text: _,
-                } => {
-                    let e = if modified == "+" {
-                        iced::keyboard::Event::KeyPressed {
-                            key: iced::keyboard::Key::Character(SmolStr::new_static("+")),
-                            modified_key: iced::keyboard::Key::Character(SmolStr::new_static("+")),
-                            physical_key: iced::keyboard::key::Physical::Code(
-                                iced::keyboard::key::Code::Minus,
-                            ),
-                            location: iced::keyboard::Location::Standard,
-                            modifiers: Modifiers::empty(),
-                            text: Some(SmolStr::new_static("+")),
-                        }
-                    } else {
-                        keyboard_event
-                    };
-                    let mut config = CONFIG.write().unwrap();
-                    match status {
-                        iced::event::Status::Ignored => {
-                            config.keyboard.dispatch(e).map(|x| (*x).into())
-                        }
-                        iced::event::Status::Captured => None,
+            Event::Keyboard(keyboard_event) => {
+                if let iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                    modifiers,
+                    ..
+                } = &keyboard_event
+                {
+                    if modifiers.is_empty() {
+                        return Some(AppMessage::ExitFullscreen);
                     }
                 }
-                _ => {
-                    // Handle other keyboard events for keybinds
-                    let mut config = CONFIG.write().unwrap();
-                    match status {
-                        iced::event::Status::Ignored => config
-                            .keyboard
-                            .dispatch(keyboard_event)
-                            .map(|x| (*x).into()),
-                        iced::event::Status::Captured => None,
+                match keyboard_event {
+                    iced::keyboard::Event::ModifiersChanged(modifiers) => {
+                        Some(AppMessage::ModifiersChanged(modifiers))
+                    }
+                    iced::keyboard::Event::KeyPressed {
+                        key: _,
+                        modified_key: iced::keyboard::Key::Character(ref modified),
+                        physical_key: _,
+                        location: _,
+                        modifiers: _,
+                        text: _,
+                    } => {
+                        let e = if modified == "+" {
+                            iced::keyboard::Event::KeyPressed {
+                                key: iced::keyboard::Key::Character(SmolStr::new_static("+")),
+                                modified_key: iced::keyboard::Key::Character(
+                                    SmolStr::new_static("+"),
+                                ),
+                                physical_key: iced::keyboard::key::Physical::Code(
+                                    iced::keyboard::key::Code::Minus,
+                                ),
+                                location: iced::keyboard::Location::Standard,
+                                modifiers: Modifiers::empty(),
+                                text: Some(SmolStr::new_static("+")),
+                            }
+                        } else {
+                            keyboard_event
+                        };
+                        let mut config = CONFIG.write().unwrap();
+                        match status {
+                            iced::event::Status::Ignored => {
+                                config.keyboard.dispatch(e).map(|x| (*x).into())
+                            }
+                            iced::event::Status::Captured => None,
+                        }
+                    }
+                    _ => {
+                        // Handle other keyboard events for keybinds
+                        let mut config = CONFIG.write().unwrap();
+                        match status {
+                            iced::event::Status::Ignored => config
+                                .keyboard
+                                .dispatch(keyboard_event)
+                                .map(|x| (*x).into()),
+                            iced::event::Status::Captured => None,
+                        }
                     }
                 }
-            },
+            }
             Event::Mouse(e) => match e {
                 iced::mouse::Event::CursorMoved { position } => {
                     Some(AppMessage::MouseMoved(position.into()))
@@ -1047,7 +1163,7 @@ impl App {
         });
 
         let resizes = listen_with(|event, _, _| match event {
-            Event::Window(window::Event::Resized(_)) => {
+            Event::Window(core_window::Event::Resized(_)) => {
                 Some(AppMessage::PdfMessage(PdfMessage::ReallocPixmap))
             }
             _ => None,
