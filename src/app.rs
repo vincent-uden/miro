@@ -682,7 +682,7 @@ impl App {
                         "Two-Page"
                     },
                     AppMessage::ToggleTwoPage,
-                    None,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleTwoPage),
                 ))(menu_button(
                     if self.pdfs.get(self.pdf_idx).map(|p| p.cover_page).unwrap_or(false) {
                         "Cover: On"
