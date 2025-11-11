@@ -99,6 +99,9 @@ pub enum AppMessage {
     ToggleDarkModeUi,
     ToggleDarkModePdf,
     TogglePageBorders,
+    // Two-page spread controls
+    ToggleTwoPage,
+    ToggleCoverPage,
     MouseMoved(Vector<f32>),
     MouseLeftDown,
     MouseRightDown,
@@ -342,6 +345,22 @@ impl App {
                 self.draw_page_borders = !self.draw_page_borders;
                 for pdf in &mut self.pdfs {
                     pdf.draw_page_borders = self.draw_page_borders;
+                }
+                iced::Task::none()
+            }
+            AppMessage::ToggleTwoPage => {
+                if let Some(pdf) = self.pdfs.get_mut(self.pdf_idx) {
+                    return pdf
+                        .update(PdfMessage::ToggleTwoPage)
+                        .map(AppMessage::PdfMessage);
+                }
+                iced::Task::none()
+            }
+            AppMessage::ToggleCoverPage => {
+                if let Some(pdf) = self.pdfs.get_mut(self.pdf_idx) {
+                    return pdf
+                        .update(PdfMessage::ToggleCoverPage)
+                        .map(AppMessage::PdfMessage);
                 }
                 iced::Task::none()
             }
@@ -656,6 +675,22 @@ impl App {
                     "Fit To Screen",
                     AppMessage::PdfMessage(PdfMessage::ZoomFit),
                     cfg.get_binding_for_msg(BindableMessage::ZoomFit)
+                ))(menu_button(
+                    if self.pdfs.get(self.pdf_idx).map(|p| p.two_page_mode).unwrap_or(false) {
+                        "Single Page"
+                    } else {
+                        "Two-Page"
+                    },
+                    AppMessage::ToggleTwoPage,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleTwoPage),
+                ))(menu_button(
+                    if self.pdfs.get(self.pdf_idx).map(|p| p.cover_page).unwrap_or(false) {
+                        "Cover: On"
+                    } else {
+                        "Cover: Off"
+                    },
+                    AppMessage::ToggleCoverPage,
+                    None,
                 ))(menu_button_last(
                     if self.has_sidebar_pane() {
                         "Close sidebar"

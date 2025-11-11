@@ -33,6 +33,9 @@ pub enum PdfMessage {
     FileChanged,
     ReallocPixmap,
     PrintPdf,
+    // Layout controls
+    ToggleTwoPage,
+    ToggleCoverPage,
     #[default]
     None,
 }
