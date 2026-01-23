@@ -66,3 +66,13 @@ jobs:
           name: Miro ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trigger_publish:
+    needs: test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - run: gh workflow run publish.yml
