@@ -467,6 +467,29 @@ impl Default for Config {
                     BindableMessage::PreviousTab,
                 ),
                 Keybind::new(KeyInput::from_str("L").unwrap(), BindableMessage::NextTab),
+                // Arrow key movement (for non-vim users)
+                Keybind::new(KeyInput::from_str("Up").unwrap(), BindableMessage::MoveUp),
+                Keybind::new(
+                    KeyInput::from_str("Down").unwrap(),
+                    BindableMessage::MoveDown,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Left").unwrap(),
+                    BindableMessage::MoveLeft,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Right").unwrap(),
+                    BindableMessage::MoveRight,
+                ),
+                // Page navigation
+                Keybind::new(
+                    KeyInput::from_str("PageUp").unwrap(),
+                    BindableMessage::PreviousPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("PageDown").unwrap(),
+                    BindableMessage::NextPage,
+                ),
                 Keybind::new(
                     KeyInput::from_str("Alt+Left").unwrap(),
                     BindableMessage::JumpBack,
@@ -479,6 +502,19 @@ impl Default for Config {
                 Keybind::new(KeyInput::from_str("_").unwrap(), BindableMessage::ZoomFit),
                 Keybind::new(KeyInput::from_str("-").unwrap(), BindableMessage::ZoomOut),
                 Keybind::new(KeyInput::from_str("Plus").unwrap(), BindableMessage::ZoomIn),
+                // Standard zoom controls
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+0").unwrap(),
+                    BindableMessage::ZoomHome,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+-").unwrap(),
+                    BindableMessage::ZoomOut,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+Plus").unwrap(),
+                    BindableMessage::ZoomIn,
+                ),
                 Keybind::new(
                     KeyInput::from_str("Ctrl+r").unwrap(),
                     BindableMessage::ToggleDarkModePdf,
@@ -509,6 +545,16 @@ impl Default for Config {
                 ),
                 Keybind::new(KeySeq::from_str("Z Z").unwrap(), BindableMessage::CloseTab),
                 Keybind::new(KeySeq::from_str("q").unwrap(), BindableMessage::Exit),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+w").unwrap(),
+                    BindableMessage::CloseTab,
+                ),
+                // Tab navigation
+                Keybind::new(KeyInput::from_str("Tab").unwrap(), BindableMessage::NextTab),
+                Keybind::new(
+                    KeyInput::from_str("Shift+Tab").unwrap(),
+                    BindableMessage::PreviousTab,
+                ),
             ]),
             mouse: vec![
                 (
