@@ -31,17 +31,21 @@ struct RpcRequest {
 
 pub fn rpc_server() -> impl Stream<Item = AppMessage> {
     stream::channel(100, |output| async move {
-        info!("RPC Server started");
-        let port = {
+        let (port, allow_lan) = {
             let config = CONFIG.read().unwrap();
-            config.rpc_port
+            (config.rpc_port, config.rpc_allow_lan)
         };
+        info!("RPC Server started");
         let app = Router::new()
             .route("/", post(root_handler))
             .with_state(AppState { tx: output });
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind(if allow_lan {
+            format!("0.0.0.0:{port}")
+        } else {
+            format!("127.0.0.1:{port}")
+        })
+        .await
+        .unwrap();
         axum::serve(listener, app).await.unwrap();
     })
 }

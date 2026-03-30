@@ -225,6 +225,7 @@ pub struct Config {
     pub keyboard: Keybinds<BindableMessage>,
     pub mouse: Vec<MouseBinding>,
     pub rpc_enabled: bool,
+    pub rpc_allow_lan: bool,
     pub rpc_port: u32,
     pub trackpad_sensitivity: f32,
     pub page_borders: bool,
@@ -367,6 +368,9 @@ impl Config {
                             format!("Invalid port number: '{value}'. Must be a valid integer")
                         })?;
                     }
+                    "RpcAllowLan" => {
+                        config.rpc_allow_lan = Self::parse_boolean("RpcAllowLan", value)?;
+                    }
                     "TrackpadSensitivity" => {
                         config.trackpad_sensitivity = value.parse::<f32>().map_err(|_| {
                             format!("Invalid float value for TrackpadSensitivity: '{value}'. Must be a valid number")
@@ -440,6 +444,7 @@ impl Config {
         }
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
+        base.rpc_allow_lan = overrider.rpc_allow_lan;
         base.trackpad_sensitivity = overrider.trackpad_sensitivity;
         base.page_borders = overrider.page_borders;
         base.dark_mode = overrider.dark_mode;
@@ -674,6 +679,7 @@ impl Default for Config {
             ],
             rpc_enabled: false,
             rpc_port: 7890,
+            rpc_allow_lan: false,
             trackpad_sensitivity: 1.0,
             page_borders: true,
             dark_mode: true,
@@ -728,6 +734,7 @@ mod tests {
             mouse: Vec::new(),
             rpc_enabled: false,
             rpc_port: 7890,
+            rpc_allow_lan: false,
             trackpad_sensitivity: 1.0,
             page_borders: true,
             dark_mode: true,
@@ -759,6 +766,7 @@ mod tests {
         // Check other settings
         assert_eq!(config.rpc_enabled, default_cfg.rpc_enabled);
         assert_eq!(config.rpc_port, default_cfg.rpc_port);
+        assert_eq!(config.rpc_allow_lan, default_cfg.rpc_allow_lan);
         assert_eq!(
             config.trackpad_sensitivity,
             default_cfg.trackpad_sensitivity
