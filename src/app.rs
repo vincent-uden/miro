@@ -135,6 +135,8 @@ pub enum AppMessage {
     JumpTo(JumpLocation),
     JumpBack,
     JumpForward,
+    ToggleFullscreen,
+    TogglePresentationMode,
 }
 
 impl App {
@@ -579,6 +581,8 @@ impl App {
                 }
                 iced::Task::none()
             }
+            AppMessage::ToggleFullscreen => todo!(),
+            AppMessage::TogglePresentationMode => todo!(),
         }
     }
 

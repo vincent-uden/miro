@@ -178,6 +178,8 @@ pub enum BindableMessage {
     Exit,
     JumpBack,
     JumpForward,
+    ToggleFullscreen,
+    TogglePresentationMode,
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -216,6 +218,8 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::Exit => AppMessage::Exit,
             BindableMessage::JumpBack => AppMessage::JumpBack,
             BindableMessage::JumpForward => AppMessage::JumpForward,
+            BindableMessage::ToggleFullscreen => AppMessage::ToggleFullscreen,
+            BindableMessage::TogglePresentationMode => AppMessage::TogglePresentationMode,
         }
     }
 }
@@ -539,6 +543,14 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Ctrl+k").unwrap(),
                     BindableMessage::TogglePageBorders,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("F11").unwrap(),
+                    BindableMessage::ToggleFullscreen,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("F10").unwrap(),
+                    BindableMessage::TogglePresentationMode,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Ctrl+o").unwrap(),
