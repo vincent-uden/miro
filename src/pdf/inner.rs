@@ -6,6 +6,7 @@ use iced::{
     widget::image::FilterMethod,
 };
 use mupdf::{DisplayList, Pixmap};
+use tracing::debug;
 
 use crate::{
     geometry::{Rect, Vector},
@@ -437,6 +438,7 @@ where
                     iced::keyboard::Key::Character(ref key_char) => {
                         if let Some(keys) = &self.link_keys
                             && !keys.is_empty()
+                            && modifiers.is_empty()
                         {
                             event_handled = true;
                             self.pending_link_key.push_str(key_char);
