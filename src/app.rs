@@ -635,7 +635,7 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(create_recent_file_button(&recent_files[0]))(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -648,7 +648,7 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -661,7 +661,7 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -674,7 +674,7 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -687,7 +687,7 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(create_recent_file_button(&recent_files[4]))(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(create_recent_file_button(&recent_files[4]))(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -1319,6 +1319,45 @@ fn create_recent_file_button(path: &PathBuf) -> button::Button<'_, AppMessage, i
             ..Default::default()
         }
     })
+}
+
+fn menu_label(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
+    button(
+        row![
+            text(label).style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                text::Style {
+                    color: Some(palette.primary.base.color),
+                }
+            }),
+            horizontal_space(),
+        ]
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(move |theme, _status| {
+        let palette = theme.extended_palette();
+        button::Style {
+            text_color: palette.primary.base.color,
+            background: None,
+            border: Border {
+                radius: Radius::default(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    })
+    .on_press(AppMessage::None)
+}
+
+fn menu_separator() -> Element<'static, AppMessage> {
+    container(
+        widget::horizontal_rule(1)
+    )
+    .height(Length::Fixed(6.0))
+    .padding(0.0)
+    .into()
 }
 
 fn menu_button(
