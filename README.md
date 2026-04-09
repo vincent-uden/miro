@@ -20,6 +20,8 @@ A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable
 - Optional RPC server to control the viewer from another program
 - Print via the default web browser
 - Open links using keyboard controls
+- Fullscreen
+- A presentation mode that hides all UI
 
 ## Configuration
 
