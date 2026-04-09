@@ -76,3 +76,5 @@ jobs:
       contents: read
     steps:
       - run: gh workflow run publish.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
