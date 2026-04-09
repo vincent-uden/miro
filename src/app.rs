@@ -533,7 +533,11 @@ impl App {
             }
             AppMessage::Exit => exit(),
             AppMessage::FoundWindowId(id) => match id {
-                Some(id) => get_scale_factor(id).map(AppMessage::FoundScaleFactor),
+                Some(id) => get_scale_factor(id)
+                    .map(AppMessage::FoundScaleFactor)
+                    .chain(iced::Task::done(AppMessage::PdfMessage(
+                        PdfMessage::ReallocPixmap,
+                    ))),
                 None => iced::Task::none(),
             },
             AppMessage::FoundScaleFactor(scale) => {
