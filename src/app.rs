@@ -69,6 +69,7 @@ pub struct App {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     pub draw_page_borders: bool,
+    presentation_mode: bool,
     bookmark_store: BookmarkStore,
     pane_state: pane_grid::State<Pane>,
     sidebar_tab: SidebarTab,
@@ -166,6 +167,7 @@ impl App {
             dark_mode: CONFIG.read().unwrap().dark_mode,
             invert_pdf: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
+            presentation_mode: false,
             bookmark_store,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,
@@ -582,7 +584,10 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::ToggleFullscreen => todo!(),
-            AppMessage::TogglePresentationMode => todo!(),
+            AppMessage::TogglePresentationMode => {
+                self.presentation_mode = !self.presentation_mode;
+                iced::Task::none()
+            }
         }
     }
 
@@ -747,18 +752,22 @@ impl App {
                     };
                     let tabs = self.create_tabs();
 
-                    widget::column![
-                        menu_bar,
-                        stack![
-                            pdf_content,
-                            container(tabs)
-                                .align_y(alignment::Vertical::Bottom)
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .padding(8.0)
+                    if self.presentation_mode {
+                        widget::column![stack![pdf_content,]].into()
+                    } else {
+                        widget::column![
+                            menu_bar,
+                            stack![
+                                pdf_content,
+                                container(tabs)
+                                    .align_y(alignment::Vertical::Bottom)
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                                    .padding(8.0)
+                            ]
                         ]
-                    ]
-                    .into()
+                        .into()
+                    }
                 }
             })
             .style(|_theme: &Theme| Default::default())
