@@ -38,6 +38,7 @@ use crate::{
     icons,
     jumplist::{JumpLocation, Jumplist},
     pdf::{outline_extraction::OutlineItem, widget::PdfViewer, PdfMessage},
+    recent_files::RecentFiles,
     rpc::rpc_server,
     watch::{file_watcher, WatchMessage, WatchNotification},
     CONFIG,
@@ -71,6 +72,7 @@ pub struct App {
     pub draw_page_borders: bool,
     presentation_mode: bool,
     bookmark_store: BookmarkStore,
+    recent_files: RecentFiles,
     pane_state: pane_grid::State<Pane>,
     sidebar_tab: SidebarTab,
     shift_pressed: bool,
@@ -152,7 +154,7 @@ impl App {
         CONFIG.read().unwrap().get_mouse_action(input)
     }
 
-    pub fn new(bookmark_store: BookmarkStore) -> Self {
+    pub fn new(bookmark_store: BookmarkStore, recent_files: RecentFiles) -> Self {
         let (mut ps, pdf_id) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
         });
@@ -169,6 +171,7 @@ impl App {
             draw_page_borders: CONFIG.read().unwrap().page_borders,
             presentation_mode: false,
             bookmark_store,
+            recent_files,
             pane_state: ps,
             sidebar_tab: SidebarTab::Outline,
             shift_pressed: false,
@@ -217,6 +220,7 @@ impl App {
         match message {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
+                self.recent_files.add_recent(path_buf.clone());
                 let out = match PdfViewer::from_path(path_buf.clone()) {
                     Ok(mut viewer) => {
                         viewer.set_scale_factor(self.scale_factor);
@@ -611,22 +615,93 @@ impl App {
             "Close"
         };
 
+        let recent_files = self.recent_files.get_recent();
+
+        let file_menu_items = match recent_files.len() {
+            0 => menu_items!((menu_button(
+                "Open",
+                AppMessage::OpenNewFileFinder,
+                cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
+            ))(menu_button(
+                "Print",
+                AppMessage::PdfMessage(PdfMessage::PrintPdf),
+                cfg.get_binding_for_msg(BindableMessage::PrintPdf)
+            ))(menu_button_last(
+                exit_close_label,
+                AppMessage::CloseTab(self.pdf_idx),
+                None,
+            ))),
+            1 => menu_items!((menu_button(
+                "Open",
+                AppMessage::OpenNewFileFinder,
+                cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
+            ))(create_recent_file_button(&recent_files[0]))(menu_button(
+                "Print",
+                AppMessage::PdfMessage(PdfMessage::PrintPdf),
+                cfg.get_binding_for_msg(BindableMessage::PrintPdf)
+            ))(menu_button_last(
+                exit_close_label,
+                AppMessage::CloseTab(self.pdf_idx),
+                None,
+            ))),
+            2 => menu_items!((menu_button(
+                "Open",
+                AppMessage::OpenNewFileFinder,
+                cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
+            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(menu_button(
+                "Print",
+                AppMessage::PdfMessage(PdfMessage::PrintPdf),
+                cfg.get_binding_for_msg(BindableMessage::PrintPdf)
+            ))(menu_button_last(
+                exit_close_label,
+                AppMessage::CloseTab(self.pdf_idx),
+                None,
+            ))),
+            3 => menu_items!((menu_button(
+                "Open",
+                AppMessage::OpenNewFileFinder,
+                cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
+            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(menu_button(
+                "Print",
+                AppMessage::PdfMessage(PdfMessage::PrintPdf),
+                cfg.get_binding_for_msg(BindableMessage::PrintPdf)
+            ))(menu_button_last(
+                exit_close_label,
+                AppMessage::CloseTab(self.pdf_idx),
+                None,
+            ))),
+            4 => menu_items!((menu_button(
+                "Open",
+                AppMessage::OpenNewFileFinder,
+                cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
+            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(menu_button(
+                "Print",
+                AppMessage::PdfMessage(PdfMessage::PrintPdf),
+                cfg.get_binding_for_msg(BindableMessage::PrintPdf)
+            ))(menu_button_last(
+                exit_close_label,
+                AppMessage::CloseTab(self.pdf_idx),
+                None,
+            ))),
+            _ => menu_items!((menu_button(
+                "Open",
+                AppMessage::OpenNewFileFinder,
+                cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
+            ))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(create_recent_file_button(&recent_files[4]))(menu_button(
+                "Print",
+                AppMessage::PdfMessage(PdfMessage::PrintPdf),
+                cfg.get_binding_for_msg(BindableMessage::PrintPdf)
+            ))(menu_button_last(
+                exit_close_label,
+                AppMessage::CloseTab(self.pdf_idx),
+                None,
+            ))),
+        };
+
         container(row![
             menu_bar!((
                 debug_button_s("File"),
-                menu_tpl_1(menu_items!((menu_button(
-                    "Open",
-                    AppMessage::OpenNewFileFinder,
-                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                ))(menu_button(
-                    "Print",
-                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                ))(menu_button_last(
-                    exit_close_label,
-                    AppMessage::CloseTab(self.pdf_idx),
-                    None,
-                ))))
+                menu_tpl_1(file_menu_items)
             )(
                 debug_button_s("View"),
                 menu_tpl_1(menu_items!((menu_button(
@@ -1096,6 +1171,7 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         self.bookmark_store.save().unwrap();
+        self.recent_files.save().unwrap();
     }
 }
 
@@ -1203,6 +1279,46 @@ fn format_key_sequence(seq: &KeySeq) -> String {
     out.pop();
     out.push(')');
     out
+}
+
+fn create_recent_file_button(path: &PathBuf) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+    let path_clone = path.clone();
+    base_button(
+        row![
+            text(file_name),
+            horizontal_space(),
+            text("").style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                text::Style {
+                    color: Some(palette.primary.base.color),
+                }
+            })
+        ],
+        AppMessage::OpenFile(path_clone),
+    )
+    .width(Length::Fill)
+    .style(move |theme, status| {
+        let palette = theme.extended_palette();
+        let pair = match status {
+            button::Status::Active => palette.background.weak,
+            button::Status::Hovered => palette.background.base,
+            button::Status::Pressed => palette.background.strong,
+            button::Status::Disabled => palette.secondary.weak,
+        };
+        button::Style {
+            text_color: pair.text,
+            background: Some(Background::Color(pair.color)),
+            border: Border {
+                radius: Radius::default(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    })
 }
 
 fn menu_button(

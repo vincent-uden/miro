@@ -9,6 +9,7 @@ use std::{
 use app::App;
 use bookmarks::BookmarkStore;
 use clap::Parser;
+use recent_files::RecentFiles;
 use config::Config;
 use iced::{
     window::{get_latest, icon::from_file_data},
@@ -24,6 +25,7 @@ mod geometry;
 mod icons;
 mod jumplist;
 mod pdf;
+mod recent_files;
 mod rpc;
 mod watch;
 
@@ -77,7 +79,10 @@ fn main() -> iced::Result {
         .font(include_bytes!("../assets/font/Geist-VariableFont_wght.ttf").as_slice())
         .default_font(Font::with_name("Geist"))
         .run_with(move || {
-            let state = App::new(BookmarkStore::system_store().unwrap_or_default());
+            let state = App::new(
+                BookmarkStore::system_store().unwrap_or_default(),
+                RecentFiles::system_store().unwrap_or_default(),
+            );
             let file_task = match args.path {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
