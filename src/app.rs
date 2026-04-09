@@ -14,7 +14,7 @@ use iced::{
         scrollable::{Direction, Scrollbar},
         stack, text, vertical_space, PaneGrid,
     },
-    window::get_scale_factor,
+    window::{get_scale_factor},
     Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
 use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
@@ -583,7 +583,7 @@ impl App {
                 }
                 iced::Task::none()
             }
-            AppMessage::ToggleFullscreen => todo!(),
+            AppMessage::ToggleFullscreen => toggle_fullscreen(),
             AppMessage::TogglePresentationMode => {
                 self.presentation_mode = !self.presentation_mode;
                 iced::Task::none()
@@ -1381,4 +1381,13 @@ fn disabled(style: &button::Style) -> button::Style {
         text_color: style.text_color.scale_alpha(0.5),
         ..*style
     }
+}
+
+fn toggle_fullscreen() -> iced::Task<AppMessage> {
+    iced::window::get_latest()
+        .and_then(move |id| iced::window::get_mode(id).map(move |mode| (id, mode)))
+        .then(|(id, current_mode)| match current_mode {
+            window::Mode::Fullscreen => iced::window::change_mode(id, window::Mode::Windowed),
+            _ => iced::window::change_mode(id, window::Mode::Fullscreen),
+        })
 }
