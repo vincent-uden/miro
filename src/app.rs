@@ -677,6 +677,14 @@ impl App {
                     },
                     AppMessage::ToggleSidebar,
                     cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
+                ))(menu_button(
+                    "Toggle Presentation Mode",
+                    AppMessage::TogglePresentationMode,
+                    cfg.get_binding_for_msg(BindableMessage::TogglePresentationMode)
+                ))(menu_button(
+                    "Toggle Fullscreen",
+                    AppMessage::ToggleFullscreen,
+                    cfg.get_binding_for_msg(BindableMessage::ToggleFullscreen)
                 ))))
             ))
             .draw_path(menu::DrawPath::Backdrop)
