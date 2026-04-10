@@ -635,7 +635,9 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(menu_separator())(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(
+                create_recent_file_button(&recent_files[0])
+            )(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -648,7 +650,11 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(menu_separator())(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(
+                create_recent_file_button(&recent_files[0])
+            )(create_recent_file_button(&recent_files[1]))(
+                menu_separator()
+            )(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -661,7 +667,11 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(menu_separator())(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(
+                create_recent_file_button(&recent_files[0])
+            )(create_recent_file_button(&recent_files[1]))(
+                create_recent_file_button(&recent_files[2])
+            )(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -674,7 +684,13 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(menu_separator())(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(
+                create_recent_file_button(&recent_files[0])
+            )(create_recent_file_button(&recent_files[1]))(
+                create_recent_file_button(&recent_files[2])
+            )(create_recent_file_button(&recent_files[3]))(
+                menu_separator()
+            )(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -687,7 +703,13 @@ impl App {
                 "Open",
                 AppMessage::OpenNewFileFinder,
                 cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-            ))(menu_separator())(menu_label("Recent"))(create_recent_file_button(&recent_files[0]))(create_recent_file_button(&recent_files[1]))(create_recent_file_button(&recent_files[2]))(create_recent_file_button(&recent_files[3]))(create_recent_file_button(&recent_files[4]))(menu_separator())(menu_button(
+            ))(menu_separator())(menu_label("Recent"))(
+                create_recent_file_button(&recent_files[0])
+            )(create_recent_file_button(&recent_files[1]))(
+                create_recent_file_button(&recent_files[2])
+            )(create_recent_file_button(&recent_files[3]))(
+                create_recent_file_button(&recent_files[4])
+            )(menu_separator())(menu_button(
                 "Print",
                 AppMessage::PdfMessage(PdfMessage::PrintPdf),
                 cfg.get_binding_for_msg(BindableMessage::PrintPdf)
@@ -699,10 +721,7 @@ impl App {
         };
 
         container(row![
-            menu_bar!((
-                debug_button_s("File"),
-                menu_tpl_1(file_menu_items)
-            )(
+            menu_bar!((debug_button_s("File"), menu_tpl_1(file_menu_items))(
                 debug_button_s("View"),
                 menu_tpl_1(menu_items!((menu_button(
                     if self.dark_mode {
@@ -1170,8 +1189,18 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        self.bookmark_store.save().unwrap();
-        self.recent_files.save().unwrap();
+        match self.bookmark_store.save() {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error while saving bookmarks: {}", e)
+            }
+        }
+        match self.recent_files.save() {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error while saving recent files: {}", e)
+            }
+        }
     }
 }
 
@@ -1281,7 +1310,9 @@ fn format_key_sequence(seq: &KeySeq) -> String {
     out
 }
 
-fn create_recent_file_button(path: &PathBuf) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
+fn create_recent_file_button(
+    path: &PathBuf,
+) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
     let file_name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -1352,12 +1383,10 @@ fn menu_label(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced::
 }
 
 fn menu_separator() -> Element<'static, AppMessage> {
-    container(
-        widget::horizontal_rule(1)
-    )
-    .height(Length::Fixed(6.0))
-    .padding(0.0)
-    .into()
+    container(widget::horizontal_rule(1))
+        .height(Length::Fixed(6.0))
+        .padding(0.0)
+        .into()
 }
 
 fn menu_button(
