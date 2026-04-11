@@ -75,6 +75,7 @@ jobs:
       actions: write
       contents: read
     steps:
+      - uses: actions/checkout@v3
       - run: gh workflow run publish.yml
         env:
           GH_TOKEN: ${{ github.token }}
