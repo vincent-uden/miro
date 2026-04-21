@@ -6,7 +6,6 @@ use iced::{
     widget::image::FilterMethod,
 };
 use mupdf::{DisplayList, Pixmap};
-use tracing::debug;
 
 use crate::{
     geometry::{Rect, Vector},
@@ -81,12 +80,13 @@ fn get_background_color(invert_colors: bool) -> iced::Color {
 pub struct State {
     /// The viewport bounds
     pub bounds: Rect<f32>,
-    pub page_size: Vector<f32>,
-    pub list: DisplayList,
+    pub page_size: Vec<Vector<f32>>,
+    pub list: Vec<DisplayList>,
     /// The pixmap can only be allocated once we know the bounds of the widget
     pub pix: Option<Pixmap>,
 }
 
+/// Transient structs constructed during [PdfViewer::view]
 #[derive(Debug)]
 pub struct PageViewer<'a> {
     state: Ref<'a, State>,
@@ -97,12 +97,6 @@ pub struct PageViewer<'a> {
     translation: Vector<f32>,
     scale: f32,
     invert_colors: bool,
-    draw_page_borders: bool,
-    text_selection_rect: Option<Rect<f32>>,
-    link_hitboxes: Option<&'a Vec<LinkInfo>>,
-    link_keys: Option<Vec<String>>,
-    pending_link_key: String,
-    is_over_link: bool,
 }
 
 impl<'a> PageViewer<'a> {
@@ -116,12 +110,6 @@ impl<'a> PageViewer<'a> {
             translation: Vector::zero(),
             scale: 1.0,
             invert_colors: false,
-            draw_page_borders: false,
-            text_selection_rect: None,
-            link_hitboxes: None,
-            link_keys: None,
-            pending_link_key: String::new(),
-            is_over_link: false,
         }
     }
     /// Sets the width of the [`Image`] boundaries.

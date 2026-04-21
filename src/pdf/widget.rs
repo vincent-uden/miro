@@ -23,6 +23,27 @@ use super::{
     outline_extraction::OutlineItem,
 };
 
+#[derive(Debug, Clone, Copy)]
+pub enum PageLayout {
+    /// One page per row, many rows
+    SinglePage,
+    /// Two pages per row, many rows
+    TwoPage,
+    /// Only one page on the screen at a time
+    Presentation,
+}
+
+impl PageLayout {
+    fn pages_rects(
+        &self,
+        doc: &Document,
+        translation: Vector<f32>,
+        scale: f32,
+        fractional_scale: f64,
+    ) -> Vec<Rect<f32>> {
+        todo!("");
+    }
+}
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
 
@@ -33,10 +54,10 @@ pub struct PdfViewer {
     pub path: PathBuf,
     pub label: String,
     pub page_progress: String,
-    pub cur_page_idx: i32,
     pub translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     pub draw_page_borders: bool,
+    layout: PageLayout,
     inner_state: RefCell<inner::State>,
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
     /// corner of the screen, it must account for that offset.
@@ -53,12 +74,8 @@ pub struct PdfViewer {
     show_link_hitboxes: bool,
     is_over_link: bool,
     document_outline: Vec<OutlineItem>,
-
     doc: Document,
-    page: Page,
-
     old_bounds: RefCell<Rect<f32>>,
-
     gradient_cache: [[u8; 4]; 256],
 }
 
@@ -101,10 +118,10 @@ impl PdfViewer {
             path,
             label: String::new(),
             page_progress: String::new(),
-            cur_page_idx: 0,
             translation: Vector { x: 0.0, y: 0.0 },
             invert_colors: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
+            layout: PageLayout::SinglePage,
             inner_state: RefCell::new(inner::State {
                 bounds: Rect::default(),
                 page_size: page.bounds()?.size().into(),
@@ -120,7 +137,6 @@ impl PdfViewer {
             is_over_link: false,
             document_outline,
             doc,
-            page,
             gradient_cache,
             old_bounds: RefCell::new(Rect::default()),
         })
