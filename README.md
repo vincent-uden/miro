@@ -105,18 +105,16 @@ Configuration parsing errors:
 ### Pre-compiled binary
 Head over to [releases](https://github.com/vincent-uden/miro/releases) and download the latest binary for your platform, then place it somewhere in your path.
 
-#### Nix Cachix Binary Cache
+#### Nixpkgs
+```
+nix-env -iA nixos.miro
+```
+
+Alternatively, add the following to your NixOS Configuration, usually located in `/etc/nixos/configuration.nix`
 ```nix
-nix.settings = {
-  substituters = [
-    "https://miro-pdf.cachix.org"
-    # Others...
+  environment.systemPackages = [
+    pkgs.miro
   ];
-  trusted-public-keys = [
-    "miro-pdf.cachix.org-1:4XzXt3PjR8lGUo00nhzAGQLdRa73iPQNTRD5tfIZf4k="
-    # Others...
-  ];
-};
 ```
 
 ### Crates.io
