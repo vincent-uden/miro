@@ -1,11 +1,14 @@
-packages: {
+packages:
+{
   config,
   lib,
   pkgs,
   ...
-}: let
+}:
+let
   cfg = config.programs.miro-pdf;
-in {
+in
+{
   options.programs.miro-pdf = {
     enable = lib.mkEnableOption "Enable miro-pdf";
 
@@ -23,8 +26,7 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [cfg.package];
-
+    home.packages = [ cfg.package ];
     xdg.configFile."miro-pdf/miro.conf".text = cfg.config;
   };
 }

@@ -26,7 +26,7 @@
         inherit (pkgs) miro;
       in
       {
-        formatter = pkgs.alejandra;
+        formatter = pkgs.nixfmt;
         checks = { inherit miro; };
         packages.default = miro;
         devShells.default = (crane.mkLib pkgs).devShell {
