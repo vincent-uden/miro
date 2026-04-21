@@ -543,9 +543,7 @@ impl App {
             AppMessage::FoundWindowId(id) => match id {
                 Some(id) => get_scale_factor(id)
                     .map(AppMessage::FoundScaleFactor)
-                    .chain(iced::Task::done(AppMessage::PdfMessage(
-                        PdfMessage::ReallocPixmap,
-                    ))),
+                    .chain(iced::Task::none()),
                 None => iced::Task::none(),
             },
             AppMessage::FoundScaleFactor(scale) => {
@@ -1165,10 +1163,11 @@ impl App {
             _ => None,
         });
 
+        // On a window resize the widget should change size, if it doesn't we don't need to
+        // re-allocate a pixmap regardless. Thus this None for now.
+        // TODO: Delete this in the future if we don't need any information about window resizes
         let resizes = listen_with(|event, _, _| match event {
-            Event::Window(window::Event::Resized(_)) => {
-                Some(AppMessage::PdfMessage(PdfMessage::ReallocPixmap))
-            }
+            Event::Window(window::Event::Resized(_)) => None,
             _ => None,
         });
 

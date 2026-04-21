@@ -30,7 +30,6 @@ pub enum PdfMessage {
     ActivateLink(usize), // Activate link by index
     CloseLinkHitboxes,   // Close/hide link hitboxes
     FileChanged,
-    ReallocPixmap,
     PrintPdf,
     #[default]
     None,

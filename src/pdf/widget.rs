@@ -17,12 +17,7 @@ use crate::{
     },
 };
 
-use super::{
-    PdfMessage,
-    inner::{self, PageViewer},
-    link_extraction::LinkInfo,
-    outline_extraction::OutlineItem,
-};
+use super::{PdfMessage, link_extraction::LinkInfo, outline_extraction::OutlineItem};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PageLayout {
@@ -77,6 +72,11 @@ impl PageLayout {
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
 
+#[derive(Debug)]
+pub struct State {
+    bounds: Rect<f32>,
+}
+
 /// Renders a pdf document. Owns all information related to the document.
 #[derive(Debug)]
 pub struct PdfViewer {
@@ -88,7 +88,7 @@ pub struct PdfViewer {
     pub invert_colors: bool,
     pub draw_page_borders: bool,
     layout: PageLayout,
-    inner_state: RefCell<inner::State>,
+    inner_state: RefCell<State>,
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
     /// corner of the screen, it must account for that offset.
     last_mouse_pos: Option<Vector<f32>>,
@@ -151,11 +151,8 @@ impl PdfViewer {
             invert_colors: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
             layout: PageLayout::SinglePage,
-            inner_state: RefCell::new(inner::State {
+            inner_state: RefCell::new(State {
                 bounds: Rect::default(),
-                page_size: vec![],
-                list: vec![],
-                pix: None,
             }),
             last_mouse_pos: None,
             mouse_down_pos: None,
@@ -246,7 +243,8 @@ impl PdfViewer {
             }
             PdfMessage::UpdateBounds(rectangle) => {
                 self.inner_state.borrow_mut().bounds = rectangle;
-                iced::Task::done(PdfMessage::ReallocPixmap)
+                // TODO: Get new page layout
+                iced::Task::none()
             }
             PdfMessage::None => iced::Task::none(),
             PdfMessage::MouseMoved(vector) => {
@@ -477,10 +475,6 @@ impl PdfViewer {
             }
             PdfMessage::FileChanged => {
                 self.refresh_file().unwrap();
-                iced::Task::none()
-            }
-            PdfMessage::ReallocPixmap => {
-                self.inner_state.borrow_mut().pix = None;
                 iced::Task::none()
             }
             PdfMessage::PrintPdf => {
