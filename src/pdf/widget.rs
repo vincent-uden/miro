@@ -648,6 +648,29 @@ impl PdfViewer {
     }
 }
 
+pub fn extract_all_links(doc: &Document) -> Result<Vec<LinkInfo>> {
+    todo!()
+    // let mut links = Vec::new();
+
+    // let link_iter = self.page.links()?;
+
+    // for link in link_iter {
+    //     let bounds = Rect::from_points(
+    //         Vector::new(link.bounds.x0, link.bounds.y0),
+    //         Vector::new(link.bounds.x1, link.bounds.y1),
+    //     );
+    //     let link_type = categorize_link(&link);
+    //     links.push(LinkInfo {
+    //         page_idx: self.idx,
+    //         bounds,
+    //         uri: link.uri,
+    //         link_type,
+    //     });
+    // }
+
+    // Ok(links)
+}
+
 fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
     let gradient = GradientBuilder::new()
         .colors(&[
