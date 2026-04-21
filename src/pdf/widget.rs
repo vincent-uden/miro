@@ -11,7 +11,7 @@ use crate::{
     config::MouseAction,
     geometry::{self, Rect, Vector},
     pdf::{
-        link_extraction::{LinkExtractor, LinkType},
+        link_extraction::{LinkType},
         outline_extraction::OutlineExtractor,
         text_extraction::TextExtractor,
     },
@@ -126,8 +126,7 @@ impl PdfViewer {
         let ctm = Matrix::IDENTITY;
         page.run(&list_dev, &ctm)?;
 
-        let extractor = LinkExtractor::new(&page);
-        let link_hitboxes = extractor.extract_all_links()?;
+        let link_hitboxes = extract_all_links(&doc)?;
 
         let extractor = OutlineExtractor::new(&doc);
         let document_outline = extractor.extract_outline()?;
@@ -305,13 +304,13 @@ impl PdfViewer {
                     };
 
                     if is_click
-                        && let Some(pos) = self
+                        && let Some((page_idx, pos)) = self
                             .last_mouse_pos
                             .map(|p| self.screen_to_document_coords(p))
                         && let Some(link) = self
                             .link_hitboxes
                             .iter()
-                            .find(|link| link.bounds.contains(pos))
+                            .find(|link| link.bounds.contains(pos) && link.page_idx == page_idx)
                     {
                         match link.link_type {
                             LinkType::InternalPage(page) => {
@@ -384,20 +383,20 @@ impl PdfViewer {
                                 && selection_rect.height() > MIN_SELECTION
                             {
                                 // FIX: Possibly multiple text extractors here
-                                let extractor = TextExtractor::new(&self.page);
-                                let selection = extractor
-                                    .extract_text_in_rect(selection_rect.into())
-                                    .unwrap();
-                                info!("Copied: \"{}\" at {:?}", selection.text, selection.bounds);
-                                arboard::Clipboard::new().map_or_else(
-                                    |e| error!("{e}"),
-                                    |mut clipboard| {
-                                        clipboard
-                                            .set_text(selection.text)
-                                            .inspect_err(|e| error!("{e}"))
-                                            .unwrap();
-                                    },
-                                )
+                                // let extractor = TextExtractor::new(&self.page);
+                                // let selection = extractor
+                                //     .extract_text_in_rect(selection_rect.into())
+                                //     .unwrap();
+                                // info!("Copied: \"{}\" at {:?}", selection.text, selection.bounds);
+                                // arboard::Clipboard::new().map_or_else(
+                                //     |e| error!("{e}"),
+                                //     |mut clipboard| {
+                                //         clipboard
+                                //             .set_text(selection.text)
+                                //             .inspect_err(|e| error!("{e}"))
+                                //             .unwrap();
+                                //     },
+                                // )
                             }
                         }
                         self.text_selection_start = None;
@@ -693,5 +692,64 @@ fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, gradient_cache: &[[u8; 4]; 256]
         let brightness = ((r + g + b) / 3) as usize;
         let pixel_array: &mut [u8; 4] = pixel.try_into().unwrap();
         *pixel_array = gradient_cache[brightness];
+    }
+}
+
+fn generate_key_combinations(count: usize) -> Vec<String> {
+    // Use easily distinguishable characters (excluding confusing ones like 'I', 'l', 'O', '0')
+    const CHARS: &[char] = &[
+        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n', 'p', 'q', 'r', 's', 't', 'u',
+        'v', 'w', 'x', 'y', 'z',
+    ];
+
+    let mut keys = Vec::new();
+
+    for &c in CHARS.iter().take(count.min(CHARS.len())) {
+        keys.push(c.to_string());
+    }
+
+    if count > CHARS.len() {
+        let remaining = count - CHARS.len();
+        let mut added = 0;
+        'outer: for &c1 in CHARS {
+            for &c2 in CHARS {
+                if added >= remaining {
+                    break 'outer;
+                }
+                keys.push(format!("{}{}", c1, c2));
+                added += 1;
+            }
+        }
+    }
+
+    keys
+}
+
+fn get_link_colors(link_type: &LinkType) -> (iced::Color, iced::Color) {
+    match link_type {
+        LinkType::ExternalUrl => (
+            iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
+            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
+        ),
+        LinkType::InternalPage(_) => (
+            iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
+            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
+        ),
+        LinkType::Email => (
+            iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
+            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
+        ),
+        LinkType::Other => (
+            iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
+            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
+        ),
+    }
+}
+
+fn get_background_color(invert_colors: bool) -> iced::Color {
+    if invert_colors {
+        iced::Color::from_rgb8(21, 22, 32)
+    } else {
+        iced::Color::from_rgb8(220, 219, 218)
     }
 }

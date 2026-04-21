@@ -5,7 +5,6 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
-mod inner;
 pub mod link_extraction;
 pub mod outline_extraction;
 pub mod text_extraction;
