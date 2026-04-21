@@ -11,38 +11,27 @@
     crane.url = "github:ipetkov/crane";
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    flake-utils,
-    crane,
-    ...
-  }:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      crane,
+      ...
+    }:
     flake-utils.lib.eachDefaultSystem (
-      system: let
+      system:
+      let
         pkgs = nixpkgs.legacyPackages.${system};
-
-        craneLib = crane.mkLib pkgs;
-
-        miro-pdf = pkgs.callPackage ./nix/package.nix {inherit craneLib;};
-      in {
+        inherit (pkgs) miro;
+      in
+      {
         formatter = pkgs.alejandra;
-
-        packages = {
-          inherit miro-pdf;
-          default = miro-pdf;
-        };
-
-        checks = {inherit miro-pdf;};
-
-        devShells.default = craneLib.devShell {
-          inputsFrom = [miro-pdf];
-
-          packages = with pkgs; [rust-analyzer];
-
-          shellHook = ''
-            export LD_LIBRARY_PATH=${miro-pdf.passthru.runtimeLibsPath}:$LD_LIBRARY_PATH
-          '';
+        checks = { inherit miro; };
+        packages.default = miro;
+        devShells.default = (crane.mkLib pkgs).devShell {
+          inputsFrom = [ miro ];
+          packages = with pkgs; [ rust-analyzer ];
         };
       }
     )
