@@ -6,6 +6,8 @@ use tracing::{error, info};
 use open;
 
 use crate::{
+    CONFIG, DARK_THEME,
+    app::AppMessage,
     config::MouseAction,
     geometry::{self, Rect, Vector},
     pdf::{
@@ -13,7 +15,6 @@ use crate::{
         outline_extraction::OutlineExtractor,
         text_extraction::TextExtractor,
     },
-    CONFIG, DARK_THEME,
 };
 
 use super::{
@@ -29,6 +30,8 @@ pub enum PageLayout {
     SinglePage,
     /// Two pages per row, many rows
     TwoPage,
+    /// Two pages per row, many rows, except for the first page which is on its own
+    TwoPageTitlePage,
     /// Only one page on the screen at a time
     Presentation,
 }
@@ -56,6 +59,18 @@ impl PageLayout {
         page_idx: usize,
         viewport: Rect<f32>,
     ) -> Vector<f32> {
+        todo!("")
+    }
+
+    /// Returns the height of the row of pages occupying the middle of the creen
+    fn page_set_height(
+        &self,
+        doc: &Document,
+        translation: Vector<f32>,
+        scale: f32,
+        fractional_scale: f64,
+        viewport: Rect<f32>,
+    ) -> f32 {
         todo!("")
     }
 }
@@ -159,12 +174,42 @@ impl PdfViewer {
 
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
         let task: iced::Task<PdfMessage> = match message {
-            PdfMessage::NextPage => {
-                self.set_page(self.cur_page_idx + 1).unwrap();
+            PdfMessage::PageDown => {
+                let inner = self.inner_state.borrow();
+                self.set_viewport(
+                    self.translation
+                        + Vector::new(
+                            0.0,
+                            self.layout.page_set_height(
+                                &self.doc,
+                                self.translation,
+                                self.scale,
+                                self.scale_factor,
+                                inner.bounds,
+                            ),
+                        ),
+                    self.scale,
+                );
                 iced::Task::none()
             }
-            PdfMessage::PreviousPage => {
-                self.set_page(self.cur_page_idx - 1).unwrap();
+            PdfMessage::PageUp => {
+                let inner = self.inner_state.borrow();
+                self.set_viewport(
+                    self.translation
+                        - Vector::new(
+                            0.0,
+                            // Maybe this should be based on the page set above rather than the
+                            // current one?
+                            self.layout.page_set_height(
+                                &self.doc,
+                                self.translation,
+                                self.scale,
+                                self.scale_factor,
+                                inner.bounds,
+                            ),
+                        ),
+                    self.scale,
+                );
                 iced::Task::none()
             }
             PdfMessage::SetPage(page) => {
@@ -270,7 +315,7 @@ impl PdfViewer {
                     {
                         match link.link_type {
                             LinkType::InternalPage(page) => {
-                                if self.set_page(page as i32).is_err() {
+                                if self.set_page(page as usize).is_err() {
                                     error!("Couldn't jump to page {page}");
                                 }
                             }
@@ -325,9 +370,11 @@ impl PdfViewer {
                         if let (Some(start_pos), Some(end_pos)) =
                             (self.text_selection_start, self.last_mouse_pos)
                         {
-                            let doc_start = self.screen_to_document_coords(start_pos);
-                            let doc_end = self.screen_to_document_coords(end_pos);
+                            let (start_page, doc_start) = self.screen_to_document_coords(start_pos);
+                            let (end_page, doc_end) = self.screen_to_document_coords(end_pos);
 
+                            // FIX: Handle which page the selection is on
+                            // Selection might span multiple pages
                             let selection_rect = Rect::from_points(
                                 Vector::new(doc_start.x.min(doc_end.x), doc_start.y.min(doc_end.y)),
                                 Vector::new(doc_start.x.max(doc_end.x), doc_start.y.max(doc_end.y)),
@@ -336,6 +383,7 @@ impl PdfViewer {
                             if selection_rect.width() > MIN_SELECTION
                                 && selection_rect.height() > MIN_SELECTION
                             {
+                                // FIX: Possibly multiple text extractors here
                                 let extractor = TextExtractor::new(&self.page);
                                 let selection = extractor
                                     .extract_text_in_rect(selection_rect.into())
@@ -355,11 +403,11 @@ impl PdfViewer {
                         self.text_selection_start = None;
                     }
                     (MouseAction::NextPage, true) => {
-                        let _ = self.set_page(self.cur_page_idx + 1);
+                        self.update(PdfMessage::PageDown);
                     }
                     (MouseAction::NextPage, false) => {}
                     (MouseAction::PreviousPage, true) => {
-                        let _ = self.set_page(self.cur_page_idx - 1);
+                        self.update(PdfMessage::PageUp);
                     }
                     (MouseAction::PreviousPage, false) => {}
                     (MouseAction::ZoomIn, true) => {
@@ -397,7 +445,7 @@ impl PdfViewer {
                 if let Some(link) = self.link_hitboxes.get(index) {
                     match link.link_type {
                         LinkType::InternalPage(page) => {
-                            if self.set_page(page as i32).is_err() {
+                            if self.set_page(page as usize).is_err() {
                                 error!("Couldn't jump to page {page}");
                             }
                         }
@@ -449,15 +497,20 @@ impl PdfViewer {
                 )
             }
         };
+        // TODO : What page number should be shown here? A range? It is reasonable to assume layouts
+        // to return contiguous ranges of pages. In the absence of a better solution that might have
+        // to do.
         self.label = format!(
             "{} {}/{}",
             self.name,
-            self.cur_page_idx + 1,
+            0,
+            // self.cur_page_idx + 1,
             self.doc.page_count().unwrap_or(0),
         );
         self.page_progress = format!(
             " {}/{}",
-            self.cur_page_idx + 1,
+            0,
+            // self.cur_page_idx + 1,
             self.doc.page_count().unwrap_or(0),
         );
         task
@@ -494,17 +547,32 @@ impl PdfViewer {
     }
 
     fn set_page(&mut self, idx: usize) -> Result<()> {
-        self.translation =
-            self.layout
-                .translation_for_page(&self.doc, self.scale, self.scale_factor, idx);
+        {
+            let inner = self.inner_state.borrow();
+            self.translation = self.layout.translation_for_page(
+                &self.doc,
+                self.scale,
+                self.scale_factor,
+                idx,
+                inner.bounds,
+            );
+        }
 
         self.set_viewport(self.translation, self.scale)
     }
 
     fn set_viewport(&mut self, translation: Vector<f32>, scale: f32) -> Result<()> {
-        let visible_pages =
-            self.layout
-                .pages_rects(&self.doc, self.translation, self.scale, self.scale_factor);
+        let bounds = {
+            let inner = self.inner_state.borrow();
+            inner.bounds
+        };
+        let visible_pages = self.layout.pages_rects(
+            &self.doc,
+            self.translation,
+            self.scale,
+            self.scale_factor,
+            bounds,
+        );
         // TODO:
         // Create DisplayLists for pages
         // Old code

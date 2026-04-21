@@ -197,8 +197,8 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::MoveRight => {
                 AppMessage::PdfMessage(PdfMessage::Move(Vector::new(MOVE_STEP, 0.0)))
             }
-            BindableMessage::NextPage => AppMessage::PdfMessage(PdfMessage::NextPage),
-            BindableMessage::PreviousPage => AppMessage::PdfMessage(PdfMessage::PreviousPage),
+            BindableMessage::NextPage => AppMessage::PdfMessage(PdfMessage::PageDown),
+            BindableMessage::PreviousPage => AppMessage::PdfMessage(PdfMessage::PageUp),
             BindableMessage::ZoomHome => AppMessage::PdfMessage(PdfMessage::ZoomHome),
             BindableMessage::ZoomFit => AppMessage::PdfMessage(PdfMessage::ZoomFit),
             BindableMessage::ZoomIn => AppMessage::PdfMessage(PdfMessage::ZoomIn),

@@ -13,9 +13,9 @@ pub mod widget;
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PdfMessage {
-    NextPage,
-    PreviousPage,
-    SetPage(i32),
+    PageDown,
+    PageUp,
+    SetPage(usize),
     SetTranslation(Vector<f32>),
     ZoomIn,
     ZoomOut,
