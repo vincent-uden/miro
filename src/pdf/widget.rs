@@ -171,8 +171,8 @@ impl PdfViewer {
     pub fn update(&mut self, message: PdfMessage) -> iced::Task<PdfMessage> {
         let task: iced::Task<PdfMessage> = match message {
             PdfMessage::PageDown => {
-                let inner = self.inner_state.borrow();
-                self.set_viewport(
+                let bounds = { self.inner_state.borrow().bounds };
+                self.set_position(
                     self.translation
                         + Vector::new(
                             0.0,
@@ -181,7 +181,7 @@ impl PdfViewer {
                                 self.translation,
                                 self.scale,
                                 self.scale_factor,
-                                inner.bounds,
+                                bounds,
                             ),
                         ),
                     self.scale,
@@ -189,8 +189,8 @@ impl PdfViewer {
                 iced::Task::none()
             }
             PdfMessage::PageUp => {
-                let inner = self.inner_state.borrow();
-                self.set_viewport(
+                let bounds = { self.inner_state.borrow().bounds };
+                self.set_position(
                     self.translation
                         - Vector::new(
                             0.0,
@@ -201,7 +201,7 @@ impl PdfViewer {
                                 self.translation,
                                 self.scale,
                                 self.scale_factor,
-                                inner.bounds,
+                                bounds,
                             ),
                         ),
                     self.scale,
@@ -551,10 +551,10 @@ impl PdfViewer {
             );
         }
 
-        self.set_viewport(self.translation, self.scale)
+        self.set_position(self.translation, self.scale)
     }
 
-    fn set_viewport(&mut self, translation: Vector<f32>, scale: f32) -> Result<()> {
+    fn set_position(&mut self, translation: Vector<f32>, scale: f32) -> Result<()> {
         let bounds = {
             let inner = self.inner_state.borrow();
             inner.bounds
@@ -585,7 +585,7 @@ impl PdfViewer {
         self.doc = Document::open(&self.path.to_str().unwrap())?;
         let extractor = OutlineExtractor::new(&self.doc);
         self.document_outline = extractor.extract_outline()?;
-        self.set_viewport(self.translation, self.scale)
+        self.set_position(self.translation, self.scale)
     }
 
     fn zoom_fit_ratio(&mut self) -> Result<f32> {
