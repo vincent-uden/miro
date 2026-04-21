@@ -9,6 +9,7 @@ pub struct LinkInfo {
     pub bounds: Rect<f32>,
     pub uri: String,
     pub link_type: LinkType,
+    pub page_idx: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -21,12 +22,13 @@ pub enum LinkType {
 
 #[derive(Debug)]
 pub struct LinkExtractor<'a> {
+    idx: usize,
     page: &'a Page,
 }
 
 impl<'a> LinkExtractor<'a> {
-    pub fn new(page: &'a Page) -> Self {
-        Self { page }
+    pub fn new(idx: usize, page: &'a Page) -> Self {
+        Self { idx, page }
     }
 
     pub fn extract_all_links(&self) -> Result<Vec<LinkInfo>> {
@@ -41,6 +43,7 @@ impl<'a> LinkExtractor<'a> {
             );
             let link_type = categorize_link(&link);
             links.push(LinkInfo {
+                page_idx: self.idx,
                 bounds,
                 uri: link.uri,
                 link_type,
@@ -98,7 +101,7 @@ mod tests {
     fn test_links_pdf_extraction() -> Result<()> {
         let document = Document::open("assets/links.pdf")?;
         let page = document.load_page(0)?;
-        let extractor = LinkExtractor::new(&page);
+        let extractor = LinkExtractor::new(0, &page);
 
         let links = extractor.extract_all_links()?;
 

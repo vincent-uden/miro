@@ -154,8 +154,8 @@ impl PdfViewer {
             layout: PageLayout::SinglePage,
             inner_state: RefCell::new(inner::State {
                 bounds: Rect::default(),
-                page_size: page.bounds()?.size().into(),
-                list,
+                page_size: vec![],
+                list: vec![],
                 pix: None,
             }),
             last_mouse_pos: None,
@@ -256,11 +256,11 @@ impl PdfViewer {
                         self.translation +=
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
                     }
-                    let doc_pos = self.screen_to_document_coords(vector);
+                    let (page_idx, doc_pos) = self.screen_to_document_coords(vector);
                     self.is_over_link = self
                         .link_hitboxes
                         .iter()
-                        .any(|link| link.bounds.contains(doc_pos));
+                        .any(|link| link.bounds.contains(doc_pos) && link.page_idx == page_idx);
 
                     self.last_mouse_pos = Some(vector);
                 } else {
