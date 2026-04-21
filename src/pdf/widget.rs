@@ -34,14 +34,29 @@ pub enum PageLayout {
 }
 
 impl PageLayout {
+    /// Returns visible pages and their bounding boxes relative to the widgets origin.
     fn pages_rects(
         &self,
         doc: &Document,
         translation: Vector<f32>,
         scale: f32,
         fractional_scale: f64,
-    ) -> Vec<Rect<f32>> {
+        viewport: Rect<f32>,
+    ) -> Vec<(Page, Rect<f32>)> {
         todo!("");
+    }
+
+    /// Returns the translation that would leave the page at [page_idx] visible on the screen. If
+    /// `page_idx > doc.page_count()` this will move to the last page.
+    fn translation_for_page(
+        &self,
+        doc: &Document,
+        scale: f32,
+        fractional_scale: f64,
+        page_idx: usize,
+        viewport: Rect<f32>,
+    ) -> Vector<f32> {
+        todo!("")
     }
 }
 const MIN_SELECTION: f32 = 5.0;
@@ -478,54 +493,49 @@ impl PdfViewer {
             .into()
     }
 
-    fn set_page(&mut self, idx: i32) -> Result<()> {
-        self.cur_page_idx = idx.clamp(0, self.doc.page_count()? - 1);
-        self.page = self.doc.load_page(self.cur_page_idx)?;
-        let bounds = self.page.bounds()?;
+    fn set_page(&mut self, idx: usize) -> Result<()> {
+        self.translation =
+            self.layout
+                .translation_for_page(&self.doc, self.scale, self.scale_factor, idx);
 
-        let mut state = self.inner_state.borrow_mut();
+        self.set_viewport(self.translation, self.scale)
+    }
 
-        state.page_size = bounds.size().into();
-        // Regenerate DisplayList for the new page
-        state.list = DisplayList::new(bounds)?;
-        let list_dev = Device::from_display_list(&state.list)?;
-        let ctm = Matrix::IDENTITY;
-        self.page.run(&list_dev, &ctm)?;
-
-        let extractor = LinkExtractor::new(&self.page);
-        self.link_hitboxes = extractor.extract_all_links()?;
-
-        Ok(())
+    fn set_viewport(&mut self, translation: Vector<f32>, scale: f32) -> Result<()> {
+        let visible_pages =
+            self.layout
+                .pages_rects(&self.doc, self.translation, self.scale, self.scale_factor);
+        // TODO:
+        // Create DisplayLists for pages
+        // Old code
+        // state.list = DisplayList::new(bounds)?;
+        // let list_dev = Device::from_display_list(&state.list)?;
+        // let ctm = Matrix::IDENTITY;
+        // self.page.run(&list_dev, &ctm)?;
+        //
+        // TODO:
+        // Extract links for visible pages
+        // let extractor = LinkExtractor::new(&self.page);
+        // self.link_hitboxes = extractor.extract_all_links()?;
+        todo!()
     }
 
     pub fn refresh_file(&mut self) -> Result<()> {
         self.doc = Document::open(&self.path.to_str().unwrap())?;
         let extractor = OutlineExtractor::new(&self.doc);
         self.document_outline = extractor.extract_outline()?;
-        self.set_page(self.cur_page_idx)?;
-        Ok(())
-    }
-
-    fn page_size(&self) -> Vector<f32> {
-        let page_bounds: geometry::Rect<f32> = self.page.bounds().unwrap().into();
-        page_bounds.size()
+        self.set_viewport(self.translation, self.scale)
     }
 
     fn zoom_fit_ratio(&mut self) -> Result<f32> {
-        let vertical_scale = self.inner_state.borrow().bounds.height() / self.page_size().y;
-        let horizontal_scale = self.inner_state.borrow().bounds.width() / self.page_size().x;
-        Ok(vertical_scale.min(horizontal_scale))
+        // TODO: Some implementation based on the current layout.
+        //       Maybe a method on PageLayout?
+        todo!("")
     }
 
-    fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> Vector<f32> {
-        let centering_vector = (self.inner_state.borrow().bounds.size()
-            - self.page_size().scaled(self.scale))
-        .scaled(0.5);
-        screen_pos -= self.inner_state.borrow().bounds.x0; // screen scale
-        screen_pos -= centering_vector; // screen scale
-        screen_pos.scale(1.0 / self.scale);
-        screen_pos += self.translation;
-        screen_pos
+    /// Returns the coordinates in document space and which page the position is in
+    fn screen_to_document_coords(&self, mut screen_pos: Vector<f32>) -> (usize, Vector<f32>) {
+        todo!("")
     }
 
     pub fn get_outline(&self) -> &[OutlineItem] {
@@ -563,54 +573,10 @@ impl PdfViewer {
     }
 
     fn draw_pdf_to_pixmap(&self) -> Result<()> {
-        let mut state = self.inner_state.borrow_mut();
-        let mut ctm = Matrix::IDENTITY;
-
-        let effective_scale = self.scale * self.scale_factor as f32;
-        let centering_vector = (state.bounds.size().scaled(self.scale_factor as f32)
-            - self.page_size().scaled(effective_scale))
-        .scaled(0.5);
-        ctm.pre_translate(centering_vector.x, centering_vector.y);
-
-        ctm.scale(effective_scale, effective_scale);
-        ctm.pre_translate(-self.translation.x, -self.translation.y);
-
-        let mut old_bounds = self.old_bounds.borrow_mut();
-        // The bounds check here saves one frame of jitter on resizing the window for some reason
-        if *old_bounds != state.bounds || state.pix.is_none() {
-            let render_width = (state.bounds.width() * self.scale_factor as f32).round() as i32;
-            let render_height = (state.bounds.height() * self.scale_factor as f32).round() as i32;
-
-            state.pix = Some(
-                Pixmap::new_with_w_h(&Colorspace::device_rgb(), render_width, render_height, true)
-                    .unwrap(),
-            );
-
-            *old_bounds = state.bounds;
-        }
-        let bounds = state.bounds;
-        let device = {
-            let pix = state.pix.as_mut().unwrap();
-            let samples = pix.samples_mut();
-            samples.fill(255);
-            Device::from_pixmap(pix)?
-        };
-        state.list.run(
-            &device,
-            &ctm,
-            mupdf::Rect {
-                x0: 0.0,
-                y0: 0.0,
-                x1: bounds.width() * self.scale_factor as f32,
-                y1: bounds.height() * self.scale_factor as f32,
-            },
-        )?;
-        let pix = state.pix.as_mut().unwrap();
-        if self.invert_colors {
-            cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);
-        }
-
-        Ok(())
+        // TODO:
+        // - Draw each pdf to a different pixmap
+        // - Probably store this in inner::State
+        todo!()
     }
 }
 
