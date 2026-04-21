@@ -21,14 +21,18 @@ pub enum PdfMessage {
     ZoomHome,
     ZoomFit,
     Move(Vector<f32>),
-    UpdateBounds(Rect<f32>),
     MouseMoved(Vector<f32>),
-    MouseLeftDown(bool),            // bool indicates if Shift is pressed
-    MouseLeftUp(bool),              // bool indicates if Shift is pressed
-    MouseAction(MouseAction, bool), // action and whether it's pressed (true) or released (false)
+    /// bool indicates if Shift is pressed
+    MouseLeftDown(bool),
+    /// bool indicates if Shift is pressed
+    MouseLeftUp(bool),
+    /// A [MouseAction] and whether it's pressed (true) or released (false)
+    MouseAction(MouseAction, bool),
     ToggleLinkHitboxes,
-    ActivateLink(usize), // Activate link by index
-    CloseLinkHitboxes,   // Close/hide link hitboxes
+    /// Activate link by index
+    ActivateLink(usize),
+    /// Close/hide link hitboxes
+    CloseLinkHitboxes,
     FileChanged,
     PrintPdf,
     #[default]

@@ -105,7 +105,6 @@ pub struct PdfViewer {
     is_over_link: bool,
     document_outline: Vec<OutlineItem>,
     doc: Document,
-    old_bounds: RefCell<Rect<f32>>,
     gradient_cache: [[u8; 4]; 256],
 }
 
@@ -164,7 +163,6 @@ impl PdfViewer {
             document_outline,
             doc,
             gradient_cache,
-            old_bounds: RefCell::new(Rect::default()),
         })
     }
 
@@ -239,11 +237,6 @@ impl PdfViewer {
             PdfMessage::Move(vec) => {
                 self.translation.x += vec.x / self.scale;
                 self.translation.y += vec.y / self.scale;
-                iced::Task::none()
-            }
-            PdfMessage::UpdateBounds(rectangle) => {
-                self.inner_state.borrow_mut().bounds = rectangle;
-                // TODO: Get new page layout
                 iced::Task::none()
             }
             PdfMessage::None => iced::Task::none(),
@@ -522,23 +515,6 @@ impl PdfViewer {
         }
     }
 
-    pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        self.draw_pdf_to_pixmap().unwrap();
-        PageViewer::new(self.inner_state.borrow())
-            .translation(self.translation)
-            .scale(self.scale)
-            .invert_colors(self.invert_colors)
-            .draw_page_borders(self.draw_page_borders)
-            .text_selection(self.current_selection_rect())
-            .link_hitboxes(if self.show_link_hitboxes {
-                Some(&self.link_hitboxes)
-            } else {
-                None
-            })
-            .over_link(self.is_over_link)
-            .into()
-    }
-
     fn set_page(&mut self, idx: usize) -> Result<()> {
         {
             let inner = self.inner_state.borrow();
@@ -559,6 +535,8 @@ impl PdfViewer {
             let inner = self.inner_state.borrow();
             inner.bounds
         };
+        self.translation = translation;
+        self.scale = scale;
         let visible_pages = self.layout.pages_rects(
             &self.doc,
             self.translation,
@@ -610,8 +588,7 @@ impl PdfViewer {
     pub fn set_scale_factor(&mut self, scale_factor: f64) {
         if (self.scale_factor - scale_factor).abs() > 0.01 {
             self.scale_factor = scale_factor;
-            // Invalidate pixmap to force re-render at new scale factor
-            self.inner_state.borrow_mut().pix = None;
+            // TODO: Invalidate pixmap to force re-render at new scale factor
         }
     }
 
