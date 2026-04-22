@@ -6,6 +6,9 @@ use std::{collections::VecDeque, path::PathBuf};
 const LOCATION_TOLERANCE_PX: f32 = 5.0;
 const JUMPLIST_CAPACITY: usize = 100;
 
+// FIX: We cant just use translation and scale since they are layout dependent. Translation, scale
+// and a page number isn't well defined either unfortunately since there can be many pages on screen
+// at once.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct JumpLocation {
     pub pdf_path: PathBuf,
