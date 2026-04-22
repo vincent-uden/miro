@@ -11,9 +11,9 @@ use crate::{
     config::MouseAction,
     geometry::{self, Rect, Vector},
     pdf::{
-        link_extraction::{LinkType},
+        link_extraction::LinkType,
         outline_extraction::OutlineExtractor,
-        text_extraction::TextExtractor,
+        text_extraction::{TextExtractor, TextSelection},
     },
 };
 
@@ -639,6 +639,58 @@ pub fn extract_all_links(doc: &Document) -> Result<Vec<LinkInfo>> {
     // }
 
     // Ok(links)
+}
+
+pub fn extract_text_in_rect(page: &Page, selection_rect: mupdf::Rect) -> Result<TextSelection> {
+    // let text_page = self.page.to_text_page(TextPageFlags::empty())?;
+
+    // let mut selected_text = String::new();
+    // let mut bounds = Vec::new();
+
+    // for block in text_page.blocks() {
+    //     for line in block.lines() {
+    //         let line_bounds = line.bounds();
+
+    //         if rectangles_intersect(selection_rect, line_bounds) {
+    //             for ch in line.chars() {
+    //                 let char_quad = ch.quad();
+    //                 let char_rect = MupdfRect {
+    //                     x0: char_quad.ul.x,
+    //                     y0: char_quad.ul.y,
+    //                     x1: char_quad.lr.x,
+    //                     y1: char_quad.lr.y,
+    //                 };
+
+    //                 if rectangles_intersect(selection_rect, char_rect)
+    //                     && let Some(c) = ch.char()
+    //                 {
+    //                     selected_text.push(c);
+    //                 }
+    //             }
+    //             selected_text.push('\n');
+    //             bounds.push(line_bounds);
+    //         }
+    //     }
+    // }
+
+    // let total_bounds = bounds
+    //     .iter()
+    //     .fold(Rect::default(), |acc: Rect<f32>, r| Rect {
+    //         x0: Vector {
+    //             x: acc.x0.x.min(r.x0),
+    //             y: acc.x0.y.min(r.y0),
+    //         },
+    //         x1: Vector {
+    //             x: acc.x1.x.max(r.x1),
+    //             y: acc.x1.y.max(r.y1),
+    //         },
+    //     });
+
+    // Ok(TextSelection {
+    //     text: selected_text.trim().to_string(),
+    //     bounds: total_bounds,
+    // })
+    todo!()
 }
 
 fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {

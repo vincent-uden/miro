@@ -9,18 +9,17 @@ pub struct TextSelection {
     pub bounds: Rect<f32>,
 }
 
-#[derive(Debug)]
-pub struct TextExtractor<'a> {
-    page: &'a Page,
+pub trait TextExtractor {
+    fn extract_text_in_rect(&self, selection_rect: MupdfRect) -> Result<TextSelection>;
+
+    fn extract_all_text(&self) -> Result<String>;
+
+    fn get_text_page(&self) -> Result<TextPage>;
 }
 
-impl<'a> TextExtractor<'a> {
-    pub fn new(page: &'a Page) -> Self {
-        Self { page }
-    }
-
-    pub fn extract_text_in_rect(&self, selection_rect: MupdfRect) -> Result<TextSelection> {
-        let text_page = self.page.to_text_page(TextPageFlags::empty())?;
+impl TextExtractor for mupdf::Page {
+    fn extract_text_in_rect(&self, selection_rect: MupdfRect) -> Result<TextSelection> {
+        let text_page = self.to_text_page(TextPageFlags::empty())?;
 
         let mut selected_text = String::new();
         let mut bounds = Vec::new();
@@ -70,15 +69,13 @@ impl<'a> TextExtractor<'a> {
         })
     }
 
-    #[allow(dead_code)]
-    pub fn extract_all_text(&self) -> Result<String> {
-        let text = self.page.to_text_page(TextPageFlags::empty())?.to_text()?;
+    fn extract_all_text(&self) -> Result<String> {
+        let text = self.to_text_page(TextPageFlags::empty())?.to_text()?;
         Ok(text)
     }
 
-    #[allow(dead_code)]
-    pub fn get_text_page(&self) -> Result<TextPage> {
-        let text_page = self.page.to_text_page(TextPageFlags::empty())?;
+    fn get_text_page(&self) -> Result<TextPage> {
+        let text_page = self.to_text_page(TextPageFlags::empty())?;
         Ok(text_page)
     }
 }
@@ -96,9 +93,8 @@ mod tests {
     fn test_text_extraction_basic() -> Result<()> {
         let document = Document::open("assets/text-copy-test.pdf")?;
         let page = document.load_page(0)?;
-        let extractor = TextExtractor::new(&page);
 
-        let all_text = extractor.extract_all_text()?;
+        let all_text = page.extract_all_text()?;
         assert!(!all_text.is_empty());
         assert!(all_text.contains("Energy harvesting"));
         assert!(all_text.contains("Vincent Udén"));
@@ -110,7 +106,6 @@ mod tests {
     fn test_text_extraction_rectangle_selection() -> Result<()> {
         let document = Document::open("assets/text-copy-test.pdf")?;
         let page = document.load_page(0)?;
-        let extractor = TextExtractor::new(&page);
 
         let selection_rect = MupdfRect {
             x0: 100.0,
@@ -119,7 +114,7 @@ mod tests {
             y1: 600.0,
         };
 
-        let selection = extractor.extract_text_in_rect(selection_rect)?;
+        let selection = page.extract_text_in_rect(selection_rect)?;
         assert!(!selection.text.is_empty());
 
         Ok(())
@@ -133,8 +128,7 @@ mod tests {
         assert!(page_count > 1);
 
         let page = document.load_page(1)?;
-        let extractor = TextExtractor::new(&page);
-        let page2_text = extractor.extract_all_text()?;
+        let page2_text = page.extract_all_text()?;
         assert!(page2_text.contains("Introduction"));
 
         Ok(())
@@ -146,8 +140,7 @@ mod tests {
 
         // Test page 0
         let page0 = document.load_page(0)?;
-        let extractor0 = TextExtractor::new(&page0);
-        let all_text = extractor0.extract_all_text()?;
+        let all_text = page0.extract_all_text()?;
         assert!(all_text.contains("Energy harvesting"));
 
         // Test specific rectangle selection on page 0 - use a larger area to ensure we catch text
@@ -158,14 +151,13 @@ mod tests {
             y1: 600.0,
         };
 
-        let selection = extractor0.extract_text_in_rect(title_rect)?;
+        let selection = page0.extract_text_in_rect(title_rect)?;
         // The selection might be empty if coordinates don't match text, so let's just check it doesn't error
         println!("Title selection: '{}'", selection.text);
 
         // Test page 1
         let page1 = document.load_page(1)?;
-        let extractor1 = TextExtractor::new(&page1);
-        let page1_text = extractor1.extract_all_text()?;
+        let page1_text = page1.extract_all_text()?;
         assert!(page1_text.contains("Introduction"));
 
         // Test rectangle selection on page 1 - use a larger area
@@ -176,7 +168,7 @@ mod tests {
             y1: 400.0,
         };
 
-        let intro_selection = extractor1.extract_text_in_rect(intro_rect)?;
+        let intro_selection = page1.extract_text_in_rect(intro_rect)?;
         println!("Intro selection: '{}'", intro_selection.text);
 
         Ok(())
