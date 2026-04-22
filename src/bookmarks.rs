@@ -20,7 +20,7 @@ const HASH_SEED: u64 = 1337;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bookmark {
-    pub page: i32,
+    pub page: usize,
     pub name: String,
 }
 
@@ -36,7 +36,7 @@ pub enum BookmarkMessage {
     CreateBookmark {
         path: PathBuf,
         name: String,
-        page: i32,
+        page: usize,
     },
     DeleteBookmark {
         path: PathBuf,
@@ -44,7 +44,7 @@ pub enum BookmarkMessage {
     },
     GoTo {
         path: PathBuf,
-        page: i32,
+        page: usize,
     },
     PendingName(String),
     RequestNewBookmark {
@@ -173,7 +173,7 @@ impl BookmarkStore {
     }
 
     /// Requires canonical path
-    fn create_bookmark(&mut self, path: PathBuf, name: String, page: i32) {
+    fn create_bookmark(&mut self, path: PathBuf, name: String, page: usize) {
         match self.sets.iter_mut().find(|s| s.path == path) {
             Some(set) => {
                 set.marks.push(Bookmark { page, name });

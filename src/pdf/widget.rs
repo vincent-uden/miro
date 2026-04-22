@@ -11,7 +11,7 @@ use crate::{
     config::MouseAction,
     geometry::{self, Rect, Vector},
     pdf::{
-        link_extraction::LinkType,
+        link_extraction::{LinkExtractor, LinkType},
         outline_extraction::OutlineExtractor,
         text_extraction::{TextExtractor, TextSelection},
     },
@@ -95,7 +95,7 @@ pub struct PdfViewer {
     /// Position where the mouse was pressed down, used to detect clicks vs pans
     mouse_down_pos: Option<Vector<f32>>,
     panning: bool,
-    scale: f32,
+    pub(crate) scale: f32,
     /// Factor used to scale the pixmap up/down to compensate for fractional scaling in at the
     /// WM/DE level.
     scale_factor: f64,
@@ -125,8 +125,11 @@ impl PdfViewer {
         let ctm = Matrix::IDENTITY;
         page.run(&list_dev, &ctm)?;
 
-        let link_hitboxes = extract_all_links(&doc)?;
+        // FIX: This should probably be calculated at some other time since the pages on screen can
+        // change
+        let link_hitboxes = page.extract_all_links()?;
 
+        // TODO: Make outline extractor an extension trait like LinkExtractor and TextExtractor
         let extractor = OutlineExtractor::new(&doc);
         let document_outline = extractor.extract_outline()?;
 
@@ -247,11 +250,8 @@ impl PdfViewer {
                             (self.last_mouse_pos.unwrap() - vector).scaled(1.0 / self.scale);
                     }
                     let (page_idx, doc_pos) = self.screen_to_document_coords(vector);
-                    self.is_over_link = self
-                        .link_hitboxes
-                        .iter()
-                        .any(|link| link.bounds.contains(doc_pos) && link.page_idx == page_idx);
-
+                    // TODO: find out if the mouse is over a link
+                    self.is_over_link = false;
                     self.last_mouse_pos = Some(vector);
                 } else {
                     self.last_mouse_pos = None;
@@ -294,6 +294,8 @@ impl PdfViewer {
                         false
                     };
 
+                    // FIX: Make sure link clickboxes are placed in the correct spot on the screen
+                    // when multiple pages are shown
                     if is_click
                         && let Some((page_idx, pos)) = self
                             .last_mouse_pos
@@ -301,7 +303,7 @@ impl PdfViewer {
                         && let Some(link) = self
                             .link_hitboxes
                             .iter()
-                            .find(|link| link.bounds.contains(pos) && link.page_idx == page_idx)
+                            .find(|link| link.bounds.contains(pos))
                     {
                         match link.link_type {
                             LinkType::InternalPage(page) => {
@@ -482,6 +484,7 @@ impl PdfViewer {
                     |_| PdfMessage::None,
                 )
             }
+            PdfMessage::SetLocation(translation, scale) => todo!(),
         };
         // TODO : What page number should be shown here? A range? It is reasonable to assume layouts
         // to return contiguous ranges of pages. In the absence of a better solution that might have

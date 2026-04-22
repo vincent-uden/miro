@@ -127,7 +127,7 @@ pub enum AppMessage {
     PaneResize(pane_grid::ResizeEvent),
     ToggleSidebar,
     SetSidebar(SidebarTab),
-    OutlineGoToPage(u32),
+    OutlineGoToPage(usize),
     Exit,
     #[default]
     None,
@@ -452,15 +452,17 @@ impl App {
                 iced::Task::none()
             }
             AppMessage::BookmarkMessage(BookmarkMessage::RequestNewBookmark { name }) => {
-                let path = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.path.clone());
-                let page = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.cur_page_idx);
-                if let (Some(path), Some(page)) = (path, page) {
-                    self.bookmark_store
-                        .update(BookmarkMessage::CreateBookmark { path, name, page })
-                        .map(AppMessage::BookmarkMessage)
-                } else {
-                    iced::Task::none()
-                }
+                // TODO: Which page should become the bookmark? Multiple can be on the screen
+                // let path = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.path.clone());
+                // let page = self.pdfs.get(self.pdf_idx).map(|pdf| pdf.cur_page_idx);
+                // if let (Some(path), Some(page)) = (path, page) {
+                //     self.bookmark_store
+                //         .update(BookmarkMessage::CreateBookmark { path, name, page })
+                //         .map(AppMessage::BookmarkMessage)
+                // } else {
+                //     iced::Task::none()
+                // }
+                iced::Task::none()
             }
             AppMessage::BookmarkMessage(BookmarkMessage::GoTo { path, page }) => {
                 if let Some(pdf_index) = self.pdfs.iter().position(|pdf| pdf.path == path) {
@@ -505,7 +507,7 @@ impl App {
                 if !self.pdfs.is_empty() {
                     self.record_location();
                     let pdf_msg = self.pdfs[self.pdf_idx]
-                        .update(PdfMessage::SetPage(page as i32))
+                        .update(PdfMessage::SetPage(page))
                         .map(AppMessage::PdfMessage);
                     self.record_location();
                     pdf_msg
@@ -562,12 +564,11 @@ impl App {
                 {
                     Some((i, pdf)) => {
                         self.pdf_idx = i;
-                        pdf.update(PdfMessage::SetPage(location.page))
-                            .map(AppMessage::PdfMessage)
-                            .chain(
-                                pdf.update(PdfMessage::SetTranslation(location.translation))
-                                    .map(AppMessage::PdfMessage),
-                            )
+                        pdf.update(PdfMessage::SetLocation(
+                            location.translation,
+                            location.scale,
+                        ))
+                        .map(AppMessage::PdfMessage)
                     }
                     None => iced::Task::done(AppMessage::OpenFile(location.pdf_path.clone()))
                         .chain(iced::Task::done(AppMessage::JumpTo(location))),
@@ -597,8 +598,8 @@ impl App {
         if let Some(pdf) = self.pdfs.get(self.pdf_idx) {
             self.jumplist.push(JumpLocation {
                 pdf_path: pdf.path.clone(),
-                page: pdf.cur_page_idx,
                 translation: pdf.translation,
+                scale: pdf.scale,
             })
         };
     }
@@ -845,10 +846,10 @@ impl App {
                 PaneType::Sidebar => self.view_sidebar(),
                 PaneType::Pdf => {
                     let menu_bar = self.create_menu_bar();
-                    let pdf_content = if self.pdfs.is_empty() {
+                    let pdf_content: iced::Element<'_, AppMessage> = if self.pdfs.is_empty() {
                         vertical_space().into()
                     } else {
-                        self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
+                        self.pdfs[self.pdf_idx].into()
                     };
                     let tabs = self.create_tabs();
 
@@ -1226,7 +1227,7 @@ fn view_outline_items<'a>(items: &'a [OutlineItem], level: u32) -> widget::Colum
                 ..Default::default()
             })
             .width(Length::Fill)
-            .on_press(AppMessage::OutlineGoToPage(page))
+            .on_press(AppMessage::OutlineGoToPage(page as usize))
         } else {
             button(
                 container(text(&item.title).shaping(text::Shaping::Advanced).style(

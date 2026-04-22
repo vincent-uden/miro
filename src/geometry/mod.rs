@@ -51,6 +51,10 @@ where
             y: T::zero(),
         }
     }
+
+    pub(crate) fn norm_squared(&self) -> T {
+        self.x * self.x + self.y * self.y
+    }
 }
 
 impl<T> Add for Vector<T>

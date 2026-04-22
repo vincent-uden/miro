@@ -9,13 +9,16 @@ const JUMPLIST_CAPACITY: usize = 100;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct JumpLocation {
     pub pdf_path: PathBuf,
-    pub page: i32,
     pub translation: Vector<f32>,
+    pub scale: f32,
 }
 
 impl JumpLocation {
     pub fn approx_equal(&self, other: &Self) -> bool {
-        if self.pdf_path != other.pdf_path || self.page != other.page {
+        if self.pdf_path != other.pdf_path
+            || (self.translation - other.translation).norm_squared() > 1e-3
+            || (self.scale - other.scale).abs() > 1e-3
+        {
             return false;
         }
 
