@@ -1,5 +1,6 @@
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
+use iced::advanced::{Widget, image};
 use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
 use std::{cell::RefCell, path::PathBuf};
 use tracing::{error, info};
@@ -617,6 +618,39 @@ impl PdfViewer {
         // TODO:
         // - Draw each pdf to a different pixmap
         // - Probably store this in inner::State
+        todo!()
+    }
+}
+
+// NOTE: Is this not enough to coerce PdfViewer into an Element?
+impl<Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PdfViewer
+where
+    Renderer:
+        image::Renderer<Handle = image::Handle> + iced::advanced::text::Renderer<Font = iced::Font>,
+{
+    fn size(&self) -> iced::Size<iced::Length> {
+        todo!()
+    }
+
+    fn layout(
+        &self,
+        tree: &mut iced::advanced::widget::Tree,
+        renderer: &Renderer,
+        limits: &iced::advanced::layout::Limits,
+    ) -> iced::advanced::layout::Node {
+        todo!()
+    }
+
+    fn draw(
+        &self,
+        tree: &iced::advanced::widget::Tree,
+        renderer: &mut Renderer,
+        theme: &iced::Theme,
+        style: &iced::advanced::renderer::Style,
+        layout: iced::advanced::Layout<'_>,
+        cursor: iced::advanced::mouse::Cursor,
+        viewport: &iced::Rectangle,
+    ) {
         todo!()
     }
 }
