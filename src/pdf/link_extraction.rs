@@ -1,6 +1,7 @@
 use mupdf::{Link};
+use anyhow::Result;
 
-use crate::geometry::{Rect};
+use crate::geometry::{Rect, Vector};
 
 #[derive(Debug, Clone)]
 pub struct LinkInfo {
@@ -8,7 +9,6 @@ pub struct LinkInfo {
     pub bounds: Rect<f32>,
     pub uri: String,
     pub link_type: LinkType,
-    pub page_idx: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -37,12 +37,40 @@ fn categorize_link(link: &Link) -> LinkType {
     }
 }
 
+pub trait LinkExtractor {
+    fn extract_all_links(&self) -> Result<Vec<LinkInfo>>;
+}
+
+impl LinkExtractor for mupdf::Page {
+    fn extract_all_links(&self) -> Result<Vec<LinkInfo>> {
+        let mut links = Vec::new();
+
+        let link_iter = self.links()?;
+
+        for link in link_iter {
+            let bounds = Rect::from_points(
+                Vector::new(link.bounds.x0, link.bounds.y0),
+                Vector::new(link.bounds.x1, link.bounds.y1),
+            );
+            let link_type = categorize_link(&link);
+            links.push(LinkInfo {
+                bounds,
+                uri: link.uri,
+                link_type,
+            });
+        }
+
+        Ok(links)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::pdf::widget::extract_all_links;
-
     use super::*;
-    use mupdf::{document::Location, Document, Link, Rect as MupdfRect};
+    use mupdf::{
+        Document, Link, Rect as MupdfRect,
+        document::{self, Location},
+    };
     use anyhow::Result;
 
     fn create_mock_link(uri: &str, page: u32) -> Link {
@@ -68,8 +96,9 @@ mod tests {
     #[test]
     fn test_links_pdf_extraction() -> Result<()> {
         let document = Document::open("assets/links.pdf")?;
+        let page = document.load_page(0)?;
 
-        let links = extract_all_links(&document)?;
+        let links = page.extract_all_links()?;
 
         assert!(!links.is_empty(), "Should find links in the test document");
 
