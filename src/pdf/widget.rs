@@ -114,19 +114,22 @@ impl PdfViewer {
             translation: Vector::zero(),
             scale: 1.0,
             fractional_scaling: 1.0,
-            layout: PageLayout::SinglePage,
+            layout: PageLayout::TwoPage,
             gradient_cache,
         })
     }
 
     pub fn update(&mut self, msg: PdfMessage) -> iced::Task<PdfMessage> {
-        debug!("PdfViewer::update({msg:?})");
+        //debug!("PdfViewer::update({msg:?})");
         match msg {
             PdfMessage::PageDown => {}
             PdfMessage::PageUp => {}
             PdfMessage::SetPage(_) => {}
             PdfMessage::SetTranslation(vector) => {}
             PdfMessage::SetLocation(vector, _) => {}
+            PdfMessage::SetLayout(page_layout) => {
+                self.layout = page_layout;
+            }
             PdfMessage::ZoomIn => {
                 self.scale *= 1.2;
             }
@@ -159,8 +162,7 @@ impl PdfViewer {
                 .layout
                 .pages_rects(
                     &self.doc,
-                    // Invert y axis for screen space coordinate system
-                    self.translation.non_uniform_scaled(Vector::new(1.0, -1.0)),
+                    self.translation.scaled(-1.0),
                     self.scale,
                     self.fractional_scaling,
                     size,

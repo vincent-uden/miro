@@ -1,6 +1,7 @@
 use crate::{
-    geometry::{Rect, Vector},
     config::MouseAction,
+    geometry::{Rect, Vector},
+    pdf::page_layout::PageLayout,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -19,6 +20,7 @@ pub enum PdfMessage {
     SetTranslation(Vector<f32>),
     /// Translation and scale
     SetLocation(Vector<f32>, f32),
+    SetLayout(PageLayout),
     ZoomIn,
     ZoomOut,
     ZoomHome,

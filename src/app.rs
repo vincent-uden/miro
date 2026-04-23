@@ -32,16 +32,18 @@ use tokio::sync::mpsc;
 use tracing::error;
 
 use crate::{
+    CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
     config::{BindableMessage, MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
     jumplist::{JumpLocation, Jumplist},
-    pdf::{outline_extraction::OutlineItem, widget::PdfViewer, PdfMessage},
+    pdf::{
+        PdfMessage, outline_extraction::OutlineItem, page_layout::PageLayout, widget::PdfViewer,
+    },
     recent_files::RecentFiles,
     rpc::rpc_server,
-    watch::{file_watcher, WatchMessage, WatchNotification},
-    CONFIG,
+    watch::{WatchMessage, WatchNotification, file_watcher},
 };
 
 #[derive(Debug)]
@@ -778,6 +780,17 @@ impl App {
                     "Toggle Fullscreen",
                     AppMessage::ToggleFullscreen,
                     cfg.get_binding_for_msg(BindableMessage::ToggleFullscreen)
+                ))))
+            )(
+                debug_button_s("Layout"),
+                menu_tpl_1(menu_items!((menu_button(
+                    "Single page",
+                    AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage)),
+                    None
+                ))(menu_button(
+                    "Double page",
+                    AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::TwoPage)),
+                    None
                 ))))
             ))
             .draw_path(menu::DrawPath::Backdrop)

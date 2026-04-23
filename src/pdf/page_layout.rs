@@ -1,11 +1,15 @@
 use anyhow::Result;
 use iced::Size;
 use mupdf::{Document, Page};
+use num::Integer;
+use serde::{Deserialize, Serialize};
+use strum::EnumString;
 
 use crate::geometry::{Rect, Vector};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PageLayout {
+    #[default]
     /// One page per row, many rows
     SinglePage,
     /// Two pages per row, many rows
@@ -35,23 +39,46 @@ impl PageLayout {
         let pages = doc.pages()?;
         let vsize: Vector<_> = viewport.into();
         let effective_scale = scale * fractional_scale;
+        // FIX: This doesn't quite work for pdfs with different page sizes like
+        // assets/multiple-page-layouts.pdf. A page needs to be offset by its own size (and depend
+        // on all previous sizes), not the prior page.
         match self {
             PageLayout::SinglePage => {
                 let mut pos: Vector<f32> = Vector::zero();
                 for page in pages.flatten() {
                     let mut bounds: Rect<f32> = page.bounds()?.into();
-                    bounds.translate(Vector::new(0.0, pos.y));
+                    bounds.translate(pos);
                     bounds.translate((vsize - bounds.size()).scaled(0.5));
                     bounds.translate(translation.scaled(effective_scale));
                     bounds = bounds.scaled(effective_scale);
 
-                    pos += bounds.size().into();
+                    pos.y += bounds.size().y;
                     pos.y += Self::GAP * effective_scale;
 
                     out.push(bounds.into());
                 }
             }
-            PageLayout::TwoPage => todo!(),
+            PageLayout::TwoPage => {
+                let mut pos: Vector<f32> = Vector::zero();
+                for (i, page) in pages.flatten().enumerate() {
+                    let mut bounds: Rect<f32> = page.bounds()?.into();
+                    bounds.translate(pos);
+                    bounds.translate((vsize - bounds.size()).scaled(0.5));
+                    bounds.translate(translation.scaled(effective_scale));
+                    bounds = bounds.scaled(effective_scale);
+
+                    if i.is_odd() {
+                        pos.y += bounds.size().y;
+                        pos.y += Self::GAP * effective_scale;
+                        pos.x = 0.0;
+                    } else {
+                        pos.x += bounds.size().x;
+                        pos.x += Self::GAP * effective_scale;
+                    }
+
+                    out.push(bounds.into());
+                }
+            }
             PageLayout::TwoPageTitlePage => todo!(),
             PageLayout::Presentation => todo!(),
         }
