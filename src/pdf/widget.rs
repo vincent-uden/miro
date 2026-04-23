@@ -9,7 +9,6 @@ use iced::{
         canvas::{self, Cache, Stroke},
     },
 };
-use mupdf::Page;
 use tracing::debug;
 
 use crate::{
@@ -121,6 +120,35 @@ impl PdfViewer {
     }
 
     pub fn update(&mut self, msg: PdfMessage) -> iced::Task<PdfMessage> {
+        debug!("PdfViewer::update({msg:?})");
+        match msg {
+            PdfMessage::PageDown => {}
+            PdfMessage::PageUp => {}
+            PdfMessage::SetPage(_) => {}
+            PdfMessage::SetTranslation(vector) => {}
+            PdfMessage::SetLocation(vector, _) => {}
+            PdfMessage::ZoomIn => {
+                self.scale *= 1.2;
+            }
+            PdfMessage::ZoomOut => {
+                self.scale /= 1.2;
+            }
+            PdfMessage::ZoomHome => {}
+            PdfMessage::ZoomFit => {}
+            PdfMessage::Move(vector) => {
+                self.translation += vector;
+            }
+            PdfMessage::MouseMoved(vector) => {}
+            PdfMessage::MouseLeftDown(_) => {}
+            PdfMessage::MouseLeftUp(_) => {}
+            PdfMessage::MouseAction(mouse_action, _) => {}
+            PdfMessage::ToggleLinkHitboxes => {}
+            PdfMessage::ActivateLink(_) => {}
+            PdfMessage::CloseLinkHitboxes => {}
+            PdfMessage::FileChanged => {}
+            PdfMessage::PrintPdf => {}
+            PdfMessage::None => {}
+        }
         // TODO: Implement
         iced::Task::none()
     }
@@ -131,7 +159,8 @@ impl PdfViewer {
                 .layout
                 .pages_rects(
                     &self.doc,
-                    self.translation,
+                    // Invert y axis for screen space coordinate system
+                    self.translation.non_uniform_scaled(Vector::new(1.0, -1.0)),
                     self.scale,
                     self.fractional_scaling,
                     size,

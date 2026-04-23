@@ -26,22 +26,28 @@ impl PageLayout {
     pub fn pages_rects(
         &self,
         doc: &Document,
-        translation: Vector<f32>,
+        translation: Vector<f32>, // In document space
         scale: f32,
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<Vec<Rect<f32>>> {
         let mut out = vec![];
-        let mut pages = doc.pages()?;
+        let pages = doc.pages()?;
+        let vsize: Vector<_> = viewport.into();
+        let effective_scale = scale * fractional_scale;
         match self {
             PageLayout::SinglePage => {
-                let mut pos = Vector::zero();
+                let mut pos: Vector<f32> = Vector::zero();
                 for page in pages.flatten() {
-                    let mut bounds = page.bounds()?;
-                    bounds.y0 += pos.y;
-                    bounds.y1 += pos.y;
+                    let mut bounds: Rect<f32> = page.bounds()?.into();
+                    bounds.translate(Vector::new(0.0, pos.y));
+                    bounds.translate((vsize - bounds.size()).scaled(0.5));
+                    bounds.translate(translation.scaled(effective_scale));
+                    bounds = bounds.scaled(effective_scale);
+
                     pos += bounds.size().into();
-                    pos.y += Self::GAP;
+                    pos.y += Self::GAP * effective_scale;
+
                     out.push(bounds.into());
                 }
             }
