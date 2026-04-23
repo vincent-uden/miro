@@ -6,14 +6,15 @@ use iced::{
     Renderer,
     widget::{
         self,
-        canvas::{self, Cache},
+        canvas::{self, Cache, Stroke},
     },
 };
-use mupdf::Document;
+use mupdf::Page;
+use tracing::debug;
 
 use crate::{
     DARK_THEME,
-    geometry::Vector,
+    geometry::{Rect, Vector},
     pdf::{PdfMessage, outline_extraction::OutlineItem, page_layout::PageLayout},
 };
 
@@ -24,19 +25,22 @@ const MIN_CLICK_DISTANCE: f32 = 5.0;
 // using a canvas allows us to sidestep creating a custom widget entirely. This should be the
 // simpler approach.
 #[derive(Debug)]
-struct Page {
+struct Document {
     cache: Cache,
+    // TODO: This should be a texture rather than a color
+    pages: Vec<(iced::Color, Rect<f32>)>,
 }
 
-impl Page {
-    pub fn new() -> Self {
+impl Document {
+    pub fn new(pages: Vec<(iced::Color, Rect<f32>)>) -> Self {
         Self {
             cache: Cache::default(),
+            pages,
         }
     }
 }
 
-impl widget::canvas::Program<PdfMessage> for Page {
+impl<'a> widget::canvas::Program<PdfMessage> for Document {
     type State = ();
 
     fn draw(
@@ -47,7 +51,17 @@ impl widget::canvas::Program<PdfMessage> for Page {
         bounds: iced::Rectangle,
         cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
-        let bg = self.cache.draw(renderer, bounds.size(), |x| {});
+        let bg = self.cache.draw(renderer, bounds.size(), |frame| {
+            frame.fill_text("Hello world!");
+            for (color, rect) in &self.pages {
+                debug!("{rect:?} {bounds:?}");
+                frame.stroke_rectangle(
+                    (rect.x0).into(),
+                    rect.size().into(),
+                    Stroke::default().with_color(*color).with_width(1.0),
+                );
+            }
+        });
         vec![bg]
     }
 }
@@ -61,7 +75,7 @@ pub struct PdfViewer {
     pub invert_colors: bool,
     pub draw_page_borders: bool,
 
-    doc: Document,
+    doc: mupdf::Document,
 
     pub translation: Vector<f32>,
     pub scale: f32,
@@ -79,7 +93,7 @@ impl PdfViewer {
             .expect("The pdf must have a file name")
             .to_string_lossy()
             .to_string();
-        let doc = Document::open(&path.to_str().unwrap())?;
+        let doc = mupdf::Document::open(&path.to_str().unwrap())?;
 
         let bg_color = DARK_THEME
             .extended_palette()
@@ -110,7 +124,24 @@ impl PdfViewer {
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        widget::responsive(|size| widget::canvas(Page::new()).into()).into()
+        widget::responsive(|size| {
+            let rects = self
+                .layout
+                .pages_rects(
+                    &self.doc,
+                    self.translation,
+                    self.scale,
+                    self.fractional_scaling,
+                    size,
+                )
+                .unwrap();
+            let with_colors: Vec<_> = rects
+                .into_iter()
+                .map(|r| (iced::Color::from_rgba(1.0, 1.0, 1.0, 1.0), r))
+                .collect();
+            widget::canvas(Document::new(with_colors)).into()
+        })
+        .into()
     }
 
     pub fn set_scale_factor(&mut self, scale_factor: f64) {

@@ -1,3 +1,5 @@
+use anyhow::Result;
+use iced::Size;
 use mupdf::{Document, Page};
 
 use crate::geometry::{Rect, Vector};
@@ -16,24 +18,36 @@ pub enum PageLayout {
 
 impl PageLayout {
     /// Returns visible pages and their bounding boxes relative to the widgets origin.
-    fn pages_rects(
+    pub fn pages_rects(
         &self,
         doc: &Document,
         translation: Vector<f32>,
         scale: f32,
-        fractional_scale: f64,
-        viewport: Rect<f32>,
-    ) -> Vec<(Page, Rect<f32>)> {
-        todo!("");
+        fractional_scale: f32,
+        viewport: Size<f32>,
+    ) -> Result<Vec<Rect<f32>>> {
+        let mut out = vec![];
+        let mut pages = doc.pages()?;
+        match self {
+            PageLayout::SinglePage => {
+                for page in pages.flatten() {
+                    out.push(page.bounds()?.into());
+                }
+            }
+            PageLayout::TwoPage => todo!(),
+            PageLayout::TwoPageTitlePage => todo!(),
+            PageLayout::Presentation => todo!(),
+        }
+        Ok(out)
     }
 
     /// Returns the translation that would leave the page at [page_idx] visible on the screen. If
     /// `page_idx > doc.page_count()` this will move to the last page.
-    fn translation_for_page(
+    pub fn translation_for_page(
         &self,
         doc: &Document,
         scale: f32,
-        fractional_scale: f64,
+        fractional_scale: f32,
         page_idx: usize,
         viewport: Rect<f32>,
     ) -> Vector<f32> {
@@ -41,12 +55,12 @@ impl PageLayout {
     }
 
     /// Returns the height of the row of pages occupying the middle of the creen
-    fn page_set_height(
+    pub fn page_set_height(
         &self,
         doc: &Document,
         translation: Vector<f32>,
         scale: f32,
-        fractional_scale: f64,
+        fractional_scale: f32,
         viewport: Rect<f32>,
     ) -> f32 {
         todo!("")
