@@ -54,7 +54,6 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document {
         let bg = self.cache.draw(renderer, bounds.size(), |frame| {
             frame.fill_text("Hello world!");
             for (color, rect) in &self.pages {
-                debug!("{rect:?} {bounds:?}");
                 frame.stroke_rectangle(
                     (rect.x0).into(),
                     rect.size().into(),
@@ -139,7 +138,10 @@ impl PdfViewer {
                 .into_iter()
                 .map(|r| (iced::Color::from_rgba(1.0, 1.0, 1.0, 1.0), r))
                 .collect();
-            widget::canvas(Document::new(with_colors)).into()
+            widget::canvas(Document::new(with_colors))
+                .width(iced::Length::Fill)
+                .height(iced::Length::Fill)
+                .into()
         })
         .into()
     }

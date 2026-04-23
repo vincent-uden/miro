@@ -866,8 +866,6 @@ impl App {
                                     .height(Length::Fill)
                                     .padding(8.0)
                             ]
-                            .width(Length::Fill)
-                            .height(Length::Fill)
                         ]
                         .into()
                     }
