@@ -1,6 +1,9 @@
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
-use iced::advanced::{Widget, image};
+use iced::{
+    Element,
+    advanced::{Widget, image},
+};
 use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
 use std::{cell::RefCell, path::PathBuf};
 use tracing::{error, info};
@@ -76,20 +79,22 @@ const MIN_CLICK_DISTANCE: f32 = 5.0;
 #[derive(Debug)]
 pub struct State {
     bounds: Rect<f32>,
+    pub label: String,
+    pub page_progress: String,
+    pub name: String,
+    pub path: PathBuf,
+    document_outline: Vec<OutlineItem>,
+    doc: Document,
+    link_hitboxes: Vec<LinkInfo>,
 }
 
 /// Renders a pdf document. Owns all information related to the document.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PdfViewer {
-    pub name: String,
-    pub path: PathBuf,
-    pub label: String,
-    pub page_progress: String,
     pub translation: Vector<f32>, // In document space
     pub invert_colors: bool,
     pub draw_page_borders: bool,
     layout: PageLayout,
-    inner_state: RefCell<State>,
     /// Mouse position in screen space. Thus if the PdfViewer isn't positioned at the top left
     /// corner of the screen, it must account for that offset.
     last_mouse_pos: Option<Vector<f32>>,
@@ -101,11 +106,8 @@ pub struct PdfViewer {
     /// WM/DE level.
     scale_factor: f64,
     text_selection_start: Option<Vector<f32>>,
-    link_hitboxes: Vec<LinkInfo>,
     show_link_hitboxes: bool,
     is_over_link: bool,
-    document_outline: Vec<OutlineItem>,
-    doc: Document,
     gradient_cache: [[u8; 4]; 256],
 }
 
@@ -623,7 +625,7 @@ impl PdfViewer {
 }
 
 // NOTE: Is this not enough to coerce PdfViewer into an Element?
-impl<Renderer> Widget<PdfMessage, iced::Theme, Renderer> for PdfViewer
+impl<Renderer> Widget<AppMessage, iced::Theme, Renderer> for PdfViewer
 where
     Renderer:
         image::Renderer<Handle = image::Handle> + iced::advanced::text::Renderer<Font = iced::Font>,
@@ -652,6 +654,16 @@ where
         viewport: &iced::Rectangle,
     ) {
         todo!()
+    }
+}
+
+impl<'a, Renderer> From<PdfViewer> for Element<'a, AppMessage, iced::Theme, Renderer>
+where
+    Renderer:
+        image::Renderer<Handle = image::Handle> + iced::advanced::text::Renderer<Font = iced::Font>,
+{
+    fn from(value: PdfViewer) -> Self {
+        Self::new(value)
     }
 }
 
