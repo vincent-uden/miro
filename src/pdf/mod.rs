@@ -7,6 +7,7 @@ use strum::EnumString;
 
 pub mod link_extraction;
 pub mod outline_extraction;
+pub mod page_layout;
 pub mod text_extraction;
 pub mod widget;
 

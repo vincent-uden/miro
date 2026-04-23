@@ -1,129 +1,86 @@
+use std::{path::PathBuf};
+
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
-    Element,
-    advanced::{Widget, image},
+    Renderer,
+    widget::{self, canvas},
 };
-use mupdf::{Colorspace, Device, DisplayList, Document, Matrix, Page, Pixmap};
-use std::{cell::RefCell, path::PathBuf};
-use tracing::{error, info};
-use open;
+use mupdf::Document;
 
 use crate::{
-    CONFIG, DARK_THEME,
-    app::AppMessage,
-    config::MouseAction,
-    geometry::{self, Rect, Vector},
-    pdf::{
-        link_extraction::{LinkExtractor, LinkType},
-        outline_extraction::OutlineExtractor,
-        text_extraction::{TextExtractor, TextSelection},
-    },
+    geometry::Vector,
+    pdf::{PdfMessage, outline_extraction::OutlineItem, page_layout::PageLayout},
 };
 
-use super::{PdfMessage, link_extraction::LinkInfo, outline_extraction::OutlineItem};
-
-#[derive(Debug, Clone, Copy)]
-pub enum PageLayout {
-    /// One page per row, many rows
-    SinglePage,
-    /// Two pages per row, many rows
-    TwoPage,
-    /// Two pages per row, many rows, except for the first page which is on its own
-    TwoPageTitlePage,
-    /// Only one page on the screen at a time
-    Presentation,
-}
-
-impl PageLayout {
-    /// Returns visible pages and their bounding boxes relative to the widgets origin.
-    fn pages_rects(
-        &self,
-        doc: &Document,
-        translation: Vector<f32>,
-        scale: f32,
-        fractional_scale: f64,
-        viewport: Rect<f32>,
-    ) -> Vec<(Page, Rect<f32>)> {
-        todo!("");
-    }
-
-    /// Returns the translation that would leave the page at [page_idx] visible on the screen. If
-    /// `page_idx > doc.page_count()` this will move to the last page.
-    fn translation_for_page(
-        &self,
-        doc: &Document,
-        scale: f32,
-        fractional_scale: f64,
-        page_idx: usize,
-        viewport: Rect<f32>,
-    ) -> Vector<f32> {
-        todo!("")
-    }
-
-    /// Returns the height of the row of pages occupying the middle of the creen
-    fn page_set_height(
-        &self,
-        doc: &Document,
-        translation: Vector<f32>,
-        scale: f32,
-        fractional_scale: f64,
-        viewport: Rect<f32>,
-    ) -> f32 {
-        todo!("")
-    }
-}
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
 
+// NOTE: The primitive might not end up being a page here but rather the entire document. Regardless
+// using a canvas allows us to sidestep creating a custom widget entirely. This should be the
+// simpler approach.
 #[derive(Debug)]
-pub struct State {}
+struct Page {}
 
-/// Renders a pdf document. Owns all information related to the document.
-#[derive(Debug, Clone, Copy)]
-pub struct PdfViewer {}
-
-impl PdfViewer {}
-
-impl<Renderer> Widget<AppMessage, iced::Theme, Renderer> for PdfViewer
-where
-    Renderer:
-        image::Renderer<Handle = image::Handle> + iced::advanced::text::Renderer<Font = iced::Font>,
-{
-    fn size(&self) -> iced::Size<iced::Length> {
-        todo!()
-    }
-
-    fn layout(
-        &self,
-        tree: &mut iced::advanced::widget::Tree,
-        renderer: &Renderer,
-        limits: &iced::advanced::layout::Limits,
-    ) -> iced::advanced::layout::Node {
-        todo!()
-    }
+impl widget::canvas::Program<PdfMessage> for Page {
+    type State = ();
 
     fn draw(
         &self,
-        tree: &iced::advanced::widget::Tree,
-        renderer: &mut Renderer,
+        state: &Self::State,
+        renderer: &Renderer,
         theme: &iced::Theme,
-        style: &iced::advanced::renderer::Style,
-        layout: iced::advanced::Layout<'_>,
+        bounds: iced::Rectangle,
         cursor: iced::advanced::mouse::Cursor,
-        viewport: &iced::Rectangle,
-    ) {
+    ) -> Vec<canvas::Geometry<Renderer>> {
         todo!()
     }
 }
 
-impl<'a, Renderer> From<PdfViewer> for Element<'a, AppMessage, iced::Theme, Renderer>
-where
-    Renderer:
-        image::Renderer<Handle = image::Handle> + iced::advanced::text::Renderer<Font = iced::Font>,
-{
-    fn from(value: PdfViewer) -> Self {
-        Self::new(value)
+/// Renders a pdf document. Owns all information related to the document.
+#[derive(Debug)]
+pub struct PdfViewer {
+    pub name: String,
+    pub path: PathBuf,
+    pub page_progress: String,
+
+    pub invert_colors: bool,
+    pub draw_page_borders: bool,
+
+    doc: Document,
+
+    pub translation: Vector<f32>,
+    pub scale: f32,
+    fractional_scaling: f32,
+
+    layout: PageLayout,
+}
+
+impl PdfViewer {
+    pub fn from_path(path: PathBuf) -> Result<Self> {
+        todo!()
+    }
+
+    pub fn update(&mut self, msg: PdfMessage) -> iced::Task<PdfMessage> {
+        todo!()
+    }
+
+    pub fn view(&self) -> iced::Element<'_, PdfMessage> {
+        widget::responsive(|size| widget::canvas(Page {}).into()).into()
+    }
+
+    pub fn set_scale_factor(&mut self, scale_factor: f64) {
+        self.fractional_scaling = scale_factor as f32;
+    }
+
+    pub fn is_jumpable_action(&self, msg: &PdfMessage) -> bool {
+        // TODO: Implement
+        false
+    }
+
+    pub fn get_outline(&self) -> &[OutlineItem] {
+        // TODO: Implement
+        &[]
     }
 }
 
@@ -140,7 +97,7 @@ fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
     }
 }
 
-fn cpu_pdf_dark_mode_shader(pixmap: &mut Pixmap, gradient_cache: &[[u8; 4]; 256]) {
+fn cpu_pdf_dark_mode_shader(pixmap: &mut mupdf::Pixmap, gradient_cache: &[[u8; 4]; 256]) {
     let samples = pixmap.samples_mut();
     for pixel in samples.chunks_exact_mut(4) {
         let r: u16 = pixel[0] as u16;
@@ -180,27 +137,6 @@ fn generate_key_combinations(count: usize) -> Vec<String> {
     }
 
     keys
-}
-
-fn get_link_colors(link_type: &LinkType) -> (iced::Color, iced::Color) {
-    match link_type {
-        LinkType::ExternalUrl => (
-            iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
-            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
-        ),
-        LinkType::InternalPage(_) => (
-            iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
-            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
-        ),
-        LinkType::Email => (
-            iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
-            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
-        ),
-        LinkType::Other => (
-            iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
-            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
-        ),
-    }
 }
 
 fn get_background_color(invert_colors: bool) -> iced::Color {

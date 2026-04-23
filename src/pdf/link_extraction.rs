@@ -19,6 +19,27 @@ pub enum LinkType {
     Other,
 }
 
+fn get_link_colors(link_type: &LinkType) -> (iced::Color, iced::Color) {
+    match link_type {
+        LinkType::ExternalUrl => (
+            iced::Color::from_rgb(0.0, 0.4, 1.0),       // Blue border
+            iced::Color::from_rgba(0.0, 0.4, 1.0, 0.1), // Semi-transparent blue fill
+        ),
+        LinkType::InternalPage(_) => (
+            iced::Color::from_rgb(0.0, 0.8, 0.0),       // Green border
+            iced::Color::from_rgba(0.0, 0.8, 0.0, 0.1), // Semi-transparent green fill
+        ),
+        LinkType::Email => (
+            iced::Color::from_rgb(1.0, 0.6, 0.0),       // Orange border
+            iced::Color::from_rgba(1.0, 0.6, 0.0, 0.1), // Semi-transparent orange fill
+        ),
+        LinkType::Other => (
+            iced::Color::from_rgb(0.5, 0.5, 0.5),       // Gray border
+            iced::Color::from_rgba(0.5, 0.5, 0.5, 0.1), // Semi-transparent gray fill
+        ),
+    }
+}
+
 fn categorize_link(link: &Link) -> LinkType {
     if link.uri.starts_with("http://") || link.uri.starts_with("https://") {
         LinkType::ExternalUrl

@@ -849,7 +849,7 @@ impl App {
                     let pdf_content: iced::Element<'_, AppMessage> = if self.pdfs.is_empty() {
                         vertical_space().into()
                     } else {
-                        self.pdfs[self.pdf_idx].into()
+                        self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
                     };
                     let tabs = self.create_tabs();
 
