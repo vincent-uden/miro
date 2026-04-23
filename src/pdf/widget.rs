@@ -4,11 +4,15 @@ use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
     Renderer,
-    widget::{self, canvas},
+    widget::{
+        self,
+        canvas::{self, Cache},
+    },
 };
 use mupdf::Document;
 
 use crate::{
+    DARK_THEME,
     geometry::Vector,
     pdf::{PdfMessage, outline_extraction::OutlineItem, page_layout::PageLayout},
 };
@@ -20,7 +24,17 @@ const MIN_CLICK_DISTANCE: f32 = 5.0;
 // using a canvas allows us to sidestep creating a custom widget entirely. This should be the
 // simpler approach.
 #[derive(Debug)]
-struct Page {}
+struct Page {
+    cache: Cache,
+}
+
+impl Page {
+    pub fn new() -> Self {
+        Self {
+            cache: Cache::default(),
+        }
+    }
+}
 
 impl widget::canvas::Program<PdfMessage> for Page {
     type State = ();
@@ -33,7 +47,8 @@ impl widget::canvas::Program<PdfMessage> for Page {
         bounds: iced::Rectangle,
         cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
-        todo!()
+        let bg = self.cache.draw(renderer, bounds.size(), |x| {});
+        vec![bg]
     }
 }
 
@@ -42,7 +57,6 @@ impl widget::canvas::Program<PdfMessage> for Page {
 pub struct PdfViewer {
     pub name: String,
     pub path: PathBuf,
-    pub page_progress: String,
 
     pub invert_colors: bool,
     pub draw_page_borders: bool,
@@ -54,19 +68,49 @@ pub struct PdfViewer {
     fractional_scaling: f32,
 
     layout: PageLayout,
+
+    gradient_cache: [[u8; 4]; 256],
 }
 
 impl PdfViewer {
     pub fn from_path(path: PathBuf) -> Result<Self> {
-        todo!()
+        let name = path
+            .file_name()
+            .expect("The pdf must have a file name")
+            .to_string_lossy()
+            .to_string();
+        let doc = Document::open(&path.to_str().unwrap())?;
+
+        let bg_color = DARK_THEME
+            .extended_palette()
+            .background
+            .base
+            .color
+            .into_rgba8();
+        let mut gradient_cache = [[0; 4]; 256];
+        generate_gradient_cache(&mut gradient_cache, &bg_color);
+
+        Ok(PdfViewer {
+            name,
+            path,
+            invert_colors: false,
+            draw_page_borders: true,
+            doc,
+            translation: Vector::zero(),
+            scale: 1.0,
+            fractional_scaling: 1.0,
+            layout: PageLayout::SinglePage,
+            gradient_cache,
+        })
     }
 
     pub fn update(&mut self, msg: PdfMessage) -> iced::Task<PdfMessage> {
-        todo!()
+        // TODO: Implement
+        iced::Task::none()
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        widget::responsive(|size| widget::canvas(Page {}).into()).into()
+        widget::responsive(|size| widget::canvas(Page::new()).into()).into()
     }
 
     pub fn set_scale_factor(&mut self, scale_factor: f64) {
@@ -81,6 +125,11 @@ impl PdfViewer {
     pub fn get_outline(&self) -> &[OutlineItem] {
         // TODO: Implement
         &[]
+    }
+
+    pub fn page_progress(&self) -> &str {
+        // TODO: Implement
+        "(? / ?)"
     }
 }
 

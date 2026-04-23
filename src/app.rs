@@ -826,7 +826,7 @@ impl App {
         for (i, pdf) in self.pdfs.iter().enumerate() {
             command_bar = command_bar.push(file_tab(
                 &pdf.name,
-                &pdf.page_progress,
+                pdf.page_progress(),
                 AppMessage::OpenTab(i),
                 AppMessage::CloseTab(i),
                 i == self.pdf_idx,
