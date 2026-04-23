@@ -54,6 +54,9 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document {
         let bg = self.cache.draw(renderer, bounds.size(), |frame| {
             frame.fill_text("Hello world!");
             for (color, rect) in &self.pages {
+                let mut c = *color;
+                c.a = 0.2;
+                frame.fill_rectangle((rect.x0).into(), rect.size().into(), c);
                 frame.stroke_rectangle(
                     (rect.x0).into(),
                     rect.size().into(),

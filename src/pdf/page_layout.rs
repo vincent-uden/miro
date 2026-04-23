@@ -17,7 +17,12 @@ pub enum PageLayout {
 }
 
 impl PageLayout {
-    /// Returns visible pages and their bounding boxes relative to the widgets origin.
+    const GAP: f32 = 10.0;
+
+    /// Returns visible pages and their bounding boxes relative to the widgets origin. A translation
+    /// of (0,0) should result in the first page row being centered on the screen. Scale is applied
+    /// after translation with respect to the center of the screen. Thus zooming doesn't move the
+    /// doucment.
     pub fn pages_rects(
         &self,
         doc: &Document,
@@ -30,8 +35,14 @@ impl PageLayout {
         let mut pages = doc.pages()?;
         match self {
             PageLayout::SinglePage => {
+                let mut pos = Vector::zero();
                 for page in pages.flatten() {
-                    out.push(page.bounds()?.into());
+                    let mut bounds = page.bounds()?;
+                    bounds.y0 += pos.y;
+                    bounds.y1 += pos.y;
+                    pos += bounds.size().into();
+                    pos.y += Self::GAP;
+                    out.push(bounds.into());
                 }
             }
             PageLayout::TwoPage => todo!(),
