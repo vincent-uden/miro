@@ -105,16 +105,12 @@ pub enum AppMessage {
     ToggleDarkModePdf,
     TogglePageBorders,
     MouseMoved(Vector<f32>),
-    MouseLeftDown,
-    MouseRightDown,
-    MouseMiddleDown,
-    MouseBackDown,
-    MouseForwardDown,
-    MouseLeftUp,
-    MouseRightUp,
-    MouseMiddleUp,
-    MouseBackUp,
-    MouseForwardUp,
+    #[strum(disabled)]
+    #[serde(skip)]
+    MouseButtonDown(MouseButton),
+    #[strum(disabled)]
+    #[serde(skip)]
+    MouseButtonUp(MouseButton),
     ShiftPressed(bool),
     CtrlPressed(bool),
     #[strum(disabled)]
@@ -362,79 +358,17 @@ impl App {
                 }
                 iced::Task::none()
             }
-            AppMessage::MouseLeftDown => {
-                if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx]
-                        .update(PdfMessage::MouseLeftDown(self.shift_pressed));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseRightDown => {
+            AppMessage::MouseButtonDown(button) => {
                 if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Right)
+                    && let Some(action) = self.get_mouse_action(button)
                 {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
                 }
                 iced::Task::none()
             }
-            AppMessage::MouseMiddleDown => {
+            AppMessage::MouseButtonUp(button) => {
                 if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Middle)
-                {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseLeftUp => {
-                if !self.pdfs.is_empty() {
-                    let _ =
-                        self.pdfs[self.pdf_idx].update(PdfMessage::MouseLeftUp(self.shift_pressed));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseRightUp => {
-                if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Right)
-                {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseMiddleUp => {
-                if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Middle)
-                {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseBackDown => {
-                if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Back)
-                {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseBackUp => {
-                if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Back)
-                {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseForwardDown => {
-                if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Forward)
-                {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
-                }
-                iced::Task::none()
-            }
-            AppMessage::MouseForwardUp => {
-                if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(MouseButton::Forward)
+                    && let Some(action) = self.get_mouse_action(button)
                 {
                     let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
                 }
@@ -1145,22 +1079,12 @@ impl App {
                 iced::mouse::Event::CursorMoved { position } => {
                     Some(AppMessage::MouseMoved(position.into()))
                 }
-                iced::mouse::Event::ButtonPressed(button) => match button {
-                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftDown),
-                    iced::mouse::Button::Right => Some(AppMessage::MouseRightDown),
-                    iced::mouse::Button::Middle => Some(AppMessage::MouseMiddleDown),
-                    iced::mouse::Button::Back => Some(AppMessage::MouseBackDown),
-                    iced::mouse::Button::Forward => Some(AppMessage::MouseForwardDown),
-                    iced::mouse::Button::Other(_) => None,
-                },
-                iced::mouse::Event::ButtonReleased(button) => match button {
-                    iced::mouse::Button::Left => Some(AppMessage::MouseLeftUp),
-                    iced::mouse::Button::Right => Some(AppMessage::MouseRightUp),
-                    iced::mouse::Button::Middle => Some(AppMessage::MouseMiddleUp),
-                    iced::mouse::Button::Back => Some(AppMessage::MouseBackUp),
-                    iced::mouse::Button::Forward => Some(AppMessage::MouseForwardUp),
-                    _ => None,
-                },
+                iced::mouse::Event::ButtonPressed(button) => {
+                    iced_to_config_mouse_button(button).map(AppMessage::MouseButtonDown)
+                }
+                iced::mouse::Event::ButtonReleased(button) => {
+                    iced_to_config_mouse_button(button).map(AppMessage::MouseButtonUp)
+                }
                 iced::mouse::Event::WheelScrolled { delta } => match status {
                     iced::event::Status::Ignored => match delta {
                         iced::mouse::ScrollDelta::Lines { x: _, y: _ } => {
@@ -1595,4 +1519,15 @@ fn toggle_fullscreen() -> iced::Task<AppMessage> {
             window::Mode::Fullscreen => iced::window::change_mode(id, window::Mode::Windowed),
             _ => iced::window::change_mode(id, window::Mode::Fullscreen),
         })
+}
+
+fn iced_to_config_mouse_button(button: iced::mouse::Button) -> Option<MouseButton> {
+    match button {
+        iced::mouse::Button::Left => Some(MouseButton::Left),
+        iced::mouse::Button::Right => Some(MouseButton::Right),
+        iced::mouse::Button::Middle => Some(MouseButton::Middle),
+        iced::mouse::Button::Back => Some(MouseButton::Back),
+        iced::mouse::Button::Forward => Some(MouseButton::Forward),
+        iced::mouse::Button::Other(_) => None,
+    }
 }

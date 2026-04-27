@@ -169,14 +169,6 @@ impl PdfViewer {
                 }
                 self.mouse_pos = vector;
             }
-            PdfMessage::MouseLeftDown(shift_pressed) => {
-                if shift_pressed {
-                    // TODO: Selection
-                } else {
-                    self.mouse_interaction = MouseInteraction::Panning;
-                    self.mouse_pressed_at = self.mouse_pos;
-                }
-            }
             PdfMessage::MouseAction(mouse_action, pressed) => {
                 if pressed {
                     match mouse_action {
