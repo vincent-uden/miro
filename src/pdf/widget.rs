@@ -13,6 +13,7 @@ use tracing::debug;
 
 use crate::{
     DARK_THEME,
+    config::{MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
     pdf::{PdfMessage, outline_extraction::OutlineItem, page_layout::PageLayout},
 };
@@ -67,6 +68,13 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document {
     }
 }
 
+#[derive(Debug)]
+pub enum MouseInteraction {
+    None,
+    Panning,
+    Selecting,
+}
+
 /// Renders a pdf document. Owns all information related to the document.
 #[derive(Debug)]
 pub struct PdfViewer {
@@ -81,6 +89,10 @@ pub struct PdfViewer {
     pub translation: Vector<f32>,
     pub scale: f32,
     fractional_scaling: f32,
+
+    mouse_pos: Vector<f32>,
+    mouse_pressed_at: Vector<f32>,
+    mouse_interaction: MouseInteraction,
 
     layout: PageLayout,
 
@@ -116,10 +128,14 @@ impl PdfViewer {
             fractional_scaling: 1.0,
             layout: PageLayout::TwoPage,
             gradient_cache,
+            mouse_pos: Vector::zero(),
+            mouse_pressed_at: Vector::zero(),
+            mouse_interaction: MouseInteraction::None,
         })
     }
 
     pub fn update(&mut self, msg: PdfMessage) -> iced::Task<PdfMessage> {
+        let mut out = iced::Task::none();
         //debug!("PdfViewer::update({msg:?})");
         match msg {
             PdfMessage::PageDown => {}
@@ -141,10 +157,72 @@ impl PdfViewer {
             PdfMessage::Move(vector) => {
                 self.translation += vector;
             }
-            PdfMessage::MouseMoved(vector) => {}
-            PdfMessage::MouseLeftDown(_) => {}
-            PdfMessage::MouseLeftUp(_) => {}
-            PdfMessage::MouseAction(mouse_action, _) => {}
+            PdfMessage::MouseMoved(vector) => {
+                match self.mouse_interaction {
+                    MouseInteraction::None => {}
+                    MouseInteraction::Panning => {
+                        out = iced::Task::done(PdfMessage::Move(
+                            (vector - self.mouse_pos).scaled(self.scale * self.fractional_scaling),
+                        ))
+                    }
+                    MouseInteraction::Selecting => todo!(),
+                }
+                self.mouse_pos = vector;
+            }
+            PdfMessage::MouseLeftDown(shift_pressed) => {
+                if shift_pressed {
+                    // TODO: Selection
+                } else {
+                    self.mouse_interaction = MouseInteraction::Panning;
+                    self.mouse_pressed_at = self.mouse_pos;
+                }
+            }
+            PdfMessage::MouseAction(mouse_action, pressed) => {
+                if pressed {
+                    match mouse_action {
+                        MouseAction::Panning => {
+                            self.mouse_interaction = MouseInteraction::Panning;
+                            self.mouse_pressed_at = self.mouse_pos;
+                        }
+                        MouseAction::Selection => {
+                            self.mouse_interaction = MouseInteraction::Selecting;
+                            self.mouse_pressed_at = self.mouse_pos;
+                        }
+                        MouseAction::NextPage => {
+                            out = iced::Task::done(PdfMessage::PageDown);
+                        }
+                        MouseAction::PreviousPage => {
+                            out = iced::Task::done(PdfMessage::PageDown);
+                        }
+                        MouseAction::ZoomIn => {
+                            out = iced::Task::done(PdfMessage::ZoomIn);
+                        }
+                        MouseAction::ZoomOut => {
+                            out = iced::Task::done(PdfMessage::ZoomOut);
+                        }
+                        MouseAction::MoveUp => {
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(0.0, -MOVE_STEP)));
+                        }
+                        MouseAction::MoveDown => {
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(0.0, MOVE_STEP)));
+                        }
+                        MouseAction::MoveLeft => {
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(-MOVE_STEP, 0.0)));
+                        }
+                        MouseAction::MoveRight => {
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(MOVE_STEP, 0.0)));
+                        }
+                    }
+                } else {
+                    match self.mouse_interaction {
+                        MouseInteraction::None | MouseInteraction::Panning => {}
+                        MouseInteraction::Selecting => {
+                            // TODO: Copy text
+                        }
+                    }
+                    self.mouse_interaction = MouseInteraction::None;
+                }
+            }
             PdfMessage::ToggleLinkHitboxes => {}
             PdfMessage::ActivateLink(_) => {}
             PdfMessage::CloseLinkHitboxes => {}
@@ -152,8 +230,7 @@ impl PdfViewer {
             PdfMessage::PrintPdf => {}
             PdfMessage::None => {}
         }
-        // TODO: Implement
-        iced::Task::none()
+        out
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {

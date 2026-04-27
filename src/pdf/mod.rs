@@ -27,10 +27,6 @@ pub enum PdfMessage {
     ZoomFit,
     Move(Vector<f32>),
     MouseMoved(Vector<f32>),
-    /// bool indicates if Shift is pressed
-    MouseLeftDown(bool),
-    /// bool indicates if Shift is pressed
-    MouseLeftUp(bool),
     /// A [MouseAction] and whether it's pressed (true) or released (false)
     MouseAction(MouseAction, bool),
     ToggleLinkHitboxes,
