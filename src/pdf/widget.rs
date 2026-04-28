@@ -140,8 +140,13 @@ impl PdfViewer {
             PdfMessage::PageDown => {}
             PdfMessage::PageUp => {}
             PdfMessage::SetPage(_) => {}
-            PdfMessage::SetTranslation(vector) => {}
-            PdfMessage::SetLocation(vector, _) => {}
+            PdfMessage::SetTranslation(vector) => {
+                self.translation = vector;
+            }
+            PdfMessage::SetLocation(vector, scale) => {
+                self.translation = vector;
+                self.scale = scale;
+            }
             PdfMessage::SetLayout(page_layout) => {
                 self.layout = page_layout;
             }
@@ -151,7 +156,9 @@ impl PdfViewer {
             PdfMessage::ZoomOut => {
                 self.scale /= 1.2;
             }
-            PdfMessage::ZoomHome => {}
+            PdfMessage::ZoomHome => {
+                self.scale = 1.0;
+            }
             PdfMessage::ZoomFit => {}
             PdfMessage::Move(vector) => {
                 self.translation += vector;
