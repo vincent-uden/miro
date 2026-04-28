@@ -52,7 +52,6 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document {
         cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
         let bg = self.cache.draw(renderer, bounds.size(), |frame| {
-            frame.fill_text("Hello world!");
             for (color, rect) in &self.pages {
                 let mut c = *color;
                 c.a = 0.2;
@@ -162,7 +161,8 @@ impl PdfViewer {
                     MouseInteraction::None => {}
                     MouseInteraction::Panning => {
                         out = iced::Task::done(PdfMessage::Move(
-                            (vector - self.mouse_pos).scaled(self.scale * self.fractional_scaling),
+                            (self.mouse_pos - vector)
+                                .scaled(1.0 / (self.scale * self.fractional_scaling)),
                         ))
                     }
                     MouseInteraction::Selecting => todo!(),

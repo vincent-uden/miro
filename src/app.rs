@@ -354,25 +354,34 @@ impl App {
             AppMessage::None => iced::Task::none(),
             AppMessage::MouseMoved(vector) => {
                 if !self.pdfs.is_empty() {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseMoved(vector));
+                    self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::MouseMoved(vector))
+                        .map(AppMessage::PdfMessage)
+                } else {
+                    iced::Task::none()
                 }
-                iced::Task::none()
             }
             AppMessage::MouseButtonDown(button) => {
                 if !self.pdfs.is_empty()
                     && let Some(action) = self.get_mouse_action(button)
                 {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, true));
+                    self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::MouseAction(action, true))
+                        .map(AppMessage::PdfMessage)
+                } else {
+                    iced::Task::none()
                 }
-                iced::Task::none()
             }
             AppMessage::MouseButtonUp(button) => {
                 if !self.pdfs.is_empty()
                     && let Some(action) = self.get_mouse_action(button)
                 {
-                    let _ = self.pdfs[self.pdf_idx].update(PdfMessage::MouseAction(action, false));
+                    self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::MouseAction(action, false))
+                        .map(AppMessage::PdfMessage)
+                } else {
+                    iced::Task::none()
                 }
-                iced::Task::none()
             }
             AppMessage::ShiftPressed(pressed) => {
                 self.shift_pressed = pressed;
@@ -464,18 +473,24 @@ impl App {
                                 return iced::Task::none();
                             };
                             if let Some(action) = self.get_mouse_action(button) {
-                                let _ = self.pdfs[self.pdf_idx]
-                                    .update(PdfMessage::MouseAction(action, true));
+                                self.pdfs[self.pdf_idx]
+                                    .update(PdfMessage::MouseAction(action, true))
+                                    .map(AppMessage::PdfMessage)
+                            } else {
+                                iced::Task::none()
                             }
                         }
                         iced::mouse::ScrollDelta::Pixels { x, y } => {
                             let sensitivity = CONFIG.read().unwrap().trackpad_sensitivity;
                             let move_vec = Vector::new(-x * sensitivity, y * sensitivity);
-                            let _ = self.pdfs[self.pdf_idx].update(PdfMessage::Move(move_vec));
+                            self.pdfs[self.pdf_idx]
+                                .update(PdfMessage::Move(move_vec))
+                                .map(AppMessage::PdfMessage)
                         }
                     }
+                } else {
+                    iced::Task::none()
                 }
-                iced::Task::none()
             }
             AppMessage::Exit => exit(),
             AppMessage::FoundWindowId(id) => match id {
