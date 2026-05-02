@@ -143,6 +143,20 @@ pub enum AppMessage {
 }
 
 impl App {
+    fn handle_jumpable_action(&mut self, msg: PdfMessage) -> iced::Task<AppMessage> {
+        if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
+            self.record_location();
+            let pdf_msg = self.pdfs[self.pdf_idx]
+                .update(msg)
+                .map(AppMessage::PdfMessage);
+            self.record_location();
+            pdf_msg
+        } else {
+            self.pdfs[self.pdf_idx]
+                .update(msg)
+                .map(AppMessage::PdfMessage)
+        }
+    }
     fn get_mouse_action(&self, button: MouseButton) -> Option<MouseAction> {
         let input = MouseInput {
             button,
@@ -217,7 +231,7 @@ impl App {
     }
 
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
-        match message {
+    match message {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 self.recent_files.add_recent(path_buf.clone());
@@ -252,17 +266,26 @@ impl App {
             }
             AppMessage::PdfMessage(msg) => {
                 if !self.pdfs.is_empty() {
-                    if self.pdfs[self.pdf_idx].is_jumpable_action(&msg) {
-                        self.record_location();
-                        let pdf_msg = self.pdfs[self.pdf_idx]
-                            .update(msg)
-                            .map(AppMessage::PdfMessage);
-                        self.record_location();
-                        pdf_msg
+                    let config = CONFIG.read().unwrap();
+                    // If Autofit is enabled and the message is SetPage, UpdateBounds, or ReallocPixmap, chain a ZoomFit
+                    if config.autofit {
+                        match msg {
+                            PdfMessage::SetPage(_)
+                            | PdfMessage::NextPage
+                            | PdfMessage::PreviousPage
+                            | PdfMessage::UpdateBounds(_)
+                            | PdfMessage::ReallocPixmap => {
+                                self.pdfs[self.pdf_idx]
+                                    .update(msg)
+                                    .map(AppMessage::PdfMessage)
+                                    .chain(self.pdfs[self.pdf_idx]
+                                        .update(PdfMessage::ZoomFit)
+                                        .map(AppMessage::PdfMessage))
+                            }
+                            _ => self.handle_jumpable_action(msg),
+                        }
                     } else {
-                        self.pdfs[self.pdf_idx]
-                            .update(msg)
-                            .map(AppMessage::PdfMessage)
+                        self.handle_jumpable_action(msg)
                     }
                 } else {
                     iced::Task::none()
