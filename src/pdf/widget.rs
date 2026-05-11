@@ -17,9 +17,9 @@ use iced::{
     },
 };
 
-use mupdf::{Colorspace, Device, Matrix, Pixmap};
+use mupdf::{Colorspace, Device, Matrix, Pixmap, TextPageFlags};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::{
     DARK_THEME,
@@ -451,6 +451,14 @@ impl PdfViewer {
             .to_string();
         let doc = mupdf::Document::open(&path.to_str().unwrap())?;
         let (display_lists, links, outline) = Self::build_document_data(&doc)?;
+        info!(
+            "Document contains {} chars",
+            Self::count_chars(&display_lists).unwrap()
+        );
+        println!(
+            "Document contains {} chars",
+            Self::count_chars(&display_lists).unwrap()
+        );
 
         let bg_color = DARK_THEME
             .extended_palette()
@@ -945,6 +953,22 @@ impl PdfViewer {
             .width(iced::Length::Fill)
             .height(iced::Length::Fill)
             .into()
+    }
+
+    fn count_chars(display_lists: &[mupdf::DisplayList]) -> Result<usize> {
+        let _span = tracy_client::span!("Counting chars");
+        let mut count = 0;
+        for dl in display_lists {
+            let tp = dl.to_text_page(TextPageFlags::empty())?;
+            for block in tp.blocks() {
+                for line in block.lines() {
+                    for char in line.chars() {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        Ok(count)
     }
 
     pub fn extract_text_from_rect(&self, screen_rect: Rect<f32>) -> String {
