@@ -775,8 +775,7 @@ impl App {
                     bar_background: theme.extended_palette().background.weak.color.into(),
                     menu_border: Border {
                         radius: Radius::new(0.0).bottom(8.0),
-                        color: theme.extended_palette().background.strong.color,
-                        width: 2.0,
+                        ..Default::default()
                     },
                     bar_shadow: Shadow::default(),
                     menu_shadow: Shadow::default(),
@@ -797,11 +796,6 @@ impl App {
             background: Some(Background::Color(
                 theme.extended_palette().background.weak.color,
             )),
-            border: Border {
-                color: theme.extended_palette().background.strong.color,
-                width: 2.0,
-                radius: 0.0.into(),
-            },
             ..Default::default()
         })
         .into()
@@ -826,6 +820,40 @@ impl App {
             .into()
     }
 
+    fn search_view(&self) -> Element<'_, AppMessage> {
+        widget::row![
+            widget::horizontal_space().width(Length::Fill),
+            widget::container(
+                widget::column![
+                    widget::text_input("Search", &String::new()),
+                    widget::row![
+                        widget::text("Plain text"),
+                        widget::text("Regex"),
+                        widget::text("Fuzzy"),
+                        widget::horizontal_space().width(Length::Fill),
+                        widget::text("(10/39)"),
+                    ]
+                    .align_y(alignment::Vertical::Center)
+                    .spacing(12.0),
+                ]
+                .spacing(4.0)
+            )
+            .padding(8.0)
+            .style(|theme: &Theme| widget::container::Style {
+                background: Some(theme.extended_palette().background.weak.color.into()),
+                border: Border {
+                    radius: Radius {
+                        bottom_left: 4.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+        ]
+        .into()
+    }
+
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
         let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
             pane_grid::Content::new(match pane.pane_type {
@@ -838,6 +866,7 @@ impl App {
                         self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
                     };
                     let tabs = self.create_tabs();
+                    let search = self.search_view();
 
                     if self.presentation_mode {
                         widget::column![stack![pdf_content,]].into()
@@ -850,7 +879,10 @@ impl App {
                                     .align_y(alignment::Vertical::Bottom)
                                     .width(Length::Fill)
                                     .height(Length::Fill)
-                                    .padding(8.0)
+                                    .padding(8.0),
+                                container(search)
+                                    .align_y(alignment::Vertical::Top)
+                                    .width(Length::Fill)
                             ]
                         ]
                         .into()
