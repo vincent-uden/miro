@@ -25,7 +25,7 @@ use crate::{
     DARK_THEME,
     config::{MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
-    pdf::{PdfMessage, page_layout::PageLayout},
+    pdf::{PdfMessage, SearchMethod, page_layout::PageLayout},
 };
 
 #[derive(Debug, Clone)]
@@ -408,6 +408,14 @@ pub struct PdfViewer {
 
     outline: Vec<OutlineItem>,
 
+    /// The entire textual contents of the document. Used to search through text
+    text_contents: String,
+    /// Bounding boxes of every character in the document. Used to highlight searched text
+    char_bboxes: Vec<(i, Rect<f32>)>,
+    /// The boxes of text matching the needle
+    search_matches: Vec<(i, Rect<f32>)>,
+    search_method: SearchMethod,
+
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
 }
@@ -451,6 +459,7 @@ impl PdfViewer {
             .to_string();
         let doc = mupdf::Document::open(&path.to_str().unwrap())?;
         let (display_lists, links, outline) = Self::build_document_data(&doc)?;
+        let (all_text, bboxes) = Self::extract_search_data(&display_lists)?;
         info!(
             "Document contains {} chars",
             Self::count_chars(&display_lists).unwrap()
@@ -497,6 +506,10 @@ impl PdfViewer {
             hovered_link: None,
             outline,
             widget_position: RefCell::new(iced::Point::new(0.0, 0.0)),
+            text_contents: all_text,
+            char_bboxes: bboxes,
+            search_matches: vec![],
+            search_method: SearchMethod::PlainText, // TODO: Get default search method from config
         })
     }
 
@@ -747,6 +760,11 @@ impl PdfViewer {
                     vp.height / (self.scale * self.fractional_scaling * 2.0),
                 )));
             }
+            PdfMessage::HighlightSearchResults => todo!(),
+            PdfMessage::HideSearchResults => todo!(),
+            PdfMessage::JumpToSearchResult(_) => todo!(),
+            PdfMessage::UpdateSearchNeedle(_) => todo!(),
+            PdfMessage::SetSearchMethod(search_method) => todo!(),
             PdfMessage::None => {}
         }
         out
@@ -969,6 +987,36 @@ impl PdfViewer {
             }
         }
         Ok(count)
+    }
+
+    /// Returns (search haystack, Vec<(page number, bounding box)>)
+    fn extract_search_data(
+        display_lists: &[mupdf::DisplayList],
+    ) -> Result<(String, Vec<(usize, Rect<f32>)>)> {
+        let _span = tracy_client::span!("Preparing search data");
+        let mut all_text = String::new();
+        let mut bounding_boxes = vec![];
+        for dl in display_lists {
+            let tp = dl.to_text_page(TextPageFlags::empty())?;
+            for block in tp.blocks() {
+                for line in block.lines() {
+                    for char in line.chars() {
+                        if let Some(c) = char.char() {
+                            all_text.push(c);
+                            let quad = char.quad();
+                            bounding_boxes.push((
+                                (all_text.len() - 1),
+                                Rect {
+                                    x0: Vector::new(quad.ul.x, quad.ul.y),
+                                    x1: Vector::new(quad.lr.x, quad.lr.y),
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Ok((all_text, bounding_boxes))
     }
 
     pub fn extract_text_from_rect(&self, screen_rect: Rect<f32>) -> String {

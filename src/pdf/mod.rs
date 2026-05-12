@@ -9,6 +9,14 @@ use strum::EnumString;
 pub mod page_layout;
 pub mod widget;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default)]
+pub enum SearchMethod {
+    #[default]
+    PlainText,
+    Regex,
+    FuzzyFinding,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum PdfMessage {
     NextPage,
@@ -38,6 +46,11 @@ pub enum PdfMessage {
     CloseLinkHitboxes,
     FileChanged,
     PrintPdf,
+    HighlightSearchResults,
+    HideSearchResults,
+    JumpToSearchResult(usize),
+    UpdateSearchNeedle(String),
+    SetSearchMethod(SearchMethod),
     #[default]
     None,
 }
