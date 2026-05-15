@@ -78,6 +78,7 @@ pub struct App {
     pub invert_pdf: bool,
     pub draw_page_borders: bool,
     presentation_mode: bool,
+    search_open: bool,
     bookmark_store: BookmarkStore,
     recent_files: RecentFiles,
     pane_state: pane_grid::State<Pane>,
@@ -143,6 +144,8 @@ pub enum AppMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
+    ToggleSearch,
+    CloseSearch,
 }
 
 impl App {
@@ -173,6 +176,7 @@ impl App {
             invert_pdf: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
             presentation_mode: false,
+            search_open: false,
             bookmark_store,
             recent_files,
             pane_state: ps,
@@ -550,6 +554,36 @@ impl App {
                 self.presentation_mode = !self.presentation_mode;
                 iced::Task::none()
             }
+            AppMessage::ToggleSearch => {
+                self.search_open = !self.search_open;
+                if !self.pdfs.is_empty() {
+                    if self.search_open {
+                        self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::HighlightSearchResults)
+                            .map(AppMessage::PdfMessage)
+                    } else {
+                        self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::HideSearchResults)
+                            .map(AppMessage::PdfMessage)
+                    }
+                } else {
+                    iced::Task::none()
+                }
+            }
+            AppMessage::CloseSearch => {
+                if self.search_open {
+                    self.search_open = false;
+                    if !self.pdfs.is_empty() {
+                        self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::HideSearchResults)
+                            .map(AppMessage::PdfMessage)
+                    } else {
+                        iced::Task::none()
+                    }
+                } else {
+                    iced::Task::none()
+                }
+            }
         }
     }
 
@@ -918,27 +952,29 @@ impl App {
                         self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
                     };
                     let tabs = self.create_tabs();
-                    let search = self.search_view();
-
                     if self.presentation_mode {
                         widget::column![stack![pdf_content,]].into()
                     } else {
-                        widget::column![
-                            menu_bar,
-                            stack![
-                                pdf_content,
-                                container(tabs)
-                                    .align_y(alignment::Vertical::Bottom)
-                                    .width(Length::Fill)
-                                    .height(Length::Fill)
-                                    .padding(8.0),
-                                container(search)
+                        let mut stack_children: Vec<Element<'_, AppMessage>> = vec![
+                            pdf_content,
+                            container(tabs)
+                                .align_y(alignment::Vertical::Bottom)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .padding(8.0)
+                                .into(),
+                        ];
+                        if self.search_open {
+                            stack_children.push(
+                                container(self.search_view())
                                     .align_y(alignment::Vertical::Top)
                                     .width(Length::Fill)
-                                    .padding(8.0),
-                            ]
-                        ]
-                        .into()
+                                    .padding(8.0)
+                                    .into(),
+                            );
+                        }
+                        widget::column![menu_bar, stack(stack_children)]
+                            .into()
                     }
                 }
             })

@@ -10,7 +10,6 @@ use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
     Renderer, Size,
     advanced::{graphics::geometry, image},
-    mouse,
     widget::{
         self,
         canvas::{self, Cache, Stroke},
@@ -50,6 +49,7 @@ struct SearchMatch {
     start_byte: usize,
     end_byte: usize,
     pages: std::ops::Range<usize>,
+    /// Merged bounding boxes per line: (page_index, bounding_box).
     rects: Vec<(usize, Rect<f32>)>,
 }
 
@@ -198,24 +198,26 @@ impl<'a> widget::canvas::Program<PdfMessage> for SelectionOverlay<'a> {
 }
 
 #[derive(Debug, Default)]
-struct LinkOverlayState {
+struct InteractiveOverlayState {
+    /// Accumulator for keyboard driven-link activation
     pending_key: String,
+    /// Keeps track for toggle link hitboxes events
     was_active: bool,
 }
 
 #[derive(Debug)]
-struct LinkOverlay<'a> {
+struct InteractiveOverlay<'a> {
     viewer: &'a PdfViewer,
 }
 
-impl<'a> LinkOverlay<'a> {
+impl<'a> InteractiveOverlay<'a> {
     fn new(viewer: &'a PdfViewer) -> Self {
         Self { viewer }
     }
 }
 
-impl<'a> widget::canvas::Program<PdfMessage> for LinkOverlay<'a> {
-    type State = LinkOverlayState;
+impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
+    type State = InteractiveOverlayState;
 
     fn update(
         &self,
@@ -254,8 +256,8 @@ impl<'a> widget::canvas::Program<PdfMessage> for LinkOverlay<'a> {
                 state.pending_key.push_str(&ch);
 
                 let viewport = *self.viewer.viewport.borrow();
-                let visible = self.viewer.visible_links(viewport);
-                let keys = generate_key_combinations(visible.len());
+                let link_visible = self.viewer.visible_links(viewport);
+                let keys = generate_key_combinations(link_visible.len());
 
                 if let Some(idx) = keys.iter().position(|k| k == &state.pending_key) {
                     state.pending_key.clear();
@@ -288,26 +290,50 @@ impl<'a> widget::canvas::Program<PdfMessage> for LinkOverlay<'a> {
     ) -> Vec<canvas::Geometry<Renderer>> {
         *self.viewer.widget_position.borrow_mut() = bounds.position();
         let viewport = bounds.size();
-        let visible = self.viewer.visible_links(viewport);
-        if visible.is_empty() && self.viewer.hovered_link.is_none() {
+        let link_visible = self.viewer.visible_links(viewport);
+        let search_visible = self.viewer.visible_search_results(viewport);
+        if link_visible.is_empty()
+            && search_visible.is_empty()
+            && self.viewer.hovered_link.is_none()
+            && self.viewer.hovered_search_result.is_none()
+        {
             return Vec::new();
         }
 
         let mut frame = canvas::Frame::new(renderer, viewport);
 
-        if let Some((page_idx, link_idx)) = self.viewer.hovered_link
-            && let Some((_, rect)) = visible
-                .iter()
-                .find(|((p, l), _)| *p == page_idx && *l == link_idx)
-        {
-            let mut color = iced::Color::from_rgb(0.0, 0.4, 0.8);
-            color.a = 0.15;
+        // Draw search results first (behind links).
+        for (match_idx, rect) in &search_visible {
+            let is_hovered = self
+                .viewer
+                .hovered_search_result
+                .as_ref()
+                .is_some_and(|h| h == match_idx);
+            let mut color = if is_hovered {
+                iced::Color::from_rgb(1.0, 0.5, 0.0)
+            } else {
+                iced::Color::from_rgb(1.0, 0.8, 0.2)
+            };
+            color.a = if is_hovered { 0.35 } else { 0.2 };
             frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
         }
 
+        // Draw hovered link fill.
+        if let Some((page_idx, link_idx)) = self.viewer.hovered_link {
+            if let Some((_, rect)) = link_visible
+                .iter()
+                .find(|((p, l), _)| *p == page_idx && *l == link_idx)
+            {
+                let mut color = iced::Color::from_rgb(0.0, 0.4, 0.8);
+                color.a = 0.15;
+                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
+            }
+        }
+
+        // Draw link hitbox mode.
         if self.viewer.show_link_hitboxes {
-            let keys = generate_key_combinations(visible.len());
-            for (((_page_idx, _link_idx), rect), key) in visible.iter().zip(keys.iter()) {
+            let keys = generate_key_combinations(link_visible.len());
+            for (((_page_idx, _link_idx), rect), key) in link_visible.iter().zip(keys.iter()) {
                 let mut fill_color = iced::Color::from_rgb(0.9, 0.3, 0.1);
                 fill_color.a = 0.2;
                 frame.fill_rectangle(rect.x0.into(), rect.size().into(), fill_color);
@@ -355,7 +381,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for LinkOverlay<'a> {
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> iced::advanced::mouse::Interaction {
-        if self.viewer.hovered_link.is_some() {
+        if self.viewer.hovered_link.is_some() || self.viewer.hovered_search_result.is_some() {
             iced::advanced::mouse::Interaction::Pointer
         } else {
             iced::advanced::mouse::Interaction::default()
@@ -415,6 +441,9 @@ pub struct PdfViewer {
     show_link_hitboxes: bool,
     links: Vec<Vec<PageLink>>,
     hovered_link: Option<(usize, usize)>,
+
+    show_search_results: bool,
+    hovered_search_result: Option<usize>,
 
     outline: Vec<OutlineItem>,
 
@@ -517,6 +546,8 @@ impl PdfViewer {
             show_link_hitboxes: false,
             links,
             hovered_link: None,
+            show_search_results: false,
+            hovered_search_result: None,
             outline,
             widget_position: RefCell::new(iced::Point::new(0.0, 0.0)),
             text_contents: all_text,
@@ -632,6 +663,7 @@ impl PdfViewer {
                     }
                 }
                 self.update_hovered_link();
+                self.update_hovered_search_result();
             }
             PdfMessage::MouseAction(mouse_action, pressed) => {
                 if pressed {
@@ -679,10 +711,29 @@ impl PdfViewer {
                     match self.mouse_interaction {
                         MouseInteraction::None | MouseInteraction::Panning => {
                             let dist_sq = (self.mouse_pos - self.mouse_pressed_at).norm_squared();
-                            if dist_sq < MIN_CLICK_DISTANCE * MIN_CLICK_DISTANCE
-                                && let Some((page_idx, link_idx)) = self.hovered_link
-                            {
-                                out = self.activate_link(page_idx, link_idx);
+                            if dist_sq < MIN_CLICK_DISTANCE * MIN_CLICK_DISTANCE {
+                                if let Some((page_idx, link_idx)) = self.hovered_link {
+                                    out = self.activate_link(page_idx, link_idx);
+                                } else if let Some(match_idx) = self.hovered_search_result {
+                                    if let Some(m) = self.search_matches.get(match_idx) {
+                                        let text = self.text_contents[m.start_byte..m.end_byte]
+                                            .to_string();
+                                        out = iced::Task::perform(
+                                            async move {
+                                                if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                                {
+                                                    if let Err(e) = clipboard.set_text(text) {
+                                                        error!(
+                                                            "Failed to copy search result to clipboard: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            },
+                                            |_| PdfMessage::None,
+                                        );
+                                    }
+                                }
                             }
                         }
                         MouseInteraction::Selecting => {
@@ -774,9 +825,29 @@ impl PdfViewer {
                     vp.height / (self.scale * self.fractional_scaling * 2.0),
                 )));
             }
-            PdfMessage::HighlightSearchResults => todo!(),
-            PdfMessage::HideSearchResults => todo!(),
-            PdfMessage::JumpToSearchResult(_) => todo!(),
+            PdfMessage::HighlightSearchResults => {
+                self.show_search_results = true;
+            }
+            PdfMessage::HideSearchResults => {
+                self.show_search_results = false;
+            }
+            PdfMessage::JumpToSearchResult(idx) => {
+                if let Some(m) = self.search_matches.get(idx) {
+                    let page_idx = m.pages.start;
+                    if let Ok(base_translation) = self.layout.translation_for_page(
+                        &self.doc,
+                        self.scale,
+                        self.fractional_scaling,
+                        page_idx,
+                        *self.viewport.borrow(),
+                    ) {
+                        let page_bounds: Rect<f32> = self.display_lists[page_idx].bounds().into();
+                        let page_center = page_bounds.center();
+                        let match_center = m.rects[0].1.center();
+                        self.translation = base_translation + (match_center - page_center);
+                    }
+                }
+            }
             PdfMessage::UpdateSearchNeedle(needle) => {
                 self.needle = needle;
                 self.update_search_matches();
@@ -980,17 +1051,21 @@ impl PdfViewer {
             .width(iced::Length::Fill)
             .height(iced::Length::Fill);
 
-        let link_overlay = widget::canvas(LinkOverlay::new(self))
+        let interactive_overlay = widget::canvas(InteractiveOverlay::new(self))
             .width(iced::Length::Fill)
             .height(iced::Length::Fill);
 
         // We need the stack here because an image being drawn inside a canvas appears on top of
         // shapes regardless of draw order. This way we force the draw order to allow for
         // shapes to overlay images.
-        widget::Stack::with_children([pages.into(), selection_overlay.into(), link_overlay.into()])
-            .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
-            .into()
+        widget::Stack::with_children([
+            pages.into(),
+            selection_overlay.into(),
+            interactive_overlay.into(),
+        ])
+        .width(iced::Length::Fill)
+        .height(iced::Length::Fill)
+        .into()
     }
 
     fn count_chars(display_lists: &[mupdf::DisplayList]) -> Result<usize> {
@@ -1184,6 +1259,63 @@ impl PdfViewer {
         result
     }
 
+    fn visible_search_results(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
+        let mut result = Vec::new();
+        if !self.show_search_results {
+            return result;
+        }
+        let Ok(pages) = self.doc.pages() else {
+            return result;
+        };
+        let Ok(page_rects) = self.layout.pages_rects(
+            pages,
+            self.translation.scaled(-1.0),
+            self.scale,
+            self.fractional_scaling,
+            viewport,
+        ) else {
+            return result;
+        };
+
+        let viewport_rect = Rect::from_pos_size(Vector::zero(), viewport.into());
+
+        for (page_idx, page_rect) in page_rects.iter().enumerate() {
+            if !viewport_rect.intersects(page_rect) {
+                continue;
+            }
+            let page_bounds = self.display_lists[page_idx].bounds();
+            let page_width = page_bounds.x1 - page_bounds.x0;
+            let page_height = page_bounds.y1 - page_bounds.y0;
+            if page_width <= 0.0 || page_height <= 0.0 {
+                continue;
+            }
+            let scale_x = page_rect.width() / page_width;
+            let scale_y = page_rect.height() / page_height;
+
+            for (match_idx, m) in self.search_matches.iter().enumerate() {
+                for &(rect_page_idx, rect) in &m.rects {
+                    if rect_page_idx != page_idx {
+                        continue;
+                    }
+                    let screen_rect = Rect::from_points(
+                        Vector::new(
+                            page_rect.x0.x + (rect.x0.x - page_bounds.x0) * scale_x,
+                            page_rect.x0.y + (rect.x0.y - page_bounds.y0) * scale_y,
+                        ),
+                        Vector::new(
+                            page_rect.x0.x + (rect.x1.x - page_bounds.x0) * scale_x,
+                            page_rect.x0.y + (rect.x1.y - page_bounds.y0) * scale_y,
+                        ),
+                    );
+                    if viewport_rect.intersects(&screen_rect) {
+                        result.push((match_idx, screen_rect));
+                    }
+                }
+            }
+        }
+        result
+    }
+
     fn local_mouse_pos(&self) -> Vector<f32> {
         let offset: Vector<f32> = (*self.widget_position.borrow()).into();
         self.mouse_pos - offset
@@ -1197,6 +1329,20 @@ impl PdfViewer {
             .iter()
             .find(|(_, rect)| rect.contains(local_mouse))
             .map(|((page_idx, link_idx), _)| (*page_idx, *link_idx));
+    }
+
+    fn update_hovered_search_result(&mut self) {
+        if self.hovered_link.is_some() {
+            self.hovered_search_result = None;
+            return;
+        }
+        let local_mouse = self.local_mouse_pos();
+        let viewport = *self.viewport.borrow();
+        let visible = self.visible_search_results(viewport);
+        self.hovered_search_result = visible
+            .iter()
+            .find(|(_, rect)| rect.contains(local_mouse))
+            .map(|(match_idx, _)| *match_idx);
     }
 
     fn activate_link(&mut self, page_idx: usize, link_idx: usize) -> iced::Task<PdfMessage> {
@@ -1349,12 +1495,13 @@ fn find_search_matches(
 
     let mut matches = vec![];
     for (start, end) in byte_ranges {
-        let mut rects = vec![];
+        let mut char_rects = vec![];
         for &(page_idx, byte_offset, rect) in char_bboxes {
             if byte_offset >= start && byte_offset < end {
-                rects.push((page_idx, rect));
+                char_rects.push((page_idx, rect));
             }
         }
+        let rects = merge_search_rects(&char_rects);
         if !rects.is_empty() {
             let first_page = rects[0].0;
             let last_page = rects[rects.len() - 1].0;
@@ -1367,6 +1514,34 @@ fn find_search_matches(
         }
     }
     matches
+}
+
+/// Merge consecutive character bounding boxes that are on the same page and
+/// vertically overlap (i.e., belong to the same line).
+fn merge_search_rects(char_rects: &[(usize, Rect<f32>)]) -> Vec<(usize, Rect<f32>)> {
+    if char_rects.is_empty() {
+        return vec![];
+    }
+    let mut merged = vec![];
+    let mut current_page = char_rects[0].0;
+    let mut current = char_rects[0].1;
+    for &(page_idx, rect) in &char_rects[1..] {
+        // Vertically overlapping means same line.
+        let same_line =
+            page_idx == current_page && rect.x0.y < current.x1.y && rect.x1.y > current.x0.y;
+        if same_line {
+            current.x0.x = current.x0.x.min(rect.x0.x);
+            current.x0.y = current.x0.y.min(rect.x0.y);
+            current.x1.x = current.x1.x.max(rect.x1.x);
+            current.x1.y = current.x1.y.max(rect.x1.y);
+        } else {
+            merged.push((current_page, current));
+            current_page = page_idx;
+            current = rect;
+        }
+    }
+    merged.push((current_page, current));
+    merged
 }
 
 fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {

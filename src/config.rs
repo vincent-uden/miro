@@ -188,6 +188,8 @@ pub enum BindableMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
+    ToggleSearch,
+    CloseSearch,
     SinglePageLayout,
     DoublePageLayout,
     DoublePageTitlePageLayout,
@@ -232,6 +234,8 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::JumpForward => AppMessage::JumpForward,
             BindableMessage::ToggleFullscreen => AppMessage::ToggleFullscreen,
             BindableMessage::TogglePresentationMode => AppMessage::TogglePresentationMode,
+            BindableMessage::ToggleSearch => AppMessage::ToggleSearch,
+            BindableMessage::CloseSearch => AppMessage::CloseSearch,
             BindableMessage::SinglePageLayout => {
                 AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage))
             }
@@ -625,6 +629,15 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Ctrl+w").unwrap(),
                     BindableMessage::CloseTab,
+                ),
+                // Search
+                Keybind::new(
+                    KeyInput::from_str("/").unwrap(),
+                    BindableMessage::ToggleSearch,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Escape").unwrap(),
+                    BindableMessage::CloseSearch,
                 ),
                 // Tab navigation
                 Keybind::new(KeyInput::from_str("Tab").unwrap(), BindableMessage::NextTab),
