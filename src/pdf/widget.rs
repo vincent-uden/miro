@@ -1492,6 +1492,16 @@ impl PdfViewer {
             .current_page_index(&self.doc, self.translation, *self.viewport.borrow())
             .unwrap()
     }
+
+    pub fn search_progress(&self) -> String {
+        if self.needle.is_empty() {
+            String::new()
+        } else {
+            let current = self.current_search_result.map(|i| i + 1).unwrap_or(0);
+            let total = self.search_matches.len();
+            format!("({} / {})", current, total)
+        }
+    }
 }
 
 /// Find all search matches in `haystack` and map them to bounding boxes.

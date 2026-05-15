@@ -865,6 +865,11 @@ impl App {
 
     fn search_view(&self) -> Element<'_, AppMessage> {
         let search_method = self.pdfs.get(self.pdf_idx).map(|x| x.search_method);
+        let search_progress = self
+            .pdfs
+            .get(self.pdf_idx)
+            .map(|x| x.search_progress())
+            .unwrap_or_default();
         widget::row![
             widget::horizontal_space().width(Length::Fill),
             widget::container(
@@ -895,7 +900,7 @@ impl App {
                             ))
                             .on_press(PdfMessage::SetSearchMethod(SearchMethod::Regex).into()),
                         widget::horizontal_space().width(Length::Fill),
-                        widget::text("(10/39)"),
+                        widget::text(search_progress),
                     ]
                     .align_y(alignment::Vertical::Center)
                     .spacing(4.0),
