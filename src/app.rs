@@ -144,7 +144,7 @@ pub enum AppMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
-    ToggleSearch,
+    OpenSearch,
     CloseSearch,
 }
 
@@ -554,18 +554,12 @@ impl App {
                 self.presentation_mode = !self.presentation_mode;
                 iced::Task::none()
             }
-            AppMessage::ToggleSearch => {
-                self.search_open = !self.search_open;
+            AppMessage::OpenSearch => {
+                self.search_open = true;
                 let search_task = if !self.pdfs.is_empty() {
-                    if self.search_open {
-                        self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::HighlightSearchResults)
-                            .map(AppMessage::PdfMessage)
-                    } else {
-                        self.pdfs[self.pdf_idx]
-                            .update(PdfMessage::HideSearchResults)
-                            .map(AppMessage::PdfMessage)
-                    }
+                    self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::HighlightSearchResults)
+                        .map(AppMessage::PdfMessage)
                 } else {
                     iced::Task::none()
                 };
@@ -988,8 +982,7 @@ impl App {
                                     .into(),
                             );
                         }
-                        widget::column![menu_bar, stack(stack_children)]
-                            .into()
+                        widget::column![menu_bar, stack(stack_children)].into()
                     }
                 }
             })

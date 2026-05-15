@@ -188,7 +188,7 @@ pub enum BindableMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
-    ToggleSearch,
+    OpenSearch,
     CloseSearch,
     NextSearchResult,
     PreviousSearchResult,
@@ -236,7 +236,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::JumpForward => AppMessage::JumpForward,
             BindableMessage::ToggleFullscreen => AppMessage::ToggleFullscreen,
             BindableMessage::TogglePresentationMode => AppMessage::TogglePresentationMode,
-            BindableMessage::ToggleSearch => AppMessage::ToggleSearch,
+            BindableMessage::OpenSearch => AppMessage::OpenSearch,
             BindableMessage::CloseSearch => AppMessage::CloseSearch,
             BindableMessage::NextSearchResult => {
                 AppMessage::PdfMessage(PdfMessage::NextSearchResult)
@@ -649,7 +649,7 @@ impl Default for Config {
                 // Search
                 Keybind::new(
                     KeyInput::from_str("/").unwrap(),
-                    BindableMessage::ToggleSearch,
+                    BindableMessage::OpenSearch,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Escape").unwrap(),
