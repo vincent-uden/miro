@@ -10,7 +10,6 @@ pub enum SearchMethod {
     #[default]
     PlainText,
     Regex,
-    FuzzyFinding,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]

@@ -1345,9 +1345,6 @@ fn find_search_matches(
                 }
             }
         }
-        SearchMethod::FuzzyFinding => {
-            // TODO: implement fuzzy finding
-        }
     }
 
     let mut matches = vec![];

@@ -850,15 +850,6 @@ impl App {
                                 search_method == Some(SearchMethod::Regex)
                             ))
                             .on_press(PdfMessage::SetSearchMethod(SearchMethod::Regex).into()),
-                        widget::button("Fuzzy")
-                            .style(move |theme, status| Self::search_method_button_style(
-                                theme,
-                                status,
-                                search_method == Some(SearchMethod::FuzzyFinding)
-                            ))
-                            .on_press(
-                                PdfMessage::SetSearchMethod(SearchMethod::FuzzyFinding).into()
-                            ),
                         widget::horizontal_space().width(Length::Fill),
                         widget::text("(10/39)"),
                     ]
