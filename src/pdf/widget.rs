@@ -444,6 +444,7 @@ pub struct PdfViewer {
 
     show_search_results: bool,
     hovered_search_result: Option<usize>,
+    current_search_result: Option<usize>,
 
     outline: Vec<OutlineItem>,
 
@@ -548,6 +549,7 @@ impl PdfViewer {
             hovered_link: None,
             show_search_results: false,
             hovered_search_result: None,
+            current_search_result: None,
             outline,
             widget_position: RefCell::new(iced::Point::new(0.0, 0.0)),
             text_contents: all_text,
@@ -833,6 +835,7 @@ impl PdfViewer {
             }
             PdfMessage::JumpToSearchResult(idx) => {
                 if let Some(m) = self.search_matches.get(idx) {
+                    self.current_search_result = Some(idx);
                     let page_idx = m.pages.start;
                     if let Ok(base_translation) = self.layout.translation_for_page(
                         &self.doc,
@@ -846,6 +849,25 @@ impl PdfViewer {
                         let match_center = m.rects[0].1.center();
                         self.translation = base_translation + (match_center - page_center);
                     }
+                }
+            }
+            PdfMessage::NextSearchResult => {
+                if !self.search_matches.is_empty() {
+                    let idx = match self.current_search_result {
+                        Some(current) => (current + 1) % self.search_matches.len(),
+                        None => 0,
+                    };
+                    out = iced::Task::done(PdfMessage::JumpToSearchResult(idx));
+                }
+            }
+            PdfMessage::PreviousSearchResult => {
+                if !self.search_matches.is_empty() {
+                    let len = self.search_matches.len();
+                    let idx = match self.current_search_result {
+                        Some(current) => (current + len - 1) % len,
+                        None => len - 1,
+                    };
+                    out = iced::Task::done(PdfMessage::JumpToSearchResult(idx));
                 }
             }
             PdfMessage::UpdateSearchNeedle(needle) => {
@@ -1124,6 +1146,7 @@ impl PdfViewer {
             self.search_method,
             &self.char_bboxes,
         );
+        self.current_search_result = None;
         for m in &self.search_matches {
             debug!(
                 "{} at {}-{}",

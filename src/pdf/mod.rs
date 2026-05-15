@@ -44,6 +44,8 @@ pub enum PdfMessage {
     HighlightSearchResults,
     HideSearchResults,
     JumpToSearchResult(usize),
+    NextSearchResult,
+    PreviousSearchResult,
     UpdateSearchNeedle(String),
     SetSearchMethod(SearchMethod),
     #[default]
