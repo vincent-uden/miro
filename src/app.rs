@@ -556,7 +556,7 @@ impl App {
             }
             AppMessage::ToggleSearch => {
                 self.search_open = !self.search_open;
-                if !self.pdfs.is_empty() {
+                let search_task = if !self.pdfs.is_empty() {
                     if self.search_open {
                         self.pdfs[self.pdf_idx]
                             .update(PdfMessage::HighlightSearchResults)
@@ -568,6 +568,15 @@ impl App {
                     }
                 } else {
                     iced::Task::none()
+                };
+                if self.search_open {
+                    iced::Task::batch([
+                        search_task,
+                        widget::text_input::focus(widget::text_input::Id::new("search_input"))
+                            .map(|_: ()| AppMessage::PdfMessage(PdfMessage::None)),
+                    ])
+                } else {
+                    search_task
                 }
             }
             AppMessage::CloseSearch => {
@@ -868,6 +877,7 @@ impl App {
                             .map(|x| x.needle.as_str())
                             .unwrap_or("")
                     )
+                    .id(widget::text_input::Id::new("search_input"))
                     .on_input(|x| AppMessage::PdfMessage(PdfMessage::UpdateSearchNeedle(x))),
                     widget::row![
                         widget::button("Plain text")
