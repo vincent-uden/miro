@@ -491,7 +491,9 @@ impl PdfViewer {
             widget_position: RefCell::new(iced::Point::new(0.0, 0.0)),
         })
     }
+}
 
+impl PdfViewer {
     pub fn update(&mut self, msg: PdfMessage) -> iced::Task<PdfMessage> {
         let mut out = iced::Task::none();
         let page_count = self.doc.page_count().unwrap() as usize;

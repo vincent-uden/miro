@@ -2,8 +2,10 @@
 
 use std::{
     fs, io,
+    io::{IsTerminal, Read},
     path::PathBuf,
     sync::{LazyLock, RwLock},
+    time::SystemTime,
 };
 
 use app::App;
@@ -33,6 +35,14 @@ const DARK_THEME: Theme = Theme::TokyoNight;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 
+struct StdinTempFile(PathBuf);
+
+impl Drop for StdinTempFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, name = "miro", about = "A pdf viewer")]
 struct Args {
@@ -46,7 +56,34 @@ fn main() -> iced::Result {
         .with_env_filter(EnvFilter::new("miro"))
         .init();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    let stdin_path = args.path.as_ref().map(|p| p.as_os_str().to_string_lossy() == "-").unwrap_or(false);
+    let _stdin_temp = if (stdin_path || args.path.is_none()) && !io::stdin().is_terminal() {
+        let mut bytes = Vec::new();
+        if let Err(e) = io::stdin().read_to_end(&mut bytes) {
+            eprintln!("Failed to read from stdin: {e}");
+            None
+        } else {
+            let ts = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let tmp = std::env::temp_dir().join(format!("miro-stdin-{ts}.pdf"));
+            if let Err(e) = fs::write(&tmp, &bytes) {
+                eprintln!("Failed to write stdin to temporary file: {e}");
+                None
+            } else {
+                args.path = Some(tmp.clone());
+                Some(StdinTempFile(tmp))
+            }
+        }
+    } else {
+        if stdin_path {
+            args.path = None;
+        }
+        None
+    };
 
     match home::home_dir() {
         Some(path) => fs::create_dir_all(path.join(".config/miro-pdf"))
