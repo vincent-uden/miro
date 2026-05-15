@@ -846,8 +846,24 @@ impl PdfViewer {
                     ) {
                         let page_bounds: Rect<f32> = self.display_lists[page_idx].bounds().into();
                         let page_center = page_bounds.center();
-                        let match_center = m.rects[0].1.center();
-                        self.translation = base_translation + (match_center - page_center);
+                        let match_rect = m.rects[0].1;
+                        let match_center = match_rect.center();
+                        // Center vertically.
+                        self.translation.y = base_translation.y + (match_center.y - page_center.y);
+                        // Horizontal: adjust minimally from current pan to keep match visible.
+                        let viewport = *self.viewport.borrow();
+                        let effective_scale = self.scale * self.fractional_scaling;
+                        let half_viewport = viewport.width / (2.0 * effective_scale);
+                        let lower_bound = match_rect.x1.x - page_center.x - half_viewport;
+                        let upper_bound = match_rect.x0.x - page_center.x + half_viewport;
+                        if lower_bound > upper_bound {
+                            // Wider than viewport: center horizontally.
+                            self.translation.x = match_center.x - page_center.x;
+                        } else if self.translation.x < lower_bound {
+                            self.translation.x = lower_bound;
+                        } else if self.translation.x > upper_bound {
+                            self.translation.x = upper_bound;
+                        }
                     }
                 }
             }
