@@ -769,13 +769,7 @@ impl PdfViewer {
             PdfMessage::JumpToSearchResult(_) => todo!(),
             PdfMessage::UpdateSearchNeedle(needle) => {
                 self.needle = needle;
-                let re = Regex::new(&self.needle).unwrap();
-                for capture in re.captures_iter(&self.text_contents) {
-                    let text = capture.get_match();
-                    let start = text.start();
-                    let end = text.end();
-                    debug!("{} at {start}-{end}", text.as_str());
-                }
+                self.update_search_matches();
             }
             PdfMessage::SetSearchMethod(search_method) => {
                 self.search_method = search_method;
@@ -1012,7 +1006,7 @@ impl PdfViewer {
         let _span = tracy_client::span!("Preparing search data");
         let mut all_text = String::new();
         let mut bounding_boxes = vec![];
-        for dl in display_lists {
+        for (page_idx, dl) in display_lists.iter().enumerate() {
             let tp = dl.to_text_page(TextPageFlags::empty())?;
             for block in tp.blocks() {
                 for line in block.lines() {
@@ -1021,7 +1015,7 @@ impl PdfViewer {
                             all_text.push(c);
                             let quad = char.quad();
                             bounding_boxes.push((
-                                (all_text.len() - 1),
+                                page_idx,
                                 Rect {
                                     x0: Vector::new(quad.ul.x, quad.ul.y),
                                     x1: Vector::new(quad.lr.x, quad.lr.y),
@@ -1033,6 +1027,49 @@ impl PdfViewer {
             }
         }
         Ok((all_text, bounding_boxes))
+    }
+
+    fn update_search_matches(&mut self) {
+        let _span = tracy_client::span!("Updating search matches");
+        self.search_matches.clear();
+        if self.needle.is_empty() {
+            return;
+        }
+
+        // Contains (start, end) for matches. Start is inclusive, end is exclusive
+        let mut matches = vec![];
+        match self.search_method {
+            SearchMethod::PlainText => {
+                let _span = tracy_client::span!("Plain text search");
+                let mut start = 0;
+                while start < self.text_contents.len() - self.needle.len() {
+                    let end = start + self.needle.len();
+                    if self.text_contents[start..end] == self.needle {
+                        matches.push((start, end));
+                        start = end;
+                    } else {
+                        start += 1;
+                    }
+                }
+            }
+            SearchMethod::Regex => {
+                let _span = tracy_client::span!("Regex search");
+                let re = Regex::new(&self.needle).unwrap();
+                let mut matches = vec![];
+                for capture in re.captures_iter(&self.text_contents) {
+                    let text = capture.get_match();
+                    let start = text.start();
+                    let end = text.end();
+
+                    matches.push((start, end))
+                }
+            }
+            SearchMethod::FuzzyFinding => todo!(),
+        };
+
+        for (start, end) in matches {
+            debug!("{} at {start}-{end}", &self.text_contents[start..end]);
+        }
     }
 
     pub fn extract_text_from_rect(&self, screen_rect: Rect<f32>) -> String {
