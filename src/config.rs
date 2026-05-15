@@ -8,7 +8,7 @@ use strum::EnumString;
 use crate::{
     app::AppMessage,
     geometry::Vector,
-    pdf::{PdfMessage, page_layout::PageLayout},
+    pdf::{PdfMessage, SearchMethod, page_layout::PageLayout},
 };
 
 pub const MOVE_STEP: f32 = 40.0;
@@ -276,6 +276,7 @@ pub struct Config {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     pub open_sidebar: bool,
+    pub default_search_method: SearchMethod,
 }
 
 impl Config {
@@ -420,6 +421,12 @@ impl Config {
                             format!("Invalid float value for TrackpadSensitivity: '{value}'. Must be a valid number")
                         })?;
                     }
+                    "DefaultSearchMethod" => {
+                        config.default_search_method =
+                            SearchMethod::from_str(value).map_err(|_| {
+                                format!("Unknown search method: '{value}'. Use PlainText or Regex")
+                            })?;
+                    }
                     _ => return Err(format!("Unknown setting: {setting}")),
                 }
             }
@@ -494,6 +501,7 @@ impl Config {
         base.dark_mode = overrider.dark_mode;
         base.invert_pdf = overrider.invert_pdf;
         base.open_sidebar = overrider.open_sidebar;
+        base.default_search_method = overrider.default_search_method;
         base
     }
 }
@@ -780,6 +788,7 @@ impl Default for Config {
             dark_mode: true,
             invert_pdf: false,
             open_sidebar: false,
+            default_search_method: SearchMethod::PlainText,
         }
     }
 }
@@ -835,6 +844,7 @@ mod tests {
             dark_mode: true,
             invert_pdf: false,
             open_sidebar: false,
+            default_search_method: SearchMethod::PlainText,
         };
     }
 
@@ -870,6 +880,10 @@ mod tests {
         assert_eq!(config.dark_mode, default_cfg.dark_mode);
         assert_eq!(config.invert_pdf, default_cfg.invert_pdf);
         assert_eq!(config.open_sidebar, default_cfg.open_sidebar);
+        assert_eq!(
+            config.default_search_method,
+            default_cfg.default_search_method
+        );
     }
 
     #[allow(clippy::bool_assert_comparison)]
@@ -1113,6 +1127,29 @@ Set RpcPort invalid_port
             result.errors[0]
                 .message
                 .contains("Invalid float value for TrackpadSensitivity")
+        );
+    }
+
+    #[test]
+    pub fn can_parse_default_search_method() {
+        let config_str = "Set DefaultSearchMethod Regex";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(!result.has_errors());
+        assert_eq!(result.config.default_search_method, SearchMethod::Regex);
+    }
+
+    #[test]
+    pub fn error_handling_invalid_default_search_method() {
+        let config_str = "Set DefaultSearchMethod InvalidMethod";
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 1);
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown search method: 'InvalidMethod'")
         );
     }
 

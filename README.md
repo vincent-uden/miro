@@ -23,6 +23,7 @@ A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable
 - Fullscreen
 - A presentation mode that hides all UI
 - Shows recently opened files
+- Search through documents using plain text or regular expressions
 
 ## Configuration
 

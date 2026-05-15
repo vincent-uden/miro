@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 use crate::{
+    CONFIG,
     DARK_THEME,
     config::{MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
@@ -555,7 +556,7 @@ impl PdfViewer {
             text_contents: all_text,
             char_bboxes: bboxes,
             search_matches: vec![],
-            search_method: SearchMethod::PlainText, // TODO: Get default search method from config
+            search_method: CONFIG.read().unwrap().default_search_method,
             needle: String::new(),
         })
     }
@@ -1163,14 +1164,6 @@ impl PdfViewer {
             &self.char_bboxes,
         );
         self.current_search_result = None;
-        for m in &self.search_matches {
-            debug!(
-                "{} at {}-{}",
-                &self.text_contents[m.start_byte..m.end_byte],
-                m.start_byte,
-                m.end_byte
-            );
-        }
     }
 
     pub fn extract_text_from_rect(&self, screen_rect: Rect<f32>) -> String {
