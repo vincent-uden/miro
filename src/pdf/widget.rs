@@ -21,8 +21,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::{
-    CONFIG,
-    DARK_THEME,
+    CONFIG, DARK_THEME,
     config::{MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
     pdf::{PdfMessage, SearchMatch, SearchMethod, find_search_matches, page_layout::PageLayout},
