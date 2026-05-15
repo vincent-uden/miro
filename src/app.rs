@@ -882,7 +882,6 @@ impl App {
             widget::horizontal_space().width(Length::Fill),
             widget::container(
                 widget::column![
-                    // TODO: Debounce if needed
                     widget::text_input(
                         "Search",
                         self.pdfs

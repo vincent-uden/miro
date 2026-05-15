@@ -17,16 +17,15 @@ use iced::{
 };
 
 use mupdf::{Colorspace, Device, Matrix, Pixmap, TextPageFlags};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{
     CONFIG,
     DARK_THEME,
     config::{MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
-    pdf::{PdfMessage, SearchMethod, page_layout::PageLayout},
+    pdf::{PdfMessage, SearchMatch, SearchMethod, find_search_matches, page_layout::PageLayout},
 };
 
 #[derive(Debug, Clone)]
@@ -42,16 +41,6 @@ pub struct OutlineItem {
     pub page: Option<u32>,
     pub level: u32,
     pub children: Vec<OutlineItem>,
-}
-
-/// A single search result, potentially spanning multiple pages.
-#[derive(Debug, Clone, PartialEq)]
-struct SearchMatch {
-    start_byte: usize,
-    end_byte: usize,
-    pages: std::ops::Range<usize>,
-    /// Merged bounding boxes per line: (page_index, bounding_box).
-    rects: Vec<(usize, Rect<f32>)>,
 }
 
 const MIN_SELECTION: f32 = 5.0;
@@ -459,6 +448,8 @@ pub struct PdfViewer {
     pub(crate) search_method: SearchMethod,
     /// The thing to search for
     pub(crate) needle: String,
+    /// Monotonically incremented to cancel stale async search tasks.
+    search_generation: u64,
 
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
@@ -558,6 +549,7 @@ impl PdfViewer {
             search_matches: vec![],
             search_method: CONFIG.read().unwrap().default_search_method,
             needle: String::new(),
+            search_generation: 0,
         })
     }
 
@@ -889,7 +881,8 @@ impl PdfViewer {
             }
             PdfMessage::UpdateSearchNeedle(needle) => {
                 self.needle = needle;
-                self.update_search_matches();
+                self.search_generation = self.search_generation.wrapping_add(1);
+                out = self.spawn_search_task();
             }
             PdfMessage::SetSearchMethod(search_method) => {
                 self.search_method = search_method;
@@ -900,7 +893,14 @@ impl PdfViewer {
                     SearchMethod::PlainText => SearchMethod::Regex,
                     SearchMethod::Regex => SearchMethod::PlainText,
                 };
-                self.update_search_matches();
+                self.search_generation = self.search_generation.wrapping_add(1);
+                out = self.spawn_search_task();
+            }
+            PdfMessage::SearchResultsReady(matches, generation) => {
+                if generation == self.search_generation {
+                    self.search_matches = matches;
+                    self.current_search_result = None;
+                }
             }
             PdfMessage::None => {}
         }
@@ -1162,15 +1162,25 @@ impl PdfViewer {
         Ok((all_text, bounding_boxes))
     }
 
-    fn update_search_matches(&mut self) {
-        let _span = tracy_client::span!("Updating search matches");
-        self.search_matches = find_search_matches(
-            &self.text_contents,
-            &self.needle,
-            self.search_method,
-            &self.char_bboxes,
-        );
-        self.current_search_result = None;
+    fn spawn_search_task(&self) -> iced::Task<PdfMessage> {
+        let text_contents = self.text_contents.clone();
+        let needle = self.needle.clone();
+        let method = self.search_method;
+        let char_bboxes = self.char_bboxes.clone();
+        let generation = self.search_generation;
+
+        iced::Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    find_search_matches(&text_contents, &needle, method, &char_bboxes)
+                })
+                .await
+            },
+            move |result| match result {
+                Ok(matches) => PdfMessage::SearchResultsReady(matches, generation),
+                Err(_) => PdfMessage::None,
+            },
+        )
     }
 
     pub fn extract_text_from_rect(&self, screen_rect: Rect<f32>) -> String {
@@ -1511,88 +1521,6 @@ impl PdfViewer {
     }
 }
 
-/// Find all search matches in `haystack` and map them to bounding boxes.
-fn find_search_matches(
-    haystack: &str,
-    needle: &str,
-    method: SearchMethod,
-    char_bboxes: &[(usize, usize, Rect<f32>)],
-) -> Vec<SearchMatch> {
-    if needle.is_empty() {
-        return vec![];
-    }
-
-    // Collect (start_byte, end_byte) for each match.
-    let mut byte_ranges = vec![];
-    match method {
-        SearchMethod::PlainText => {
-            let _span = tracy_client::span!("Plain text search");
-            for (start, matched) in haystack.match_indices(needle) {
-                byte_ranges.push((start, start + matched.len()));
-            }
-        }
-        SearchMethod::Regex => {
-            let _span = tracy_client::span!("Regex search");
-            if let Ok(re) = Regex::new(needle) {
-                for capture in re.captures_iter(haystack) {
-                    let m = capture.get_match();
-                    byte_ranges.push((m.start(), m.end()));
-                }
-            }
-        }
-    }
-
-    let mut matches = vec![];
-    for (start, end) in byte_ranges {
-        let mut char_rects = vec![];
-        for &(page_idx, byte_offset, rect) in char_bboxes {
-            if byte_offset >= start && byte_offset < end {
-                char_rects.push((page_idx, rect));
-            }
-        }
-        let rects = merge_search_rects(&char_rects);
-        if !rects.is_empty() {
-            let first_page = rects[0].0;
-            let last_page = rects[rects.len() - 1].0;
-            matches.push(SearchMatch {
-                start_byte: start,
-                end_byte: end,
-                pages: first_page..last_page + 1,
-                rects,
-            });
-        }
-    }
-    matches
-}
-
-/// Merge consecutive character bounding boxes that are on the same page and
-/// vertically overlap (i.e., belong to the same line).
-fn merge_search_rects(char_rects: &[(usize, Rect<f32>)]) -> Vec<(usize, Rect<f32>)> {
-    if char_rects.is_empty() {
-        return vec![];
-    }
-    let mut merged = vec![];
-    let mut current_page = char_rects[0].0;
-    let mut current = char_rects[0].1;
-    for &(page_idx, rect) in &char_rects[1..] {
-        // Vertically overlapping means same line.
-        let same_line =
-            page_idx == current_page && rect.x0.y < current.x1.y && rect.x1.y > current.x0.y;
-        if same_line {
-            current.x0.x = current.x0.x.min(rect.x0.x);
-            current.x0.y = current.x0.y.min(rect.x0.y);
-            current.x1.x = current.x1.x.max(rect.x1.x);
-            current.x1.y = current.x1.y.max(rect.x1.y);
-        } else {
-            merged.push((current_page, current));
-            current_page = page_idx;
-            current = rect;
-        }
-    }
-    merged.push((current_page, current));
-    merged
-}
-
 fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
     let gradient = GradientBuilder::new()
         .colors(&[
@@ -1674,6 +1602,7 @@ fn get_pdf_background_color(pdf_dark_mode: bool, show_borders: bool) -> iced::Co
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use crate::pdf::find_search_matches;
     use super::*;
 
     #[test]
