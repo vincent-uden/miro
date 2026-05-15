@@ -42,7 +42,7 @@ use crate::{
     icons,
     jumplist::{JumpLocation, Jumplist},
     pdf::{
-        PdfMessage,
+        PdfMessage, SearchMethod,
         page_layout::PageLayout,
         widget::{OutlineItem, PdfViewer},
     },
@@ -78,6 +78,7 @@ pub struct App {
     pub invert_pdf: bool,
     pub draw_page_borders: bool,
     presentation_mode: bool,
+    search_open: bool,
     bookmark_store: BookmarkStore,
     recent_files: RecentFiles,
     pane_state: pane_grid::State<Pane>,
@@ -143,6 +144,9 @@ pub enum AppMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
+    OpenSearch,
+    CloseSearch,
+    ToggleSearchMethod,
 }
 
 impl App {
@@ -173,6 +177,7 @@ impl App {
             invert_pdf: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
             presentation_mode: false,
+            search_open: false,
             bookmark_store,
             recent_files,
             pane_state: ps,
@@ -550,6 +555,52 @@ impl App {
                 self.presentation_mode = !self.presentation_mode;
                 iced::Task::none()
             }
+            AppMessage::OpenSearch => {
+                self.search_open = true;
+                let search_task = if !self.pdfs.is_empty() {
+                    self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::HighlightSearchResults)
+                        .map(AppMessage::PdfMessage)
+                } else {
+                    iced::Task::none()
+                };
+                if self.search_open {
+                    iced::Task::batch([
+                        search_task,
+                        widget::text_input::focus(widget::text_input::Id::new("search_input"))
+                            .map(|_: ()| AppMessage::PdfMessage(PdfMessage::None)),
+                    ])
+                } else {
+                    search_task
+                }
+            }
+            AppMessage::CloseSearch => {
+                if self.search_open {
+                    self.search_open = false;
+                    if !self.pdfs.is_empty() {
+                        self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::HideSearchResults)
+                            .map(AppMessage::PdfMessage)
+                    } else {
+                        iced::Task::none()
+                    }
+                } else {
+                    iced::Task::none()
+                }
+            }
+            AppMessage::ToggleSearchMethod => {
+                if self.search_open {
+                    if let Some(viewer) = self.pdfs.get_mut(self.pdf_idx) {
+                        viewer
+                            .update(PdfMessage::ToggleSearchMethod)
+                            .map(AppMessage::PdfMessage)
+                    } else {
+                        iced::Task::none()
+                    }
+                } else {
+                    iced::Task::none()
+                }
+            }
         }
     }
 
@@ -775,8 +826,7 @@ impl App {
                     bar_background: theme.extended_palette().background.weak.color.into(),
                     menu_border: Border {
                         radius: Radius::new(0.0).bottom(8.0),
-                        color: theme.extended_palette().background.strong.color,
-                        width: 2.0,
+                        ..Default::default()
                     },
                     bar_shadow: Shadow::default(),
                     menu_shadow: Shadow::default(),
@@ -797,11 +847,6 @@ impl App {
             background: Some(Background::Color(
                 theme.extended_palette().background.weak.color,
             )),
-            border: Border {
-                color: theme.extended_palette().background.strong.color,
-                width: 2.0,
-                radius: 0.0.into(),
-            },
             ..Default::default()
         })
         .into()
@@ -826,6 +871,97 @@ impl App {
             .into()
     }
 
+    fn search_view(&self) -> Element<'_, AppMessage> {
+        let search_method = self.pdfs.get(self.pdf_idx).map(|x| x.search_method);
+        let search_progress = self
+            .pdfs
+            .get(self.pdf_idx)
+            .map(|x| x.search_progress())
+            .unwrap_or_default();
+        widget::row![
+            widget::horizontal_space().width(Length::Fill),
+            widget::container(
+                widget::column![
+                    widget::text_input(
+                        "Search",
+                        self.pdfs
+                            .get(self.pdf_idx)
+                            .map(|x| x.needle.as_str())
+                            .unwrap_or("")
+                    )
+                    .id(widget::text_input::Id::new("search_input"))
+                    .on_input(|x| AppMessage::PdfMessage(PdfMessage::UpdateSearchNeedle(x))),
+                    widget::row![
+                        widget::button("Plain text")
+                            .style(move |theme, status| Self::search_method_button_style(
+                                theme,
+                                status,
+                                search_method == Some(SearchMethod::PlainText)
+                            ))
+                            .on_press(PdfMessage::SetSearchMethod(SearchMethod::PlainText).into()),
+                        widget::button("Regex")
+                            .style(move |theme, status| Self::search_method_button_style(
+                                theme,
+                                status,
+                                search_method == Some(SearchMethod::Regex)
+                            ))
+                            .on_press(PdfMessage::SetSearchMethod(SearchMethod::Regex).into()),
+                        widget::horizontal_space().width(Length::Fill),
+                        widget::text(search_progress),
+                    ]
+                    .align_y(alignment::Vertical::Center)
+                    .spacing(4.0),
+                ]
+                .spacing(4.0)
+            )
+            .padding(8.0)
+            .style(|theme: &Theme| widget::container::Style {
+                background: Some(theme.extended_palette().background.weak.color.into()),
+                border: Border {
+                    color: theme.extended_palette().primary.base.color,
+                    width: 2.0,
+                    radius: Radius::from(8.0),
+                },
+                shadow: Shadow {
+                    color: theme.extended_palette().primary.base.color,
+                    offset: iced::Vector { x: 0.0, y: 2.0 },
+                    blur_radius: 4.0,
+                },
+                ..Default::default()
+            })
+        ]
+        .into()
+    }
+
+    fn search_method_button_style(
+        theme: &Theme,
+        status: widget::button::Status,
+        selected: bool,
+    ) -> widget::button::Style {
+        let palette = theme.extended_palette();
+        if selected {
+            button::Style {
+                background: Some(palette.primary.base.color.into()),
+                text_color: palette.primary.base.text,
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        } else {
+            button::Style {
+                background: Some(palette.secondary.base.color.into()),
+                text_color: palette.secondary.base.text,
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        }
+    }
+
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
         let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
             pane_grid::Content::new(match pane.pane_type {
@@ -838,22 +974,28 @@ impl App {
                         self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
                     };
                     let tabs = self.create_tabs();
-
                     if self.presentation_mode {
                         widget::column![stack![pdf_content,]].into()
                     } else {
-                        widget::column![
-                            menu_bar,
-                            stack![
-                                pdf_content,
-                                container(tabs)
-                                    .align_y(alignment::Vertical::Bottom)
+                        let mut stack_children: Vec<Element<'_, AppMessage>> = vec![
+                            pdf_content,
+                            container(tabs)
+                                .align_y(alignment::Vertical::Bottom)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .padding(8.0)
+                                .into(),
+                        ];
+                        if self.search_open {
+                            stack_children.push(
+                                container(self.search_view())
+                                    .align_y(alignment::Vertical::Top)
                                     .width(Length::Fill)
-                                    .height(Length::Fill)
                                     .padding(8.0)
-                            ]
-                        ]
-                        .into()
+                                    .into(),
+                            );
+                        }
+                        widget::column![menu_bar, stack(stack_children)].into()
                     }
                 }
             })
