@@ -44,6 +44,15 @@ pub struct OutlineItem {
     pub children: Vec<OutlineItem>,
 }
 
+/// A single search result, potentially spanning multiple pages.
+#[derive(Debug, Clone, PartialEq)]
+struct SearchMatch {
+    start_byte: usize,
+    end_byte: usize,
+    pages: std::ops::Range<usize>,
+    rects: Vec<(usize, Rect<f32>)>,
+}
+
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
 
@@ -412,9 +421,10 @@ pub struct PdfViewer {
     /// The entire textual contents of the document. Used to search through text
     text_contents: String,
     /// Bounding boxes of every character in the document. Used to highlight searched text
-    char_bboxes: Vec<(usize, Rect<f32>)>,
-    /// The boxes of text matching the needle
-    search_matches: Vec<(usize, Rect<f32>)>,
+    /// Each entry is (page_index, byte_offset_in_text_contents, bounding_box)
+    char_bboxes: Vec<(usize, usize, Rect<f32>)>,
+    /// The search matches found in the document
+    search_matches: Vec<SearchMatch>,
     pub(crate) search_method: SearchMethod,
     /// The thing to search for
     pub(crate) needle: String,
@@ -999,10 +1009,10 @@ impl PdfViewer {
         Ok(count)
     }
 
-    /// Returns (search haystack, Vec<(page number, bounding box)>)
+    /// Returns (search haystack, Vec<(page number, byte offset, bounding box)>)
     fn extract_search_data(
         display_lists: &[mupdf::DisplayList],
-    ) -> Result<(String, Vec<(usize, Rect<f32>)>)> {
+    ) -> Result<(String, Vec<(usize, usize, Rect<f32>)>)> {
         let _span = tracy_client::span!("Preparing search data");
         let mut all_text = String::new();
         let mut bounding_boxes = vec![];
@@ -1012,10 +1022,12 @@ impl PdfViewer {
                 for line in block.lines() {
                     for char in line.chars() {
                         if let Some(c) = char.char() {
+                            let byte_offset = all_text.len();
                             all_text.push(c);
                             let quad = char.quad();
                             bounding_boxes.push((
                                 page_idx,
+                                byte_offset,
                                 Rect {
                                     x0: Vector::new(quad.ul.x, quad.ul.y),
                                     x1: Vector::new(quad.lr.x, quad.lr.y),
@@ -1031,44 +1043,19 @@ impl PdfViewer {
 
     fn update_search_matches(&mut self) {
         let _span = tracy_client::span!("Updating search matches");
-        self.search_matches.clear();
-        if self.needle.is_empty() {
-            return;
-        }
-
-        // Contains (start, end) for matches. Start is inclusive, end is exclusive
-        let mut matches = vec![];
-        match self.search_method {
-            SearchMethod::PlainText => {
-                let _span = tracy_client::span!("Plain text search");
-                let mut start = 0;
-                while start < self.text_contents.len() - self.needle.len() {
-                    let end = start + self.needle.len();
-                    if self.text_contents[start..end] == self.needle {
-                        matches.push((start, end));
-                        start = end;
-                    } else {
-                        start += 1;
-                    }
-                }
-            }
-            SearchMethod::Regex => {
-                let _span = tracy_client::span!("Regex search");
-                let re = Regex::new(&self.needle).unwrap();
-                let mut matches = vec![];
-                for capture in re.captures_iter(&self.text_contents) {
-                    let text = capture.get_match();
-                    let start = text.start();
-                    let end = text.end();
-
-                    matches.push((start, end))
-                }
-            }
-            SearchMethod::FuzzyFinding => todo!(),
-        };
-
-        for (start, end) in matches {
-            debug!("{} at {start}-{end}", &self.text_contents[start..end]);
+        self.search_matches = find_search_matches(
+            &self.text_contents,
+            &self.needle,
+            self.search_method,
+            &self.char_bboxes,
+        );
+        for m in &self.search_matches {
+            debug!(
+                "{} at {}-{}",
+                &self.text_contents[m.start_byte..m.end_byte],
+                m.start_byte,
+                m.end_byte
+            );
         }
     }
 
@@ -1329,6 +1316,62 @@ impl PdfViewer {
     }
 }
 
+/// Find all search matches in `haystack` and map them to bounding boxes.
+fn find_search_matches(
+    haystack: &str,
+    needle: &str,
+    method: SearchMethod,
+    char_bboxes: &[(usize, usize, Rect<f32>)],
+) -> Vec<SearchMatch> {
+    if needle.is_empty() {
+        return vec![];
+    }
+
+    // Collect (start_byte, end_byte) for each match.
+    let mut byte_ranges = vec![];
+    match method {
+        SearchMethod::PlainText => {
+            let _span = tracy_client::span!("Plain text search");
+            for (start, matched) in haystack.match_indices(needle) {
+                byte_ranges.push((start, start + matched.len()));
+            }
+        }
+        SearchMethod::Regex => {
+            let _span = tracy_client::span!("Regex search");
+            if let Ok(re) = Regex::new(needle) {
+                for capture in re.captures_iter(haystack) {
+                    let m = capture.get_match();
+                    byte_ranges.push((m.start(), m.end()));
+                }
+            }
+        }
+        SearchMethod::FuzzyFinding => {
+            // TODO: implement fuzzy finding
+        }
+    }
+
+    let mut matches = vec![];
+    for (start, end) in byte_ranges {
+        let mut rects = vec![];
+        for &(page_idx, byte_offset, rect) in char_bboxes {
+            if byte_offset >= start && byte_offset < end {
+                rects.push((page_idx, rect));
+            }
+        }
+        if !rects.is_empty() {
+            let first_page = rects[0].0;
+            let last_page = rects[rects.len() - 1].0;
+            matches.push(SearchMatch {
+                start_byte: start,
+                end_byte: end,
+                pages: first_page..last_page + 1,
+                rects,
+            });
+        }
+    }
+    matches
+}
+
 fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
     let gradient = GradientBuilder::new()
         .colors(&[
@@ -1493,6 +1536,178 @@ mod tests {
             page_rect.x1.y
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_plaintext_search_link_extraction_on_page_0() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let result = find_search_matches(
+            &viewer.text_contents,
+            "Link Extraction",
+            SearchMethod::PlainText,
+            &viewer.char_bboxes,
+        );
+        assert_eq!(result.len(), 1, "should find exactly one 'Link Extraction'");
+        assert_eq!(
+            result[0].pages,
+            0..1,
+            "'Link Extraction' should be on page 0"
+        );
+        assert_eq!(result[0].rects[0].0, 0, "rect should be on page 0");
+        assert!(viewer.text_contents.is_char_boundary(result[0].start_byte));
+        assert!(viewer.text_contents.is_char_boundary(result[0].end_byte));
+        assert!(
+            &viewer.text_contents[result[0].start_byte..result[0].end_byte]
+                .starts_with("Link Extraction")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_plaintext_search_code_blocks_on_page_1() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let result = find_search_matches(
+            &viewer.text_contents,
+            "Code Blocks",
+            SearchMethod::PlainText,
+            &viewer.char_bboxes,
+        );
+        assert_eq!(result.len(), 1, "should find exactly one 'Code Blocks'");
+        assert_eq!(result[0].pages, 1..2, "'Code Blocks' should be on page 1");
+        assert_eq!(result[0].rects[0].0, 1, "rect should be on page 1");
+        assert!(
+            &viewer.text_contents[result[0].start_byte..result[0].end_byte]
+                .starts_with("Code Blocks")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_plaintext_search_bullet_multibyte() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let result = find_search_matches(
+            &viewer.text_contents,
+            "•",
+            SearchMethod::PlainText,
+            &viewer.char_bboxes,
+        );
+        assert!(!result.is_empty(), "should find bullet characters");
+        // Every bullet match should be a valid char boundary
+        for m in &result {
+            assert!(viewer.text_contents.is_char_boundary(m.start_byte));
+            assert!(viewer.text_contents.is_char_boundary(m.end_byte));
+            assert_eq!(&viewer.text_contents[m.start_byte..m.end_byte], "•");
+        }
+        // At least one bullet should be on page 0 (the first one at byte 194)
+        assert!(result.iter().any(|m| m.pages == (0..1)));
+        Ok(())
+    }
+
+    #[test]
+    fn test_regex_search_link_extraction_on_page_0() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let result = find_search_matches(
+            &viewer.text_contents,
+            "Link Extraction",
+            SearchMethod::Regex,
+            &viewer.char_bboxes,
+        );
+        assert_eq!(
+            result.len(),
+            1,
+            "should find exactly one 'Link Extraction' via regex"
+        );
+        assert_eq!(
+            result[0].pages,
+            0..1,
+            "regex 'Link Extraction' should be on page 0"
+        );
+        assert!(viewer.text_contents.is_char_boundary(result[0].start_byte));
+        assert!(viewer.text_contents.is_char_boundary(result[0].end_byte));
+        Ok(())
+    }
+
+    #[test]
+    fn test_regex_search_code_blocks_on_page_1() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let result = find_search_matches(
+            &viewer.text_contents,
+            "Code Blocks",
+            SearchMethod::Regex,
+            &viewer.char_bboxes,
+        );
+        assert_eq!(
+            result.len(),
+            1,
+            "should find exactly one 'Code Blocks' via regex"
+        );
+        assert_eq!(result[0].pages, 1..2);
+        assert_eq!(result[0].rects[0].0, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_plaintext_regex_parity_link_extraction() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let plain = find_search_matches(
+            &viewer.text_contents,
+            "Link Extraction",
+            SearchMethod::PlainText,
+            &viewer.char_bboxes,
+        );
+        let regex = find_search_matches(
+            &viewer.text_contents,
+            "Link Extraction",
+            SearchMethod::Regex,
+            &viewer.char_bboxes,
+        );
+        assert_eq!(
+            plain.len(),
+            regex.len(),
+            "plaintext and regex should find same number of 'Link Extraction' matches"
+        );
+        for (p, r) in plain.iter().zip(regex.iter()) {
+            assert_eq!(p.start_byte, r.start_byte, "start bytes should match");
+            assert_eq!(p.end_byte, r.end_byte, "end bytes should match");
+            assert_eq!(p.pages, r.pages, "pages should match");
+            assert_eq!(p.rects.len(), r.rects.len(), "rect counts should match");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_plaintext_regex_parity_code_blocks() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let plain = find_search_matches(
+            &viewer.text_contents,
+            "Code Blocks",
+            SearchMethod::PlainText,
+            &viewer.char_bboxes,
+        );
+        let regex = find_search_matches(
+            &viewer.text_contents,
+            "Code Blocks",
+            SearchMethod::Regex,
+            &viewer.char_bboxes,
+        );
+        assert_eq!(
+            plain, regex,
+            "plaintext and regex should produce identical results for 'Code Blocks'"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_match_on_real_pdf() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let result = find_search_matches(
+            &viewer.text_contents,
+            "XYZ_NONEXISTENT",
+            SearchMethod::PlainText,
+            &viewer.char_bboxes,
+        );
+        assert!(result.is_empty(), "should not find nonexistent text");
         Ok(())
     }
 }
