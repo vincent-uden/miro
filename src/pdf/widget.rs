@@ -895,6 +895,13 @@ impl PdfViewer {
                 self.search_method = search_method;
                 out = iced::Task::done(PdfMessage::UpdateSearchNeedle(self.needle.clone()))
             }
+            PdfMessage::ToggleSearchMethod => {
+                self.search_method = match self.search_method {
+                    SearchMethod::PlainText => SearchMethod::Regex,
+                    SearchMethod::Regex => SearchMethod::PlainText,
+                };
+                self.update_search_matches();
+            }
             PdfMessage::None => {}
         }
         out

@@ -146,6 +146,7 @@ pub enum AppMessage {
     TogglePresentationMode,
     OpenSearch,
     CloseSearch,
+    ToggleSearchMethod,
 }
 
 impl App {
@@ -579,6 +580,19 @@ impl App {
                     if !self.pdfs.is_empty() {
                         self.pdfs[self.pdf_idx]
                             .update(PdfMessage::HideSearchResults)
+                            .map(AppMessage::PdfMessage)
+                    } else {
+                        iced::Task::none()
+                    }
+                } else {
+                    iced::Task::none()
+                }
+            }
+            AppMessage::ToggleSearchMethod => {
+                if self.search_open {
+                    if let Some(viewer) = self.pdfs.get_mut(self.pdf_idx) {
+                        viewer
+                            .update(PdfMessage::ToggleSearchMethod)
                             .map(AppMessage::PdfMessage)
                     } else {
                         iced::Task::none()

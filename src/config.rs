@@ -190,6 +190,7 @@ pub enum BindableMessage {
     TogglePresentationMode,
     OpenSearch,
     CloseSearch,
+    ToggleSearchMethod,
     NextSearchResult,
     PreviousSearchResult,
     SinglePageLayout,
@@ -238,6 +239,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::TogglePresentationMode => AppMessage::TogglePresentationMode,
             BindableMessage::OpenSearch => AppMessage::OpenSearch,
             BindableMessage::CloseSearch => AppMessage::CloseSearch,
+            BindableMessage::ToggleSearchMethod => AppMessage::ToggleSearchMethod,
             BindableMessage::NextSearchResult => {
                 AppMessage::PdfMessage(PdfMessage::NextSearchResult)
             }
@@ -656,7 +658,12 @@ impl Default for Config {
                     BindableMessage::CloseSearch,
                 ),
                 Keybind::new('n', BindableMessage::NextSearchResult),
+                Keybind::new('p', BindableMessage::PreviousSearchResult),
                 Keybind::new('N', BindableMessage::PreviousSearchResult),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+n").unwrap(),
+                    BindableMessage::ToggleSearchMethod,
+                ),
                 // Tab navigation
                 Keybind::new(KeyInput::from_str("Tab").unwrap(), BindableMessage::NextTab),
                 Keybind::new(
