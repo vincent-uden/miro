@@ -599,7 +599,7 @@ impl Default for Config {
                     BindableMessage::ToggleDarkModeUi,
                 ),
                 Keybind::new(
-                    KeyInput::from_str("Ctrl+b").unwrap(),
+                    KeyInput::from_str("Ctrl+B").unwrap(),
                     BindableMessage::ToggleSidebar,
                 ),
                 Keybind::new(
