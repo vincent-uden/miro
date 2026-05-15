@@ -1,15 +1,11 @@
-use crate::{
-    config::MouseAction,
-    geometry::{Vector},
-    pdf::page_layout::PageLayout,
-};
+use crate::{app::AppMessage, config::MouseAction, geometry::Vector, pdf::page_layout::PageLayout};
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
 pub mod page_layout;
 pub mod widget;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default, PartialEq, Eq)]
 pub enum SearchMethod {
     #[default]
     PlainText,
@@ -53,4 +49,10 @@ pub enum PdfMessage {
     SetSearchMethod(SearchMethod),
     #[default]
     None,
+}
+
+impl From<PdfMessage> for AppMessage {
+    fn from(value: PdfMessage) -> Self {
+        AppMessage::PdfMessage(value)
+    }
 }

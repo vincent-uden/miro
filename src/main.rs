@@ -140,7 +140,10 @@ pub fn theme(app: &App) -> Theme {
                 },
             },
             secondary: Secondary {
-                base: not_defined,
+                base: Pair {
+                    color: Color::from_rgb8(217, 217, 217),
+                    text: Color::from_rgb8(122, 122, 122),
+                },
                 weak: not_defined,
                 strong: not_defined,
             },

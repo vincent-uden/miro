@@ -42,7 +42,7 @@ use crate::{
     icons,
     jumplist::{JumpLocation, Jumplist},
     pdf::{
-        PdfMessage,
+        PdfMessage, SearchMethod,
         page_layout::PageLayout,
         widget::{OutlineItem, PdfViewer},
     },
@@ -821,20 +821,49 @@ impl App {
     }
 
     fn search_view(&self) -> Element<'_, AppMessage> {
+        let search_method = self.pdfs.get(self.pdf_idx).map(|x| x.search_method);
         widget::row![
             widget::horizontal_space().width(Length::Fill),
             widget::container(
                 widget::column![
-                    widget::text_input("Search", &String::new()),
+                    // TODO: Debounce if needed
+                    widget::text_input(
+                        "Search",
+                        self.pdfs
+                            .get(self.pdf_idx)
+                            .map(|x| x.needle.as_str())
+                            .unwrap_or("")
+                    )
+                    .on_input(|x| AppMessage::PdfMessage(PdfMessage::UpdateSearchNeedle(x))),
                     widget::row![
-                        widget::text("Plain text"),
-                        widget::text("Regex"),
-                        widget::text("Fuzzy"),
+                        widget::button("Plain text")
+                            .style(move |theme, status| Self::search_method_button_style(
+                                theme,
+                                status,
+                                search_method == Some(SearchMethod::PlainText)
+                            ))
+                            .on_press(PdfMessage::SetSearchMethod(SearchMethod::PlainText).into()),
+                        widget::button("Regex")
+                            .style(move |theme, status| Self::search_method_button_style(
+                                theme,
+                                status,
+                                search_method == Some(SearchMethod::Regex)
+                            ))
+                            .on_press(PdfMessage::SetSearchMethod(SearchMethod::Regex).into()),
+                        widget::button("Fuzzy")
+                            .style(move |theme, status| Self::search_method_button_style(
+                                theme,
+                                status,
+                                search_method == Some(SearchMethod::FuzzyFinding)
+                            ))
+                            .on_press(
+                                PdfMessage::SetSearchMethod(SearchMethod::FuzzyFinding).into()
+                            ),
                         widget::horizontal_space().width(Length::Fill),
                         widget::text("(10/39)"),
                     ]
                     .align_y(alignment::Vertical::Center)
-                    .spacing(12.0),
+                    .spacing(4.0),
                 ]
                 .spacing(4.0)
             )
@@ -842,16 +871,48 @@ impl App {
             .style(|theme: &Theme| widget::container::Style {
                 background: Some(theme.extended_palette().background.weak.color.into()),
                 border: Border {
-                    radius: Radius {
-                        bottom_left: 4.0,
-                        ..Default::default()
-                    },
-                    ..Default::default()
+                    color: theme.extended_palette().primary.base.color,
+                    width: 2.0,
+                    radius: Radius::from(8.0),
+                },
+                shadow: Shadow {
+                    color: theme.extended_palette().primary.base.color,
+                    offset: iced::Vector { x: 0.0, y: 2.0 },
+                    blur_radius: 4.0,
                 },
                 ..Default::default()
             })
         ]
         .into()
+    }
+
+    fn search_method_button_style(
+        theme: &Theme,
+        status: widget::button::Status,
+        selected: bool,
+    ) -> widget::button::Style {
+        let palette = theme.extended_palette();
+        if selected {
+            button::Style {
+                background: Some(palette.primary.base.color.into()),
+                text_color: palette.primary.base.text,
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        } else {
+            button::Style {
+                background: Some(palette.secondary.base.color.into()),
+                text_color: palette.secondary.base.text,
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        }
     }
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
@@ -883,6 +944,7 @@ impl App {
                                 container(search)
                                     .align_y(alignment::Vertical::Top)
                                     .width(Length::Fill)
+                                    .padding(8.0),
                             ]
                         ]
                         .into()

@@ -18,6 +18,7 @@ use iced::{
 };
 
 use mupdf::{Colorspace, Device, Matrix, Pixmap, TextPageFlags};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
@@ -411,10 +412,12 @@ pub struct PdfViewer {
     /// The entire textual contents of the document. Used to search through text
     text_contents: String,
     /// Bounding boxes of every character in the document. Used to highlight searched text
-    char_bboxes: Vec<(i, Rect<f32>)>,
+    char_bboxes: Vec<(usize, Rect<f32>)>,
     /// The boxes of text matching the needle
-    search_matches: Vec<(i, Rect<f32>)>,
-    search_method: SearchMethod,
+    search_matches: Vec<(usize, Rect<f32>)>,
+    pub(crate) search_method: SearchMethod,
+    /// The thing to search for
+    pub(crate) needle: String,
 
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
@@ -510,6 +513,7 @@ impl PdfViewer {
             char_bboxes: bboxes,
             search_matches: vec![],
             search_method: SearchMethod::PlainText, // TODO: Get default search method from config
+            needle: String::new(),
         })
     }
 
@@ -763,8 +767,20 @@ impl PdfViewer {
             PdfMessage::HighlightSearchResults => todo!(),
             PdfMessage::HideSearchResults => todo!(),
             PdfMessage::JumpToSearchResult(_) => todo!(),
-            PdfMessage::UpdateSearchNeedle(_) => todo!(),
-            PdfMessage::SetSearchMethod(search_method) => todo!(),
+            PdfMessage::UpdateSearchNeedle(needle) => {
+                self.needle = needle;
+                let re = Regex::new(&self.needle).unwrap();
+                for capture in re.captures_iter(&self.text_contents) {
+                    let text = capture.get_match();
+                    let start = text.start();
+                    let end = text.end();
+                    debug!("{} at {start}-{end}", text.as_str());
+                }
+            }
+            PdfMessage::SetSearchMethod(search_method) => {
+                self.search_method = search_method;
+                out = iced::Task::done(PdfMessage::UpdateSearchNeedle(self.needle.clone()))
+            }
             PdfMessage::None => {}
         }
         out
