@@ -16,9 +16,9 @@ use iced::{
     },
 };
 
-use mupdf::{Colorspace, Device, Matrix, Pixmap, TextPageFlags};
+use mupdf::{Colorspace, Device, Matrix, Pixmap, TextPageFlags, pdf::PdfPage};
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -480,6 +480,11 @@ impl PdfViewer {
                 })
                 .collect();
             links.push(page_links);
+
+            let pdf_page = PdfPage::try_from(page).unwrap();
+            for ann in pdf_page.annotations() {
+                debug!("{:?}", ann.contents().unwrap());
+            }
         }
         let outline = Self::extract_outline(doc).unwrap_or_default();
         Ok((display_lists, links, outline))
