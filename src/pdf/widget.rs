@@ -21,8 +21,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::{
-    CONFIG,
-    DARK_THEME,
+    CONFIG, DARK_THEME,
     config::{MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
     pdf::{PdfMessage, SearchMatch, SearchMethod, find_search_matches, page_layout::PageLayout},
@@ -142,7 +141,10 @@ impl widget::canvas::Program<PdfMessage> for Document {
 
             for (handle, rect) in &self.pages {
                 let bounds: iced::Rectangle = (*rect).into();
-                frame.draw_image(bounds, handle);
+                frame.draw_image(
+                    bounds,
+                    image::Image::new(handle).filter_method(image::FilterMethod::Nearest),
+                );
             }
         });
         vec![bg]
