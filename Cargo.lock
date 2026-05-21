@@ -3053,7 +3053,7 @@ dependencies = [
 [[package]]
 name = "mupdf"
 version = "0.6.0"
-source = "git+https://github.com/Assad-AC/mupdf-rs?rev=b0dcaad#b0dcaadd70dda9fece742745a06ea38c2ce1ff17"
+source = "git+https://github.com/vincent-uden/mupdf-rs?rev=9d622491#9d622491d816cc832f35c00f6450fe8c798e5568"
 dependencies = [
  "bitflags 2.9.0",
  "font-kit",
@@ -3066,7 +3066,7 @@ dependencies = [
 [[package]]
 name = "mupdf-sys"
 version = "0.6.0"
-source = "git+https://github.com/Assad-AC/mupdf-rs?rev=b0dcaad#b0dcaadd70dda9fece742745a06ea38c2ce1ff17"
+source = "git+https://github.com/vincent-uden/mupdf-rs?rev=9d622491#9d622491d816cc832f35c00f6450fe8c798e5568"
 dependencies = [
  "bindgen",
  "cc",
