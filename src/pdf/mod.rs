@@ -141,6 +141,10 @@ pub enum PdfMessage {
     UpdateSearchNeedle(String),
     SetSearchMethod(SearchMethod),
     ToggleSearchMethod,
+    /// Show comment popup for the given comment index
+    ShowComment(usize),
+    /// Close the comment popup
+    CloseComment,
     #[strum(disabled)]
     #[serde(skip)]
     SearchResultsReady(Vec<SearchMatch>, u64),
