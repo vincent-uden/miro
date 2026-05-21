@@ -23,7 +23,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -240,12 +240,6 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
                     return (
                         iced::event::Status::Captured,
                         Some(PdfMessage::CloseComment),
-                    );
-                }
-                if self.viewer.show_link_hitboxes {
-                    return (
-                        iced::event::Status::Captured,
-                        Some(PdfMessage::CloseLinkHitboxes),
                     );
                 }
             }
@@ -545,18 +539,16 @@ impl PdfViewer {
                 .collect();
             links.push(page_links);
 
-            let pdf_page = PdfPage::try_from(page).unwrap();
-            for ann in pdf_page.annotations() {
-                if let Ok(PdfAnnotationType::Text) = ann.r#type() {
-                    if let Ok(Some(content)) = ann.contents() {
-                        if let Ok(bounds) = ann.rect() {
-                            comments.push(Comment {
-                                page_idx,
-                                bounds,
-                                content: content.to_string(),
-                            });
-                        }
-                    }
+            if let Ok(pdf_page) = PdfPage::try_from(page) {
+                for ann in pdf_page.annotations() {
+                    let Ok(PdfAnnotationType::Text) = ann.r#type() else { continue };
+                    let Ok(Some(content)) = ann.contents() else { continue };
+                    let Ok(bounds) = ann.rect() else { continue };
+                    comments.push(Comment {
+                        page_idx,
+                        bounds,
+                        content: content.to_string(),
+                    });
                 }
             }
         }
@@ -740,9 +732,7 @@ impl PdfViewer {
                         self.selection_end = Some(new_local);
                     }
                 }
-                self.update_hovered_link();
-                self.update_hovered_search_result();
-                self.update_hovered_comment();
+                self.update_hover_state();
             }
             PdfMessage::MouseAction(mouse_action, pressed) => {
                 if pressed {
@@ -854,11 +844,6 @@ impl PdfViewer {
             }
             PdfMessage::CloseLinkHitboxes => {
                 self.show_link_hitboxes = false;
-            }
-            PdfMessage::ShowComment(idx) => {
-                if idx < self.comments.len() {
-                    self.active_comment = Some(idx);
-                }
             }
             PdfMessage::CloseComment => {
                 self.active_comment = None;
@@ -1626,42 +1611,33 @@ impl PdfViewer {
         self.mouse_pos - offset
     }
 
-    fn update_hovered_link(&mut self) {
+    fn update_hover_state(&mut self) {
         let local_mouse = self.local_mouse_pos();
         let viewport = *self.viewport.borrow();
-        let visible = self.visible_links(viewport);
-        self.hovered_link = visible
+
+        let visible_links = self.visible_links(viewport);
+        self.hovered_link = visible_links
             .iter()
             .find(|(_, rect)| rect.contains(local_mouse))
             .map(|((page_idx, link_idx), _)| (*page_idx, *link_idx));
         if self.hovered_link.is_some() {
-            self.hovered_comment = None;
-        }
-    }
-
-    fn update_hovered_search_result(&mut self) {
-        if self.hovered_link.is_some() {
             self.hovered_search_result = None;
+            self.hovered_comment = None;
             return;
         }
-        let local_mouse = self.local_mouse_pos();
-        let viewport = *self.viewport.borrow();
-        let visible = self.visible_search_results(viewport);
-        self.hovered_search_result = visible
+
+        let visible_search = self.visible_search_results(viewport);
+        self.hovered_search_result = visible_search
             .iter()
             .find(|(_, rect)| rect.contains(local_mouse))
             .map(|(match_idx, _)| *match_idx);
-    }
-
-    fn update_hovered_comment(&mut self) {
-        if self.hovered_link.is_some() || self.hovered_search_result.is_some() {
+        if self.hovered_search_result.is_some() {
             self.hovered_comment = None;
             return;
         }
-        let local_mouse = self.local_mouse_pos();
-        let viewport = *self.viewport.borrow();
-        let visible = self.visible_comments(viewport);
-        self.hovered_comment = visible
+
+        let visible_comments = self.visible_comments(viewport);
+        self.hovered_comment = visible_comments
             .iter()
             .find(|(_, rect)| rect.contains(local_mouse))
             .map(|(comment_idx, _)| *comment_idx);

@@ -128,10 +128,7 @@ pub enum AppMessage {
     Scroll(iced::mouse::ScrollDelta),
     #[strum(disabled)]
     #[serde(skip)]
-    SearchEnter,
-    #[strum(disabled)]
-    #[serde(skip)]
-    SearchExit,
+    SearchHover(bool),
     BookmarkMessage(BookmarkMessage),
     #[strum(disabled)]
     #[serde(skip)]
@@ -384,12 +381,8 @@ impl App {
                     iced::Task::none()
                 }
             }
-            AppMessage::SearchEnter => {
-                self.search_hover = true;
-                iced::Task::none()
-            }
-            AppMessage::SearchExit => {
-                self.search_hover = false;
+            AppMessage::SearchHover(hover) => {
+                self.search_hover = hover;
                 iced::Task::none()
             }
             AppMessage::MouseButtonDown(button) => {
@@ -951,8 +944,8 @@ impl App {
                     ..Default::default()
                 })
             )
-            .on_enter(AppMessage::SearchEnter)
-            .on_exit(AppMessage::SearchExit)
+            .on_enter(AppMessage::SearchHover(true))
+            .on_exit(AppMessage::SearchHover(false))
             .on_press(AppMessage::None)
         ]
         .into()
