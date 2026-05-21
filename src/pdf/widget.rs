@@ -16,7 +16,10 @@ use iced::{
     },
 };
 
-use mupdf::{Colorspace, Device, Matrix, Pixmap, TextPageFlags, pdf::PdfPage};
+use mupdf::{
+    Colorspace, Device, Matrix, Pixmap, TextPageFlags,
+    pdf::{PdfAnnotationType, PdfPage},
+};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
@@ -483,7 +486,16 @@ impl PdfViewer {
 
             let pdf_page = PdfPage::try_from(page).unwrap();
             for ann in pdf_page.annotations() {
-                debug!("{:?}", ann.contents().unwrap());
+                // NOTE: PdfAnnotationType::Text is the annotiation type called "sticky note" in
+                // adobe software
+                match ann.r#type() {
+                    Ok(kind) => {
+                        debug!("{:?}", kind);
+                    }
+                    Err(_) => todo!(),
+                }
+
+                debug!("{:?} {:?}", ann.contents().unwrap(), ann.rect());
             }
         }
         let outline = Self::extract_outline(doc).unwrap_or_default();
