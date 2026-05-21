@@ -912,7 +912,9 @@ impl App {
                                     status,
                                     search_method == Some(SearchMethod::PlainText)
                                 ))
-                                .on_press(PdfMessage::SetSearchMethod(SearchMethod::PlainText).into()),
+                                .on_press(
+                                    PdfMessage::SetSearchMethod(SearchMethod::PlainText).into()
+                                ),
                             widget::button("Regex")
                                 .style(move |theme, status| Self::search_method_button_style(
                                     theme,

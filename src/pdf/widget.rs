@@ -23,7 +23,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -541,8 +541,12 @@ impl PdfViewer {
 
             if let Ok(pdf_page) = PdfPage::try_from(page) {
                 for ann in pdf_page.annotations() {
-                    let Ok(PdfAnnotationType::Text) = ann.r#type() else { continue };
-                    let Ok(Some(content)) = ann.contents() else { continue };
+                    let Ok(PdfAnnotationType::Text) = ann.r#type() else {
+                        continue;
+                    };
+                    let Ok(Some(content)) = ann.contents() else {
+                        continue;
+                    };
                     let Ok(bounds) = ann.rect() else { continue };
                     comments.push(Comment {
                         page_idx,
@@ -565,14 +569,6 @@ impl PdfViewer {
         let doc = mupdf::Document::open(&path.to_str().unwrap())?;
         let (display_lists, links, outline, comments) = Self::build_document_data(&doc)?;
         let (all_text, bboxes) = Self::extract_search_data(&display_lists)?;
-        info!(
-            "Document contains {} chars",
-            Self::count_chars(&display_lists).unwrap()
-        );
-        println!(
-            "Document contains {} chars",
-            Self::count_chars(&display_lists).unwrap()
-        );
 
         let bg_color = DARK_THEME
             .extended_palette()
@@ -1224,12 +1220,10 @@ impl PdfViewer {
         let popup = widget::container(
             widget::column![
                 widget::row![
-                    widget::text("Comment")
-                        .size(14.0)
-                        .font(iced::Font {
-                            weight: iced::font::Weight::Bold,
-                            ..iced::Font::default()
-                        }),
+                    widget::text("Comment").size(14.0).font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..iced::Font::default()
+                    }),
                     widget::horizontal_space().width(iced::Length::Fill),
                     widget::button(
                         widget::text(icon_to_string(RequiredIcons::X))
@@ -1241,7 +1235,9 @@ impl PdfViewer {
                     .style(|theme: &iced::Theme, status: widget::button::Status| {
                         let palette = theme.extended_palette();
                         let base = widget::button::Style {
-                            background: Some(iced::Background::Color(palette.background.strong.color)),
+                            background: Some(iced::Background::Color(
+                                palette.background.strong.color,
+                            )),
                             text_color: palette.background.strong.text,
                             border: iced::border::rounded(2),
                             ..widget::button::Style::default()
@@ -1287,18 +1283,12 @@ impl PdfViewer {
             ..Default::default()
         });
 
-        let positioned = widget::container(
-            widget::mouse_area(popup).on_press(PdfMessage::None),
-        )
-        .width(iced::Length::Fill)
-        .height(iced::Length::Fill)
-        .padding(
-            iced::Padding::new(0.0)
-                .top(clamped_y)
-                .left(clamped_x),
-        )
-        .align_x(iced::alignment::Horizontal::Left)
-        .align_y(iced::alignment::Vertical::Top);
+        let positioned = widget::container(widget::mouse_area(popup).on_press(PdfMessage::None))
+            .width(iced::Length::Fill)
+            .height(iced::Length::Fill)
+            .padding(iced::Padding::new(0.0).top(clamped_y).left(clamped_x))
+            .align_x(iced::alignment::Horizontal::Left)
+            .align_y(iced::alignment::Vertical::Top);
 
         Some(positioned.into())
     }
@@ -2118,7 +2108,10 @@ mod tests {
             "should extract at least one comment from links_commented.pdf"
         );
         for comment in &viewer.comments {
-            assert!(!comment.content.is_empty(), "comment content should not be empty");
+            assert!(
+                !comment.content.is_empty(),
+                "comment content should not be empty"
+            );
             assert!(
                 comment.bounds.x1 > comment.bounds.x0 && comment.bounds.y1 > comment.bounds.y0,
                 "comment bounds should be valid"

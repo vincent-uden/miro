@@ -1,4 +1,9 @@
-use crate::{app::AppMessage, config::MouseAction, geometry::{Rect, Vector}, pdf::page_layout::PageLayout};
+use crate::{
+    app::AppMessage,
+    config::MouseAction,
+    geometry::{Rect, Vector},
+    pdf::page_layout::PageLayout,
+};
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
