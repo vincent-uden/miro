@@ -15,6 +15,8 @@ use iced::{
         canvas::{self, Cache, Stroke},
     },
 };
+use iced_aw::iced_fonts::REQUIRED_FONT;
+use iced_fonts::required::{RequiredIcons, icon_to_string};
 
 use mupdf::{
     Colorspace, Device, Matrix, Pixmap, TextPageFlags,
@@ -1206,71 +1208,8 @@ impl PdfViewer {
                 interactive_overlay.into(),
             ];
 
-            // Build comment popup if one is active.
-            if let Some(active_idx) = self.active_comment {
-                let comment_visible = self.visible_comments(size);
-                if let Some((_, comment_rect)) =
-                    comment_visible.iter().find(|(idx, _)| *idx == active_idx)
-                {
-                    let popup_width = 280.0_f32.min(size.width - 16.0).max(120.0);
-                    let popup_x = comment_rect.x1.x + 8.0;
-                    let popup_y = comment_rect.x0.y;
-                    let clamped_x = popup_x.min(size.width - popup_width - 8.0).max(8.0);
-                    let clamped_y = popup_y.min(size.height - 100.0).max(8.0);
-
-                    let popup = widget::container(
-                        widget::column![
-                            widget::row![
-                                widget::text("Comment")
-                                    .size(14.0)
-                                    .font(iced::Font {
-                                        weight: iced::font::Weight::Bold,
-                                        ..iced::Font::default()
-                                    }),
-                                widget::horizontal_space().width(iced::Length::Fill),
-                                widget::button(widget::text("×").size(16.0))
-                                    .padding(2.0)
-                                    .on_press(PdfMessage::CloseComment),
-                            ]
-                            .align_y(iced::alignment::Vertical::Center),
-                            widget::text(&self.comments[active_idx].content)
-                                .size(14.0)
-                                .wrapping(widget::text::Wrapping::Word),
-                        ]
-                        .spacing(8.0),
-                    )
-                    .width(popup_width)
-                    .padding(12.0)
-                    .style(|theme: &iced::Theme| widget::container::Style {
-                        background: Some(theme.extended_palette().background.base.color.into()),
-                        border: iced::Border {
-                            color: theme.extended_palette().primary.base.color,
-                            width: 1.0,
-                            radius: iced::border::Radius::from(8.0),
-                        },
-                        shadow: iced::Shadow {
-                            color: iced::Color::BLACK.scale_alpha(0.3),
-                            offset: iced::Vector { x: 0.0, y: 4.0 },
-                            blur_radius: 12.0,
-                        },
-                        ..Default::default()
-                    });
-
-                    let positioned = widget::container(
-                        widget::mouse_area(popup).on_press(PdfMessage::None),
-                    )
-                    .width(iced::Length::Fill)
-                    .height(iced::Length::Fill)
-                    .padding(
-                        iced::Padding::new(0.0)
-                            .top(clamped_y)
-                            .left(clamped_x),
-                    )
-                    .align_x(iced::alignment::Horizontal::Left)
-                    .align_y(iced::alignment::Vertical::Top);
-
-                    stack_children.push(positioned.into());
-                }
+            if let Some(popup) = self.build_comment_popup(size) {
+                stack_children.push(popup);
             }
 
             widget::Stack::with_children(stack_children)
@@ -1279,6 +1218,104 @@ impl PdfViewer {
                 .into()
         })
         .into()
+    }
+
+    fn build_comment_popup(
+        &self,
+        viewport_size: iced::Size,
+    ) -> Option<iced::Element<'_, PdfMessage>> {
+        let active_idx = self.active_comment?;
+        let comment_visible = self.visible_comments(viewport_size);
+        let (_, comment_rect) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
+
+        let popup_width = 280.0_f32.min(viewport_size.width - 16.0).max(120.0);
+        let popup_x = comment_rect.x1.x + 8.0;
+        let popup_y = comment_rect.x0.y;
+        let clamped_x = popup_x
+            .min(viewport_size.width - popup_width - 8.0)
+            .max(8.0);
+        let clamped_y = popup_y.min(viewport_size.height - 100.0).max(8.0);
+
+        let popup = widget::container(
+            widget::column![
+                widget::row![
+                    widget::text("Comment")
+                        .size(14.0)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::default()
+                        }),
+                    widget::horizontal_space().width(iced::Length::Fill),
+                    widget::button(
+                        widget::text(icon_to_string(RequiredIcons::X))
+                            .align_y(iced::alignment::Vertical::Bottom)
+                            .size(24.0)
+                            .font(REQUIRED_FONT),
+                    )
+                    .padding(0.0)
+                    .style(|theme: &iced::Theme, status: widget::button::Status| {
+                        let palette = theme.extended_palette();
+                        let base = widget::button::Style {
+                            background: Some(iced::Background::Color(palette.background.strong.color)),
+                            text_color: palette.background.strong.text,
+                            border: iced::border::rounded(2),
+                            ..widget::button::Style::default()
+                        };
+                        match status {
+                            widget::button::Status::Active
+                            | widget::button::Status::Pressed
+                            | widget::button::Status::Hovered => widget::button::Style {
+                                background: None,
+                                text_color: palette.background.base.text,
+                                ..base
+                            },
+                            widget::button::Status::Disabled => widget::button::Style {
+                                background: base.background.map(|bg| bg.scale_alpha(0.5)),
+                                text_color: base.text_color.scale_alpha(0.5),
+                                ..base
+                            },
+                        }
+                    })
+                    .on_press(PdfMessage::CloseComment),
+                ]
+                .align_y(iced::alignment::Vertical::Center),
+                widget::text(&self.comments[active_idx].content)
+                    .size(14.0)
+                    .wrapping(widget::text::Wrapping::Word),
+            ]
+            .spacing(8.0),
+        )
+        .width(popup_width)
+        .padding(12.0)
+        .style(|theme: &iced::Theme| widget::container::Style {
+            background: Some(theme.extended_palette().background.weak.color.into()),
+            border: iced::Border {
+                color: theme.extended_palette().primary.base.color,
+                width: 2.0,
+                radius: iced::border::Radius::from(8.0),
+            },
+            shadow: iced::Shadow {
+                color: theme.extended_palette().primary.base.color,
+                offset: iced::Vector { x: 0.0, y: 2.0 },
+                blur_radius: 4.0,
+            },
+            ..Default::default()
+        });
+
+        let positioned = widget::container(
+            widget::mouse_area(popup).on_press(PdfMessage::None),
+        )
+        .width(iced::Length::Fill)
+        .height(iced::Length::Fill)
+        .padding(
+            iced::Padding::new(0.0)
+                .top(clamped_y)
+                .left(clamped_x),
+        )
+        .align_x(iced::alignment::Horizontal::Left)
+        .align_y(iced::alignment::Vertical::Top);
+
+        Some(positioned.into())
     }
 
     fn count_chars(display_lists: &[mupdf::DisplayList]) -> Result<usize> {
