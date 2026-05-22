@@ -8,8 +8,9 @@ use std::{
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
-    Renderer, Size,
+    Length, Renderer, Size,
     advanced::{graphics::geometry, image},
+    alignment::Horizontal,
     widget::{
         self,
         canvas::{self, Cache, Stroke},
@@ -44,6 +45,7 @@ struct Comment {
     page_idx: usize,
     bounds: mupdf::Rect,
     content: String,
+    author: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -548,10 +550,12 @@ impl PdfViewer {
                         continue;
                     };
                     let Ok(bounds) = ann.rect() else { continue };
+                    let Ok(author) = ann.author() else { continue };
                     comments.push(Comment {
                         page_idx,
                         bounds,
                         content: content.to_string(),
+                        author: author.map(|s| s.to_string()),
                     });
                 }
             }
@@ -1217,13 +1221,20 @@ impl PdfViewer {
             .max(8.0);
         let clamped_y = popup_y.min(viewport_size.height - 100.0).max(8.0);
 
+        let mut author_font = iced::Font::default();
+        author_font.style = iced::font::Style::Italic;
+
         let popup = widget::container(
             widget::column![
                 widget::row![
-                    widget::text("Comment").size(14.0).font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..iced::Font::default()
-                    }),
+                    widget::text(self.comments[active_idx].author.clone().unwrap_or_default())
+                        .font(author_font)
+                        .style(|theme: &iced::Theme| {
+                            let palette = theme.extended_palette();
+                            iced::widget::text::Style {
+                                color: Some(palette.primary.base.color),
+                            }
+                        }),
                     widget::horizontal_space().width(iced::Length::Fill),
                     widget::button(
                         widget::text(icon_to_string(RequiredIcons::X))
