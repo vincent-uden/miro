@@ -258,12 +258,28 @@ where
     pub fn intersect(&self, other: &Self) -> Self {
         Self::from_points(
             Vector::new(
-                if self.x0.x > other.x0.x { self.x0.x } else { other.x0.x },
-                if self.x0.y > other.x0.y { self.x0.y } else { other.x0.y },
+                if self.x0.x > other.x0.x {
+                    self.x0.x
+                } else {
+                    other.x0.x
+                },
+                if self.x0.y > other.x0.y {
+                    self.x0.y
+                } else {
+                    other.x0.y
+                },
             ),
             Vector::new(
-                if self.x1.x < other.x1.x { self.x1.x } else { other.x1.x },
-                if self.x1.y < other.x1.y { self.x1.y } else { other.x1.y },
+                if self.x1.x < other.x1.x {
+                    self.x1.x
+                } else {
+                    other.x1.x
+                },
+                if self.x1.y < other.x1.y {
+                    self.x1.y
+                } else {
+                    other.x1.y
+                },
             ),
         )
     }

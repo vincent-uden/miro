@@ -58,7 +58,11 @@ fn main() -> iced::Result {
 
     let mut args = Args::parse();
 
-    let stdin_path = args.path.as_ref().map(|p| p.as_os_str().to_string_lossy() == "-").unwrap_or(false);
+    let stdin_path = args
+        .path
+        .as_ref()
+        .map(|p| p.as_os_str().to_string_lossy() == "-")
+        .unwrap_or(false);
     let _stdin_temp = if (stdin_path || args.path.is_none()) && !io::stdin().is_terminal() {
         let mut bytes = Vec::new();
         if let Err(e) = io::stdin().read_to_end(&mut bytes) {

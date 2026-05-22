@@ -79,6 +79,7 @@ pub struct App {
     pub draw_page_borders: bool,
     presentation_mode: bool,
     search_open: bool,
+    search_hover: bool,
     bookmark_store: BookmarkStore,
     recent_files: RecentFiles,
     pane_state: pane_grid::State<Pane>,
@@ -125,6 +126,9 @@ pub enum AppMessage {
     #[strum(disabled)]
     #[serde(skip)]
     Scroll(iced::mouse::ScrollDelta),
+    #[strum(disabled)]
+    #[serde(skip)]
+    SearchHover(bool),
     BookmarkMessage(BookmarkMessage),
     #[strum(disabled)]
     #[serde(skip)]
@@ -178,6 +182,7 @@ impl App {
             draw_page_borders: CONFIG.read().unwrap().page_borders,
             presentation_mode: false,
             search_open: false,
+            search_hover: false,
             bookmark_store,
             recent_files,
             pane_state: ps,
@@ -376,8 +381,14 @@ impl App {
                     iced::Task::none()
                 }
             }
+            AppMessage::SearchHover(hover) => {
+                self.search_hover = hover;
+                iced::Task::none()
+            }
             AppMessage::MouseButtonDown(button) => {
-                if !self.pdfs.is_empty()
+                if self.search_open && self.search_hover {
+                    iced::Task::none()
+                } else if !self.pdfs.is_empty()
                     && let Some(action) = self.get_mouse_action(button)
                 {
                     self.pdfs[self.pdf_idx]
@@ -388,7 +399,9 @@ impl App {
                 }
             }
             AppMessage::MouseButtonUp(button) => {
-                if !self.pdfs.is_empty()
+                if self.search_open && self.search_hover {
+                    iced::Task::none()
+                } else if !self.pdfs.is_empty()
                     && let Some(action) = self.get_mouse_action(button)
                 {
                     self.pdfs[self.pdf_idx]
@@ -880,55 +893,62 @@ impl App {
             .unwrap_or_default();
         widget::row![
             widget::horizontal_space().width(Length::Fill),
-            widget::container(
-                widget::column![
-                    widget::text_input(
-                        "Search",
-                        self.pdfs
-                            .get(self.pdf_idx)
-                            .map(|x| x.needle.as_str())
-                            .unwrap_or("")
-                    )
-                    .id(widget::text_input::Id::new("search_input"))
-                    .on_input(|x| AppMessage::PdfMessage(PdfMessage::UpdateSearchNeedle(x))),
-                    widget::row![
-                        widget::button("Plain text")
-                            .style(move |theme, status| Self::search_method_button_style(
-                                theme,
-                                status,
-                                search_method == Some(SearchMethod::PlainText)
-                            ))
-                            .on_press(PdfMessage::SetSearchMethod(SearchMethod::PlainText).into()),
-                        widget::button("Regex")
-                            .style(move |theme, status| Self::search_method_button_style(
-                                theme,
-                                status,
-                                search_method == Some(SearchMethod::Regex)
-                            ))
-                            .on_press(PdfMessage::SetSearchMethod(SearchMethod::Regex).into()),
-                        widget::horizontal_space().width(Length::Fill),
-                        widget::text(search_progress),
+            widget::mouse_area(
+                widget::container(
+                    widget::column![
+                        widget::text_input(
+                            "Search",
+                            self.pdfs
+                                .get(self.pdf_idx)
+                                .map(|x| x.needle.as_str())
+                                .unwrap_or("")
+                        )
+                        .id(widget::text_input::Id::new("search_input"))
+                        .on_input(|x| AppMessage::PdfMessage(PdfMessage::UpdateSearchNeedle(x))),
+                        widget::row![
+                            widget::button("Plain text")
+                                .style(move |theme, status| Self::search_method_button_style(
+                                    theme,
+                                    status,
+                                    search_method == Some(SearchMethod::PlainText)
+                                ))
+                                .on_press(
+                                    PdfMessage::SetSearchMethod(SearchMethod::PlainText).into()
+                                ),
+                            widget::button("Regex")
+                                .style(move |theme, status| Self::search_method_button_style(
+                                    theme,
+                                    status,
+                                    search_method == Some(SearchMethod::Regex)
+                                ))
+                                .on_press(PdfMessage::SetSearchMethod(SearchMethod::Regex).into()),
+                            widget::horizontal_space().width(Length::Fill),
+                            widget::text(search_progress),
+                        ]
+                        .align_y(alignment::Vertical::Center)
+                        .spacing(4.0),
                     ]
-                    .align_y(alignment::Vertical::Center)
-                    .spacing(4.0),
-                ]
-                .spacing(4.0)
+                    .spacing(4.0)
+                )
+                .padding(8.0)
+                .style(|theme: &Theme| widget::container::Style {
+                    background: Some(theme.extended_palette().background.weak.color.into()),
+                    border: Border {
+                        color: theme.extended_palette().primary.base.color,
+                        width: 2.0,
+                        radius: Radius::from(8.0),
+                    },
+                    shadow: Shadow {
+                        color: theme.extended_palette().primary.base.color,
+                        offset: iced::Vector { x: 0.0, y: 2.0 },
+                        blur_radius: 4.0,
+                    },
+                    ..Default::default()
+                })
             )
-            .padding(8.0)
-            .style(|theme: &Theme| widget::container::Style {
-                background: Some(theme.extended_palette().background.weak.color.into()),
-                border: Border {
-                    color: theme.extended_palette().primary.base.color,
-                    width: 2.0,
-                    radius: Radius::from(8.0),
-                },
-                shadow: Shadow {
-                    color: theme.extended_palette().primary.base.color,
-                    offset: iced::Vector { x: 0.0, y: 2.0 },
-                    blur_radius: 4.0,
-                },
-                ..Default::default()
-            })
+            .on_enter(AppMessage::SearchHover(true))
+            .on_exit(AppMessage::SearchHover(false))
+            .on_press(AppMessage::None)
         ]
         .into()
     }
@@ -989,6 +1009,7 @@ impl App {
                         if self.search_open {
                             stack_children.push(
                                 container(self.search_view())
+                                    .align_x(alignment::Horizontal::Right)
                                     .align_y(alignment::Vertical::Top)
                                     .width(Length::Fill)
                                     .padding(8.0)

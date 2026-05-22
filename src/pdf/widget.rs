@@ -8,17 +8,23 @@ use std::{
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
-    Renderer, Size,
+    Length, Renderer, Size,
     advanced::{graphics::geometry, image},
+    alignment::Horizontal,
     widget::{
         self,
         canvas::{self, Cache, Stroke},
     },
 };
+use iced_aw::iced_fonts::REQUIRED_FONT;
+use iced_fonts::required::{RequiredIcons, icon_to_string};
 
-use mupdf::{Colorspace, Device, Matrix, Pixmap, TextPageFlags};
+use mupdf::{
+    Colorspace, Device, Matrix, Pixmap, TextPageFlags,
+    pdf::{PdfAnnotationType, PdfPage},
+};
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -32,6 +38,14 @@ struct PageLink {
     bounds: mupdf::Rect,
     uri: String,
     dest: Option<mupdf::link::LinkDestination>,
+}
+
+#[derive(Debug, Clone)]
+struct Comment {
+    page_idx: usize,
+    bounds: mupdf::Rect,
+    content: String,
+    author: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +232,24 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> (iced::event::Status, Option<PdfMessage>) {
+        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key, modifiers, ..
+        }) = event.clone()
+        {
+            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+                && !modifiers.control()
+                && !modifiers.alt()
+                && !modifiers.logo()
+            {
+                if self.viewer.active_comment.is_some() {
+                    return (
+                        iced::event::Status::Captured,
+                        Some(PdfMessage::CloseComment),
+                    );
+                }
+            }
+        }
+
         if !self.viewer.show_link_hitboxes {
             state.was_active = false;
             return (iced::event::Status::Ignored, None);
@@ -284,10 +316,13 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         let viewport = bounds.size();
         let link_visible = self.viewer.visible_links(viewport);
         let search_visible = self.viewer.visible_search_results(viewport);
+        let comment_visible = self.viewer.visible_comments(viewport);
         if link_visible.is_empty()
             && search_visible.is_empty()
+            && comment_visible.is_empty()
             && self.viewer.hovered_link.is_none()
             && self.viewer.hovered_search_result.is_none()
+            && self.viewer.hovered_comment.is_none()
         {
             return Vec::new();
         }
@@ -364,6 +399,21 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
             }
         }
 
+        // Draw hovered comment indicator.
+        if let Some(comment_idx) = self.viewer.hovered_comment {
+            if let Some((_, rect)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx) {
+                let mut color = iced::Color::from_rgb(1.0, 0.9, 0.0);
+                color.a = 0.25;
+                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
+                let stroke_color = iced::Color::from_rgb(1.0, 0.9, 0.0);
+                frame.stroke_rectangle(
+                    rect.x0.into(),
+                    rect.size().into(),
+                    Stroke::default().with_color(stroke_color).with_width(1.5),
+                );
+            }
+        }
+
         vec![frame.into_geometry()]
     }
 
@@ -373,7 +423,10 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> iced::advanced::mouse::Interaction {
-        if self.viewer.hovered_link.is_some() || self.viewer.hovered_search_result.is_some() {
+        if self.viewer.hovered_link.is_some()
+            || self.viewer.hovered_search_result.is_some()
+            || self.viewer.hovered_comment.is_some()
+        {
             iced::advanced::mouse::Interaction::Pointer
         } else {
             iced::advanced::mouse::Interaction::default()
@@ -453,6 +506,11 @@ pub struct PdfViewer {
     /// Monotonically incremented to cancel stale async search tasks.
     search_generation: u64,
 
+    /// All text annotations (sticky notes / comments) extracted from the document.
+    comments: Vec<Comment>,
+    hovered_comment: Option<usize>,
+    active_comment: Option<usize>,
+
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
 }
@@ -464,10 +522,12 @@ impl PdfViewer {
         Vec<mupdf::DisplayList>,
         Vec<Vec<PageLink>>,
         Vec<OutlineItem>,
+        Vec<Comment>,
     )> {
         let mut display_lists = vec![];
         let mut links = vec![];
-        for page in doc.pages()?.flatten() {
+        let mut comments = vec![];
+        for (page_idx, page) in doc.pages()?.flatten().enumerate() {
             let dl = mupdf::DisplayList::new(page.bounds()?)?;
             let dummy_device = Device::from_display_list(&dl)?;
             let ctm = Matrix::IDENTITY;
@@ -483,9 +543,28 @@ impl PdfViewer {
                 })
                 .collect();
             links.push(page_links);
+
+            if let Ok(pdf_page) = PdfPage::try_from(page) {
+                for ann in pdf_page.annotations() {
+                    let Ok(PdfAnnotationType::Text) = ann.r#type() else {
+                        continue;
+                    };
+                    let Ok(Some(content)) = ann.contents() else {
+                        continue;
+                    };
+                    let Ok(bounds) = ann.rect() else { continue };
+                    let Ok(author) = ann.author() else { continue };
+                    comments.push(Comment {
+                        page_idx,
+                        bounds,
+                        content: content.to_string(),
+                        author: author.map(|s| s.to_string()),
+                    });
+                }
+            }
         }
         let outline = Self::extract_outline(doc).unwrap_or_default();
-        Ok((display_lists, links, outline))
+        Ok((display_lists, links, outline, comments))
     }
 
     pub fn from_path(path: PathBuf) -> Result<Self> {
@@ -495,16 +574,8 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         let doc = mupdf::Document::open(&path.to_str().unwrap())?;
-        let (display_lists, links, outline) = Self::build_document_data(&doc)?;
+        let (display_lists, links, outline, comments) = Self::build_document_data(&doc)?;
         let (all_text, bboxes) = Self::extract_search_data(&display_lists)?;
-        info!(
-            "Document contains {} chars",
-            Self::count_chars(&display_lists).unwrap()
-        );
-        println!(
-            "Document contains {} chars",
-            Self::count_chars(&display_lists).unwrap()
-        );
 
         let bg_color = DARK_THEME
             .extended_palette()
@@ -552,6 +623,9 @@ impl PdfViewer {
             search_method: CONFIG.read().unwrap().default_search_method,
             needle: String::new(),
             search_generation: 0,
+            comments,
+            hovered_comment: None,
+            active_comment: None,
         })
     }
 }
@@ -661,8 +735,7 @@ impl PdfViewer {
                         self.selection_end = Some(new_local);
                     }
                 }
-                self.update_hovered_link();
-                self.update_hovered_search_result();
+                self.update_hover_state();
             }
             PdfMessage::MouseAction(mouse_action, pressed) => {
                 if pressed {
@@ -732,6 +805,14 @@ impl PdfViewer {
                                             |_| PdfMessage::None,
                                         );
                                     }
+                                } else if let Some(comment_idx) = self.hovered_comment {
+                                    if self.active_comment == Some(comment_idx) {
+                                        self.active_comment = None;
+                                    } else {
+                                        self.active_comment = Some(comment_idx);
+                                    }
+                                } else {
+                                    self.active_comment = None;
                                 }
                             }
                         }
@@ -767,19 +848,25 @@ impl PdfViewer {
             PdfMessage::CloseLinkHitboxes => {
                 self.show_link_hitboxes = false;
             }
+            PdfMessage::CloseComment => {
+                self.active_comment = None;
+            }
             PdfMessage::FileChanged => {
                 self.render_cache.borrow_mut().clear();
                 self.pixmap_pool.borrow_mut().clear();
 
                 if let Some(path_str) = self.path.to_str() {
                     if let Ok(new_doc) = mupdf::Document::open(path_str) {
-                        if let Ok((display_lists, links, outline)) =
+                        if let Ok((display_lists, links, outline, comments)) =
                             Self::build_document_data(&new_doc)
                         {
                             self.doc = new_doc;
                             self.display_lists = display_lists;
                             self.links = links;
                             self.outline = outline;
+                            self.comments = comments;
+                            self.active_comment = None;
+                            self.hovered_comment = None;
                         }
                     }
                 }
@@ -912,7 +999,7 @@ impl PdfViewer {
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
-        let pages = widget::responsive(|size| {
+        widget::responsive(|size| {
             {
                 let mut viewport = self.viewport.borrow_mut();
                 *viewport = size;
@@ -1087,35 +1174,137 @@ impl PdfViewer {
                 })
                 .collect();
 
-            widget::canvas(Document::new(
+            let pages_canvas = widget::canvas(Document::new(
                 with_handles,
                 self.draw_page_borders,
                 self.pdf_dark_mode,
             ))
             .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
-            .into()
+            .height(iced::Length::Fill);
+
+            let selection_overlay = widget::canvas(SelectionOverlay::new(self))
+                .width(iced::Length::Fill)
+                .height(iced::Length::Fill);
+
+            let interactive_overlay = widget::canvas(InteractiveOverlay::new(self))
+                .width(iced::Length::Fill)
+                .height(iced::Length::Fill);
+
+            let mut stack_children: Vec<iced::Element<'_, PdfMessage>> = vec![
+                pages_canvas.into(),
+                selection_overlay.into(),
+                interactive_overlay.into(),
+            ];
+
+            if let Some(popup) = self.build_comment_popup(size) {
+                stack_children.push(popup);
+            }
+
+            widget::Stack::with_children(stack_children)
+                .width(iced::Length::Fill)
+                .height(iced::Length::Fill)
+                .into()
+        })
+        .into()
+    }
+
+    fn build_comment_popup(
+        &self,
+        viewport_size: iced::Size,
+    ) -> Option<iced::Element<'_, PdfMessage>> {
+        let active_idx = self.active_comment?;
+        let comment_visible = self.visible_comments(viewport_size);
+        let (_, comment_rect) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
+
+        let popup_width = 280.0_f32.min(viewport_size.width - 16.0).max(120.0);
+        let popup_x = comment_rect.x1.x + 8.0;
+        let popup_y = comment_rect.x0.y;
+        let clamped_x = popup_x
+            .min(viewport_size.width - popup_width - 8.0)
+            .max(8.0);
+        let clamped_y = popup_y.min(viewport_size.height - 100.0).max(8.0);
+
+        let mut author_font = iced::Font::default();
+        author_font.style = iced::font::Style::Italic;
+
+        let popup = widget::container(
+            widget::column![
+                widget::row![
+                    widget::text(self.comments[active_idx].author.clone().unwrap_or_default())
+                        .font(author_font)
+                        .style(|theme: &iced::Theme| {
+                            let palette = theme.extended_palette();
+                            iced::widget::text::Style {
+                                color: Some(palette.primary.base.color),
+                            }
+                        }),
+                    widget::horizontal_space().width(iced::Length::Fill),
+                    widget::button(
+                        widget::text(icon_to_string(RequiredIcons::X))
+                            .align_y(iced::alignment::Vertical::Bottom)
+                            .size(24.0)
+                            .font(REQUIRED_FONT),
+                    )
+                    .padding(0.0)
+                    .style(|theme: &iced::Theme, status: widget::button::Status| {
+                        let palette = theme.extended_palette();
+                        let base = widget::button::Style {
+                            background: Some(iced::Background::Color(
+                                palette.background.strong.color,
+                            )),
+                            text_color: palette.background.strong.text,
+                            border: iced::border::rounded(2),
+                            ..widget::button::Style::default()
+                        };
+                        match status {
+                            widget::button::Status::Active
+                            | widget::button::Status::Pressed
+                            | widget::button::Status::Hovered => widget::button::Style {
+                                background: None,
+                                text_color: palette.background.base.text,
+                                ..base
+                            },
+                            widget::button::Status::Disabled => widget::button::Style {
+                                background: base.background.map(|bg| bg.scale_alpha(0.5)),
+                                text_color: base.text_color.scale_alpha(0.5),
+                                ..base
+                            },
+                        }
+                    })
+                    .on_press(PdfMessage::CloseComment),
+                ]
+                .align_y(iced::alignment::Vertical::Center),
+                widget::text(&self.comments[active_idx].content)
+                    .size(14.0)
+                    .wrapping(widget::text::Wrapping::Word),
+            ]
+            .spacing(8.0),
+        )
+        .width(popup_width)
+        .padding(12.0)
+        .style(|theme: &iced::Theme| widget::container::Style {
+            background: Some(theme.extended_palette().background.weak.color.into()),
+            border: iced::Border {
+                color: theme.extended_palette().primary.base.color,
+                width: 2.0,
+                radius: iced::border::Radius::from(8.0),
+            },
+            shadow: iced::Shadow {
+                color: theme.extended_palette().primary.base.color,
+                offset: iced::Vector { x: 0.0, y: 2.0 },
+                blur_radius: 4.0,
+            },
+            ..Default::default()
         });
 
-        let selection_overlay = widget::canvas(SelectionOverlay::new(self))
+        let positioned = widget::container(widget::mouse_area(popup).on_press(PdfMessage::None))
             .width(iced::Length::Fill)
-            .height(iced::Length::Fill);
+            .height(iced::Length::Fill)
+            .padding(iced::Padding::new(0.0).top(clamped_y).left(clamped_x))
+            .align_x(iced::alignment::Horizontal::Left)
+            .align_y(iced::alignment::Vertical::Top);
 
-        let interactive_overlay = widget::canvas(InteractiveOverlay::new(self))
-            .width(iced::Length::Fill)
-            .height(iced::Length::Fill);
-
-        // We need the stack here because an image being drawn inside a canvas appears on top of
-        // shapes regardless of draw order. This way we force the draw order to allow for
-        // shapes to overlay images.
-        widget::Stack::with_children([
-            pages.into(),
-            selection_overlay.into(),
-            interactive_overlay.into(),
-        ])
-        .width(iced::Length::Fill)
-        .height(iced::Length::Fill)
-        .into()
+        Some(positioned.into())
     }
 
     fn count_chars(display_lists: &[mupdf::DisplayList]) -> Result<usize> {
@@ -1369,33 +1558,93 @@ impl PdfViewer {
         result
     }
 
+    fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
+        let mut result = Vec::new();
+        let Ok(pages) = self.doc.pages() else {
+            return result;
+        };
+        let Ok(page_rects) = self.layout.pages_rects(
+            pages,
+            self.translation.scaled(-1.0),
+            self.scale,
+            self.fractional_scaling,
+            viewport,
+        ) else {
+            return result;
+        };
+
+        let viewport_rect = Rect::from_pos_size(Vector::zero(), viewport.into());
+
+        for (page_idx, page_rect) in page_rects.iter().enumerate() {
+            if !viewport_rect.intersects(page_rect) {
+                continue;
+            }
+            let page_bounds = self.display_lists[page_idx].bounds();
+            let page_width = page_bounds.x1 - page_bounds.x0;
+            let page_height = page_bounds.y1 - page_bounds.y0;
+            if page_width <= 0.0 || page_height <= 0.0 {
+                continue;
+            }
+            let scale_x = page_rect.width() / page_width;
+            let scale_y = page_rect.height() / page_height;
+
+            for (comment_idx, comment) in self.comments.iter().enumerate() {
+                if comment.page_idx != page_idx {
+                    continue;
+                }
+                let screen_rect = Rect::from_points(
+                    Vector::new(
+                        page_rect.x0.x + (comment.bounds.x0 - page_bounds.x0) * scale_x,
+                        page_rect.x0.y + (comment.bounds.y0 - page_bounds.y0) * scale_y,
+                    ),
+                    Vector::new(
+                        page_rect.x0.x + (comment.bounds.x1 - page_bounds.x0) * scale_x,
+                        page_rect.x0.y + (comment.bounds.y1 - page_bounds.y0) * scale_y,
+                    ),
+                );
+                if viewport_rect.intersects(&screen_rect) {
+                    result.push((comment_idx, screen_rect));
+                }
+            }
+        }
+        result
+    }
+
     fn local_mouse_pos(&self) -> Vector<f32> {
         let offset: Vector<f32> = (*self.widget_position.borrow()).into();
         self.mouse_pos - offset
     }
 
-    fn update_hovered_link(&mut self) {
+    fn update_hover_state(&mut self) {
         let local_mouse = self.local_mouse_pos();
         let viewport = *self.viewport.borrow();
-        let visible = self.visible_links(viewport);
-        self.hovered_link = visible
+
+        let visible_links = self.visible_links(viewport);
+        self.hovered_link = visible_links
             .iter()
             .find(|(_, rect)| rect.contains(local_mouse))
             .map(|((page_idx, link_idx), _)| (*page_idx, *link_idx));
-    }
-
-    fn update_hovered_search_result(&mut self) {
         if self.hovered_link.is_some() {
             self.hovered_search_result = None;
+            self.hovered_comment = None;
             return;
         }
-        let local_mouse = self.local_mouse_pos();
-        let viewport = *self.viewport.borrow();
-        let visible = self.visible_search_results(viewport);
-        self.hovered_search_result = visible
+
+        let visible_search = self.visible_search_results(viewport);
+        self.hovered_search_result = visible_search
             .iter()
             .find(|(_, rect)| rect.contains(local_mouse))
             .map(|(match_idx, _)| *match_idx);
+        if self.hovered_search_result.is_some() {
+            self.hovered_comment = None;
+            return;
+        }
+
+        let visible_comments = self.visible_comments(viewport);
+        self.hovered_comment = visible_comments
+            .iter()
+            .find(|(_, rect)| rect.contains(local_mouse))
+            .map(|(comment_idx, _)| *comment_idx);
     }
 
     fn activate_link(&mut self, page_idx: usize, link_idx: usize) -> iced::Task<PdfMessage> {
@@ -1862,6 +2111,36 @@ mod tests {
             &viewer.char_bboxes,
         );
         assert!(result.is_empty(), "should not find nonexistent text");
+        Ok(())
+    }
+
+    #[test]
+    fn test_comment_extraction_from_commented_pdf() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links_commented.pdf"))?;
+        assert!(
+            !viewer.comments.is_empty(),
+            "should extract at least one comment from links_commented.pdf"
+        );
+        for comment in &viewer.comments {
+            assert!(
+                !comment.content.is_empty(),
+                "comment content should not be empty"
+            );
+            assert!(
+                comment.bounds.x1 > comment.bounds.x0 && comment.bounds.y1 > comment.bounds.y0,
+                "comment bounds should be valid"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_comments_on_plain_pdf() -> Result<()> {
+        let viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        assert!(
+            viewer.comments.is_empty(),
+            "links.pdf should have no comments"
+        );
         Ok(())
     }
 }

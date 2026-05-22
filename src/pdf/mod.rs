@@ -1,4 +1,9 @@
-use crate::{app::AppMessage, config::MouseAction, geometry::{Rect, Vector}, pdf::page_layout::PageLayout};
+use crate::{
+    app::AppMessage,
+    config::MouseAction,
+    geometry::{Rect, Vector},
+    pdf::page_layout::PageLayout,
+};
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
@@ -141,6 +146,8 @@ pub enum PdfMessage {
     UpdateSearchNeedle(String),
     SetSearchMethod(SearchMethod),
     ToggleSearchMethod,
+    /// Close the comment popup
+    CloseComment,
     #[strum(disabled)]
     #[serde(skip)]
     SearchResultsReady(Vec<SearchMatch>, u64),
