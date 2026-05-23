@@ -116,6 +116,13 @@ fn main() -> iced::Result {
                 .unwrap()
         );
     }
+    let cfg_fullscreen;
+    let cfg_presentation;
+    {
+        let config = CONFIG.read().unwrap();
+        cfg_presentation = config.open_presentation_default;
+        cfg_fullscreen = config.open_fullscreen_default;
+    }
 
     iced::application("Miro", App::update, App::view)
         .antialiasing(true)
@@ -137,10 +144,10 @@ fn main() -> iced::Result {
             let mut file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
             // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
             // thus deterministic.
-            if args.fullscreen {
+            if args.fullscreen || cfg_fullscreen {
                 file_task = file_task.chain(iced::Task::done(AppMessage::ToggleFullscreen));
             }
-            if args.presentation {
+            if args.presentation || cfg_presentation {
                 file_task = file_task.chain(iced::Task::done(AppMessage::TogglePresentationMode));
             }
 

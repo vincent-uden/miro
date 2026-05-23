@@ -279,6 +279,8 @@ pub struct Config {
     pub invert_pdf: bool,
     pub open_sidebar: bool,
     pub default_search_method: SearchMethod,
+    pub open_fullscreen_default: bool,
+    pub open_presentation_default: bool,
 }
 
 impl Config {
@@ -428,6 +430,14 @@ impl Config {
                             SearchMethod::from_str(value).map_err(|_| {
                                 format!("Unknown search method: '{value}'. Use PlainText or Regex")
                             })?;
+                    }
+                    "OpenFullscreen" => {
+                        config.open_fullscreen_default =
+                            Self::parse_boolean("OpenFullscreen", value)?;
+                    }
+                    "OpenPresentation" => {
+                        config.open_presentation_default =
+                            Self::parse_boolean("OpenPresentation", value)?;
                     }
                     _ => return Err(format!("Unknown setting: {setting}")),
                 }
@@ -796,6 +806,8 @@ impl Default for Config {
             invert_pdf: false,
             open_sidebar: false,
             default_search_method: SearchMethod::PlainText,
+            open_fullscreen_default: false,
+            open_presentation_default: false,
         }
     }
 }
@@ -852,6 +864,7 @@ mod tests {
             invert_pdf: false,
             open_sidebar: false,
             default_search_method: SearchMethod::PlainText,
+            ..Default::default()
         };
     }
 
