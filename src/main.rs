@@ -20,6 +20,8 @@ use iced::{
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+use crate::app::AppMessage;
+
 mod app;
 mod bookmarks;
 mod config;
@@ -48,6 +50,10 @@ impl Drop for StdinTempFile {
 struct Args {
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
+    #[arg(short, long)]
+    fullscreen: bool,
+    #[arg(short, long)]
+    presentation: bool,
 }
 
 fn main() -> iced::Result {
@@ -110,6 +116,13 @@ fn main() -> iced::Result {
                 .unwrap()
         );
     }
+    let cfg_fullscreen;
+    let cfg_presentation;
+    {
+        let config = CONFIG.read().unwrap();
+        cfg_presentation = config.open_presentation_default;
+        cfg_fullscreen = config.open_fullscreen_default;
+    }
 
     iced::application("Miro", App::update, App::view)
         .antialiasing(true)
@@ -128,7 +141,15 @@ fn main() -> iced::Result {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
-            let file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
+            let mut file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
+            // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
+            // thus deterministic.
+            if args.fullscreen || cfg_fullscreen {
+                file_task = file_task.chain(iced::Task::done(AppMessage::ToggleFullscreen));
+            }
+            if args.presentation || cfg_presentation {
+                file_task = file_task.chain(iced::Task::done(AppMessage::TogglePresentationMode));
+            }
 
             (state, file_task)
         })
