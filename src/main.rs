@@ -20,6 +20,8 @@ use iced::{
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+use crate::app::AppMessage;
+
 mod app;
 mod bookmarks;
 mod config;
@@ -48,6 +50,10 @@ impl Drop for StdinTempFile {
 struct Args {
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
+    #[arg(short, long)]
+    fullscreen: bool,
+    #[arg(short, long)]
+    presentation: bool,
 }
 
 fn main() -> iced::Result {
@@ -128,7 +134,15 @@ fn main() -> iced::Result {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
-            let file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
+            let mut file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
+            // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
+            // thus deterministic.
+            if args.fullscreen {
+                file_task = file_task.chain(iced::Task::done(AppMessage::ToggleFullscreen));
+            }
+            if args.presentation {
+                file_task = file_task.chain(iced::Task::done(AppMessage::TogglePresentationMode));
+            }
 
             (state, file_task)
         })
