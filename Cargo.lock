@@ -3052,8 +3052,9 @@ dependencies = [
 
 [[package]]
 name = "mupdf"
-version = "0.6.0"
-source = "git+https://github.com/vincent-uden/mupdf-rs?rev=9d622491#9d622491d816cc832f35c00f6450fe8c798e5568"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9849d2d052e60be164dc812d1ec78cb79d80fcc25cd35ffee1e0fbee800afc3a"
 dependencies = [
  "bitflags 2.9.0",
  "font-kit",
@@ -3065,8 +3066,9 @@ dependencies = [
 
 [[package]]
 name = "mupdf-sys"
-version = "0.6.0"
-source = "git+https://github.com/vincent-uden/mupdf-rs?rev=9d622491#9d622491d816cc832f35c00f6450fe8c798e5568"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7de3fc0a27678f61a07fd2d6415fbddf577c417fa5b287f7a7b708183ecba955"
 dependencies = [
  "bindgen",
  "cc",
