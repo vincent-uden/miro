@@ -150,8 +150,6 @@ impl widget::canvas::Program<PdfMessage> for Document {
         _cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
         let _span = tracy_client::span!("Pdf draw");
-        // FIX: Remove
-        self.cache.clear();
         let bg = self.cache.draw(renderer, bounds.size(), |frame| {
             let bg_color = get_pdf_background_color(self.pdf_dark_mode, self.draw_page_borders);
             frame.fill_rectangle(iced::Point::new(0.0, 0.0), bounds.size(), bg_color);
@@ -1131,6 +1129,12 @@ impl PdfViewer {
                     if matches!(key, RenderKey::Partial(_, _, _, _)) {
                         self.run(&mut pix, i, &matrix, scissor, key);
                     }
+                    // NOTE: I am not 100% sure how the key can be missing at this point, but it can
+                    // happen. This is a fallback filling of the cache in case that happens.
+                    let is_cache_missing = { !self.render_cache.borrow_mut().contains_key(&key) };
+                    if is_cache_missing {
+                        self.run(&mut pix, i, &matrix, scissor, key);
+                    }
 
                     {
                         let mut pool = self.pixmap_pool.borrow_mut();
@@ -1335,22 +1339,6 @@ impl PdfViewer {
             .align_y(iced::alignment::Vertical::Top);
 
         Some(positioned.into())
-    }
-
-    fn count_chars(display_lists: &[mupdf::DisplayList]) -> Result<usize> {
-        let _span = tracy_client::span!("Counting chars");
-        let mut count = 0;
-        for dl in display_lists {
-            let tp = dl.to_text_page(TextPageFlags::empty())?;
-            for block in tp.blocks() {
-                for line in block.lines() {
-                    for char in line.chars() {
-                        count += 1;
-                    }
-                }
-            }
-        }
-        Ok(count)
     }
 
     /// Returns (search haystack, Vec<(page number, byte offset, bounding box)>)
@@ -1728,6 +1716,8 @@ impl PdfViewer {
         if self.pdf_dark_mode != dark_mode_enabled {
             self.pdf_dark_mode = dark_mode_enabled;
             self.render_cache.borrow_mut().clear();
+            self.buffer_pool.lock().unwrap().clear();
+            self.pixmap_pool.borrow_mut().clear();
         }
     }
 
