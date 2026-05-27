@@ -1033,6 +1033,7 @@ impl PdfViewer {
                 .borrow_mut()
                 .retain(|idx, _| visible_indices.contains(idx));
 
+            let mut used_keys = vec![];
             let with_handles: Vec<_> = rects
                 .into_iter()
                 .zip(self.doc.pages().unwrap())
@@ -1131,10 +1132,21 @@ impl PdfViewer {
                         self.run(&mut pix, i, &matrix, scissor, key);
                     }
 
+                    {
+                        let mut pool = self.pixmap_pool.borrow_mut();
+                        pool.insert(i, pix);
+                    }
+
+                    used_keys.push(key.clone());
                     let cache = self.render_cache.borrow_mut();
                     (cache[&key].clone(), draw_rect)
                 })
                 .collect();
+
+            {
+                let mut cache = self.render_cache.borrow_mut();
+                cache.retain(|key, _| used_keys.contains(key));
+            }
 
             let pages_canvas = widget::canvas(Document::new(
                 with_handles,
@@ -1152,10 +1164,12 @@ impl PdfViewer {
                 .width(iced::Length::Fill)
                 .height(iced::Length::Fill);
 
+            let buffers = self.buffer_pool.lock().unwrap().len();
             let debug_overlay = widget::container(widget::text(format!(
-                "Render cache: {}\n Pixmap pool: {}",
+                "Render cache: {}\n Pixmap pool: {}\nBuffer pool {}",
                 self.render_cache.borrow().len(),
-                self.pixmap_pool.borrow().len()
+                self.pixmap_pool.borrow().len(),
+                buffers
             )));
 
             let mut stack_children: Vec<iced::Element<'_, PdfMessage>> = vec![
