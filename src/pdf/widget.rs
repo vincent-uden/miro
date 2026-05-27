@@ -3,15 +3,13 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex, Weak},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
-    Length, Renderer, Size,
+    Renderer, Size,
     advanced::{graphics::geometry, image},
-    alignment::Horizontal,
     widget::{
         self,
         canvas::{self, Cache, Stroke},
@@ -25,7 +23,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{error};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -233,22 +231,18 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> (iced::event::Status, Option<PdfMessage>) {
-        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-            key, modifiers, ..
-        }) = event.clone()
+        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) =
+            event.clone()
+            && key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+            && !modifiers.control()
+            && !modifiers.alt()
+            && !modifiers.logo()
+            && self.viewer.active_comment.is_some()
         {
-            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
-                && !modifiers.control()
-                && !modifiers.alt()
-                && !modifiers.logo()
-            {
-                if self.viewer.active_comment.is_some() {
-                    return (
-                        iced::event::Status::Captured,
-                        Some(PdfMessage::CloseComment),
-                    );
-                }
-            }
+            return (
+                iced::event::Status::Captured,
+                Some(PdfMessage::CloseComment),
+            );
         }
 
         if !self.viewer.show_link_hitboxes {
@@ -347,15 +341,14 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         }
 
         // Draw hovered link fill.
-        if let Some((page_idx, link_idx)) = self.viewer.hovered_link {
-            if let Some((_, rect)) = link_visible
+        if let Some((page_idx, link_idx)) = self.viewer.hovered_link
+            && let Some((_, rect)) = link_visible
                 .iter()
                 .find(|((p, l), _)| *p == page_idx && *l == link_idx)
-            {
-                let mut color = iced::Color::from_rgb(0.0, 0.4, 0.8);
-                color.a = 0.15;
-                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
-            }
+        {
+            let mut color = iced::Color::from_rgb(0.0, 0.4, 0.8);
+            color.a = 0.15;
+            frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
         }
 
         // Draw link hitbox mode.
@@ -401,18 +394,18 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         }
 
         // Draw hovered comment indicator.
-        if let Some(comment_idx) = self.viewer.hovered_comment {
-            if let Some((_, rect)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx) {
-                let mut color = iced::Color::from_rgb(1.0, 0.9, 0.0);
-                color.a = 0.25;
-                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
-                let stroke_color = iced::Color::from_rgb(1.0, 0.9, 0.0);
-                frame.stroke_rectangle(
-                    rect.x0.into(),
-                    rect.size().into(),
-                    Stroke::default().with_color(stroke_color).with_width(1.5),
-                );
-            }
+        if let Some(comment_idx) = self.viewer.hovered_comment
+            && let Some((_, rect)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx)
+        {
+            let mut color = iced::Color::from_rgb(1.0, 0.9, 0.0);
+            color.a = 0.25;
+            frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
+            let stroke_color = iced::Color::from_rgb(1.0, 0.9, 0.0);
+            frame.stroke_rectangle(
+                rect.x0.into(),
+                rect.size().into(),
+                Stroke::default().with_color(stroke_color).with_width(1.5),
+            );
         }
 
         vec![frame.into_geometry()]
@@ -516,6 +509,7 @@ pub struct PdfViewer {
     widget_position: RefCell<iced::Point>,
 }
 
+#[allow(clippy::type_complexity)]
 impl PdfViewer {
     fn build_document_data(
         doc: &mupdf::Document,
@@ -794,13 +788,12 @@ impl PdfViewer {
                                         out = iced::Task::perform(
                                             async move {
                                                 if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                                    && let Err(e) = clipboard.set_text(text)
                                                 {
-                                                    if let Err(e) = clipboard.set_text(text) {
-                                                        error!(
-                                                            "Failed to copy search result to clipboard: {}",
-                                                            e
-                                                        );
-                                                    }
+                                                    error!(
+                                                        "Failed to copy search result to clipboard: {}",
+                                                        e
+                                                    );
                                                 }
                                             },
                                             |_| PdfMessage::None,
@@ -856,20 +849,18 @@ impl PdfViewer {
                 self.render_cache.borrow_mut().clear();
                 self.pixmap_pool.borrow_mut().clear();
 
-                if let Some(path_str) = self.path.to_str() {
-                    if let Ok(new_doc) = mupdf::Document::open(path_str) {
-                        if let Ok((display_lists, links, outline, comments)) =
-                            Self::build_document_data(&new_doc)
-                        {
-                            self.doc = new_doc;
-                            self.display_lists = display_lists;
-                            self.links = links;
-                            self.outline = outline;
-                            self.comments = comments;
-                            self.active_comment = None;
-                            self.hovered_comment = None;
-                        }
-                    }
+                if let Some(path_str) = self.path.to_str()
+                    && let Ok(new_doc) = mupdf::Document::open(path_str)
+                    && let Ok((display_lists, links, outline, comments)) =
+                        Self::build_document_data(&new_doc)
+                {
+                    self.doc = new_doc;
+                    self.display_lists = display_lists;
+                    self.links = links;
+                    self.outline = outline;
+                    self.comments = comments;
+                    self.active_comment = None;
+                    self.hovered_comment = None;
                 }
             }
             PdfMessage::PrintPdf => {
@@ -1057,12 +1048,8 @@ impl PdfViewer {
                         let h = rect_ss.height().ceil().max(1.0) as i32;
                         let matrix =
                             Matrix::new(effective_scale, 0.0, 0.0, effective_scale, 0.0, 0.0);
-                        let scissor = mupdf::Rect::new(
-                            0.0,
-                            0.0,
-                            page_bounds.width() as f32,
-                            page_bounds.height() as f32,
-                        );
+                        let scissor =
+                            mupdf::Rect::new(0.0, 0.0, page_bounds.width(), page_bounds.height());
                         (key, rect_ss, w, h, matrix, scissor)
                     } else {
                         let vis = rect_ss.intersect(&viewport_rect);
@@ -1145,7 +1132,7 @@ impl PdfViewer {
                         pool.insert(i, pix);
                     }
 
-                    used_keys.push(key.clone());
+                    used_keys.push(key);
                     let cache = self.render_cache.borrow_mut();
                     (cache[&key].clone(), draw_rect)
                 })
@@ -1233,8 +1220,8 @@ impl PdfViewer {
         buf.extend_from_slice(samples);
 
         let handle = image::Handle::from_rgba(
-            pix.width() as u32,
-            pix.height() as u32,
+            pix.width(),
+            pix.height(),
             image::Bytes::from_owner(PooledBuffer {
                 buf: Some(buf),
                 pool: Arc::downgrade(&self.buffer_pool),
@@ -1262,8 +1249,10 @@ impl PdfViewer {
             .max(8.0);
         let clamped_y = popup_y.min(viewport_size.height - 100.0).max(8.0);
 
-        let mut author_font = iced::Font::default();
-        author_font.style = iced::font::Style::Italic;
+        let author_font = iced::Font {
+            style: iced::font::Style::Italic,
+            ..Default::default()
+        };
 
         let popup = widget::container(
             widget::column![
@@ -1345,6 +1334,7 @@ impl PdfViewer {
         Some(positioned.into())
     }
 
+    #[allow(clippy::type_complexity)]
     /// Returns (search haystack, Vec<(page number, byte offset, bounding box)>)
     fn extract_search_data(
         display_lists: &[mupdf::DisplayList],

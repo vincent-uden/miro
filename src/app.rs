@@ -751,8 +751,8 @@ impl App {
         };
 
         container(row![
-            menu_bar!((debug_button_s("File"), menu_tpl_1(file_menu_items))(
-                debug_button_s("View"),
+            menu_bar!((menu_category_button("File"), menu_tpl_1(file_menu_items))(
+                menu_category_button("View"),
                 menu_tpl_1(menu_items!((menu_button(
                     if self.dark_mode {
                         "Light Interface"
@@ -811,7 +811,7 @@ impl App {
                     cfg.get_binding_for_msg(BindableMessage::ToggleFullscreen)
                 ))))
             )(
-                debug_button_s("Layout"),
+                menu_category_button("Layout"),
                 menu_tpl_1(menu_items!((menu_button(
                     "Single page",
                     AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage)),
@@ -955,7 +955,7 @@ impl App {
 
     fn search_method_button_style(
         theme: &Theme,
-        status: widget::button::Status,
+        _status: widget::button::Status,
         selected: bool,
     ) -> widget::button::Style {
         let palette = theme.extended_palette();
@@ -1411,8 +1411,29 @@ fn debug_button(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced
     labeled_button(label, AppMessage::Debug(label.into())).width(Length::Fill)
 }
 
+#[allow(dead_code)]
 fn debug_button_s(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
     labeled_button(label, AppMessage::Debug(label.into()))
+        .width(Length::Shrink)
+        .style(move |theme, status| {
+            let palette = theme.extended_palette();
+            let pair = match status {
+                button::Status::Active => palette.background.weak,
+                button::Status::Hovered | button::Status::Disabled => palette.background.base,
+                button::Status::Pressed => palette.primary.base,
+            };
+            button::Style {
+                text_color: pair.text,
+                background: Some(Background::Color(pair.color)),
+                ..Default::default()
+            }
+        })
+}
+
+fn menu_category_button(
+    label: &str,
+) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
+    labeled_button(label, AppMessage::None)
         .width(Length::Shrink)
         .style(move |theme, status| {
             let palette = theme.extended_palette();
