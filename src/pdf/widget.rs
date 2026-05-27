@@ -1030,6 +1030,10 @@ impl PdfViewer {
             self.pixmap_pool
                 .borrow_mut()
                 .retain(|idx, _| visible_indices.contains(idx));
+            self.buffer_pool
+                .lock()
+                .unwrap()
+                .retain(|idx, _| visible_indices.contains(idx));
 
             let mut used_keys = vec![];
             let with_handles: Vec<_> = rects
