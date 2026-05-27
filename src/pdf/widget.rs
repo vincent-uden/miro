@@ -103,7 +103,7 @@ type BufferPool = Arc<Mutex<HashMap<usize, Vec<Vec<u8>>>>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum RenderKey {
     Full(usize, u32),
-    Partial(usize, u32, i32, i32, i32, i32),
+    Partial(usize, u32, i32, i32),
 }
 
 struct Document {
@@ -1049,11 +1049,14 @@ impl PdfViewer {
                         let key = RenderKey::Full(i, effective_scale.to_bits());
                         let w = rect_ss.width().ceil().max(1.0) as i32;
                         let h = rect_ss.height().ceil().max(1.0) as i32;
-                        let tx = -page_bounds.x0.x * effective_scale;
-                        let ty = -page_bounds.x0.y * effective_scale;
                         let matrix =
-                            Matrix::new(effective_scale, 0.0, 0.0, effective_scale, tx, ty);
-                        let scissor = mupdf::Rect::new(0.0, 0.0, w as f32, h as f32);
+                            Matrix::new(effective_scale, 0.0, 0.0, effective_scale, 0.0, 0.0);
+                        let scissor = mupdf::Rect::new(
+                            0.0,
+                            0.0,
+                            page_bounds.width() as f32,
+                            page_bounds.height() as f32,
+                        );
                         (key, rect_ss, w, h, matrix, scissor)
                     } else {
                         let vis = rect_ss.intersect(&viewport_rect);
@@ -1072,14 +1075,7 @@ impl PdfViewer {
                         let snapped_offset_x = render_offset_x.round();
                         let snapped_offset_y = render_offset_y.round();
 
-                        let key = RenderKey::Partial(
-                            i,
-                            effective_scale.to_bits(),
-                            snapped_offset_x as i32,
-                            snapped_offset_y as i32,
-                            vw,
-                            vh,
-                        );
+                        let key = RenderKey::Partial(i, effective_scale.to_bits(), vw, vh);
 
                         let raster_tx = snapped_offset_x - page_bounds.x0.x * effective_scale;
                         let raster_ty = snapped_offset_y - page_bounds.x0.y * effective_scale;
@@ -1091,7 +1087,11 @@ impl PdfViewer {
                             raster_tx,
                             raster_ty,
                         );
-                        let scissor = mupdf::Rect::new(0.0, 0.0, vw as f32, vh as f32);
+
+                        //let scissor = mupdf::Rect::new(0.0, 0.0, vw as f32, vh as f32);
+                        // NOTE: Controls what part of the pdf page is rendered, in what
+                        // coordinates?
+                        let scissor = mupdf::Rect::new(100.0, 100.0, 200.0, 200.0);
 
                         // Compensate for snapping so the image is drawn at the
                         // correct sub-pixel position. draw_x = r.x0.x - snapped_offset_x
@@ -1107,38 +1107,47 @@ impl PdfViewer {
                         (key, draw_rect, vw, vh, matrix, scissor)
                     };
 
+                    // Try to reuse a pixmap allocation for this page.
+                    let mut pix = {
+                        let mut pool = self.pixmap_pool.borrow_mut();
+                        pool.remove(&i)
+                    };
+                    match pix {
+                        Some(_) => {}
+                        None => {
+                            let mut new_pix =
+                                Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true)
+                                    .unwrap();
+                            self.run(&mut new_pix, i, &matrix, scissor);
+                            pix = Some(new_pix);
+                        }
+                    }
+                    let mut pix = pix.unwrap();
+
+                    // If the pooled pixmap has the wrong size, allocate a new one.
+                    if pix.width() as i32 != w || pix.height() as i32 != h {
+                        let _span = tracy_client::span!("Pixmap bounds mismatch");
+                        pix = Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true).unwrap();
+
+                        if matches!(key, RenderKey::Full(_, _)) {
+                            debug!("Full re-render");
+                            self.run(&mut pix, i, &matrix, scissor);
+                        }
+                    }
+                    if matches!(key, RenderKey::Partial(_, _, _, _)) {
+                        debug!(
+                            "Partial pixmap run! With matrix: {:?} and scissor {:?}",
+                            matrix, scissor
+                        );
+                        self.run(&mut pix, i, &matrix, scissor);
+                    }
+
                     let mut cache = self.render_cache.borrow_mut();
+                    let mut pool = self.pixmap_pool.borrow_mut();
                     let handle = cache
                         .entry(key)
                         .or_insert_with(|| {
                             let _span = tracy_client::span!("Pdf cache miss");
-
-                            // Try to reuse a pixmap allocation for this page.
-                            let mut pool = self.pixmap_pool.borrow_mut();
-                            let mut pix = pool.remove(&i).unwrap_or_else(|| {
-                                Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true).unwrap()
-                            });
-
-                            // If the pooled pixmap has the wrong size, allocate a new one.
-                            if pix.width() as i32 != w || pix.height() as i32 != h {
-                                let _span = tracy_client::span!("Pixmap bounds mismatch");
-                                pix = Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true)
-                                    .unwrap();
-                            }
-
-                            // MuPDF only overwrites pixels actually touched by page content.
-                            // Margins or transparent regions would keep stale data from the
-                            // previous pool user (or be uninitialized). Filling with white
-                            // guarantees the paper background that PDFs assume.
-                            pix.samples_mut().fill(255);
-                            let device = Device::from_pixmap(&pix).unwrap();
-                            self.display_lists[i]
-                                .run(&device, &matrix, scissor)
-                                .unwrap();
-
-                            if self.pdf_dark_mode {
-                                cpu_pdf_dark_mode_shader(&mut pix, &self.gradient_cache);
-                            }
 
                             let samples = pix.samples();
 
@@ -1190,10 +1199,17 @@ impl PdfViewer {
                 .width(iced::Length::Fill)
                 .height(iced::Length::Fill);
 
+            let debug_overlay = widget::container(widget::text(format!(
+                "Render cache: {}\n Pixmap pool: {}",
+                self.render_cache.borrow().len(),
+                self.pixmap_pool.borrow().len()
+            )));
+
             let mut stack_children: Vec<iced::Element<'_, PdfMessage>> = vec![
                 pages_canvas.into(),
                 selection_overlay.into(),
                 interactive_overlay.into(),
+                debug_overlay.into(),
             ];
 
             if let Some(popup) = self.build_comment_popup(size) {
@@ -1206,6 +1222,15 @@ impl PdfViewer {
                 .into()
         })
         .into()
+    }
+
+    fn run(&self, pix: &mut Pixmap, i: usize, matrix: &Matrix, scissor: mupdf::Rect) {
+        pix.samples_mut().fill(255);
+        let device = Device::from_pixmap(pix).unwrap();
+        self.display_lists[i].run(&device, matrix, scissor).unwrap();
+        if self.pdf_dark_mode {
+            cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);
+        }
     }
 
     fn build_comment_popup(
