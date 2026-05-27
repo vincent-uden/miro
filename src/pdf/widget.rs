@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap},
+    collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex, Weak},
 };
@@ -8,9 +8,8 @@ use std::{
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
-    Length, Renderer, Size,
+    Renderer, Size,
     advanced::{graphics::geometry, image},
-    alignment::Horizontal,
     widget::{
         self,
         canvas::{self, Cache, Stroke},
@@ -24,7 +23,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{error};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -103,7 +102,7 @@ type BufferPool = Arc<Mutex<HashMap<usize, Vec<Vec<u8>>>>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum RenderKey {
     Full(usize, u32),
-    Partial(usize, u32, i32, i32, i32, i32),
+    Partial(usize, u32, i32, i32),
 }
 
 struct Document {
@@ -232,22 +231,18 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> (iced::event::Status, Option<PdfMessage>) {
-        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-            key, modifiers, ..
-        }) = event.clone()
+        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) =
+            event.clone()
+            && key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+            && !modifiers.control()
+            && !modifiers.alt()
+            && !modifiers.logo()
+            && self.viewer.active_comment.is_some()
         {
-            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
-                && !modifiers.control()
-                && !modifiers.alt()
-                && !modifiers.logo()
-            {
-                if self.viewer.active_comment.is_some() {
-                    return (
-                        iced::event::Status::Captured,
-                        Some(PdfMessage::CloseComment),
-                    );
-                }
-            }
+            return (
+                iced::event::Status::Captured,
+                Some(PdfMessage::CloseComment),
+            );
         }
 
         if !self.viewer.show_link_hitboxes {
@@ -346,15 +341,14 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         }
 
         // Draw hovered link fill.
-        if let Some((page_idx, link_idx)) = self.viewer.hovered_link {
-            if let Some((_, rect)) = link_visible
+        if let Some((page_idx, link_idx)) = self.viewer.hovered_link
+            && let Some((_, rect)) = link_visible
                 .iter()
                 .find(|((p, l), _)| *p == page_idx && *l == link_idx)
-            {
-                let mut color = iced::Color::from_rgb(0.0, 0.4, 0.8);
-                color.a = 0.15;
-                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
-            }
+        {
+            let mut color = iced::Color::from_rgb(0.0, 0.4, 0.8);
+            color.a = 0.15;
+            frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
         }
 
         // Draw link hitbox mode.
@@ -400,18 +394,18 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         }
 
         // Draw hovered comment indicator.
-        if let Some(comment_idx) = self.viewer.hovered_comment {
-            if let Some((_, rect)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx) {
-                let mut color = iced::Color::from_rgb(1.0, 0.9, 0.0);
-                color.a = 0.25;
-                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
-                let stroke_color = iced::Color::from_rgb(1.0, 0.9, 0.0);
-                frame.stroke_rectangle(
-                    rect.x0.into(),
-                    rect.size().into(),
-                    Stroke::default().with_color(stroke_color).with_width(1.5),
-                );
-            }
+        if let Some(comment_idx) = self.viewer.hovered_comment
+            && let Some((_, rect)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx)
+        {
+            let mut color = iced::Color::from_rgb(1.0, 0.9, 0.0);
+            color.a = 0.25;
+            frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
+            let stroke_color = iced::Color::from_rgb(1.0, 0.9, 0.0);
+            frame.stroke_rectangle(
+                rect.x0.into(),
+                rect.size().into(),
+                Stroke::default().with_color(stroke_color).with_width(1.5),
+            );
         }
 
         vec![frame.into_geometry()]
@@ -515,6 +509,7 @@ pub struct PdfViewer {
     widget_position: RefCell<iced::Point>,
 }
 
+#[allow(clippy::type_complexity)]
 impl PdfViewer {
     fn build_document_data(
         doc: &mupdf::Document,
@@ -793,13 +788,12 @@ impl PdfViewer {
                                         out = iced::Task::perform(
                                             async move {
                                                 if let Ok(mut clipboard) = arboard::Clipboard::new()
+                                                    && let Err(e) = clipboard.set_text(text)
                                                 {
-                                                    if let Err(e) = clipboard.set_text(text) {
-                                                        error!(
-                                                            "Failed to copy search result to clipboard: {}",
-                                                            e
-                                                        );
-                                                    }
+                                                    error!(
+                                                        "Failed to copy search result to clipboard: {}",
+                                                        e
+                                                    );
                                                 }
                                             },
                                             |_| PdfMessage::None,
@@ -855,20 +849,18 @@ impl PdfViewer {
                 self.render_cache.borrow_mut().clear();
                 self.pixmap_pool.borrow_mut().clear();
 
-                if let Some(path_str) = self.path.to_str() {
-                    if let Ok(new_doc) = mupdf::Document::open(path_str) {
-                        if let Ok((display_lists, links, outline, comments)) =
-                            Self::build_document_data(&new_doc)
-                        {
-                            self.doc = new_doc;
-                            self.display_lists = display_lists;
-                            self.links = links;
-                            self.outline = outline;
-                            self.comments = comments;
-                            self.active_comment = None;
-                            self.hovered_comment = None;
-                        }
-                    }
+                if let Some(path_str) = self.path.to_str()
+                    && let Ok(new_doc) = mupdf::Document::open(path_str)
+                    && let Ok((display_lists, links, outline, comments)) =
+                        Self::build_document_data(&new_doc)
+                {
+                    self.doc = new_doc;
+                    self.display_lists = display_lists;
+                    self.links = links;
+                    self.outline = outline;
+                    self.comments = comments;
+                    self.active_comment = None;
+                    self.hovered_comment = None;
                 }
             }
             PdfMessage::PrintPdf => {
@@ -1029,7 +1021,12 @@ impl PdfViewer {
             self.pixmap_pool
                 .borrow_mut()
                 .retain(|idx, _| visible_indices.contains(idx));
+            self.buffer_pool
+                .lock()
+                .unwrap()
+                .retain(|idx, _| visible_indices.contains(idx));
 
+            let mut used_keys = vec![];
             let with_handles: Vec<_> = rects
                 .into_iter()
                 .zip(self.doc.pages().unwrap())
@@ -1049,11 +1046,10 @@ impl PdfViewer {
                         let key = RenderKey::Full(i, effective_scale.to_bits());
                         let w = rect_ss.width().ceil().max(1.0) as i32;
                         let h = rect_ss.height().ceil().max(1.0) as i32;
-                        let tx = -page_bounds.x0.x * effective_scale;
-                        let ty = -page_bounds.x0.y * effective_scale;
                         let matrix =
-                            Matrix::new(effective_scale, 0.0, 0.0, effective_scale, tx, ty);
-                        let scissor = mupdf::Rect::new(0.0, 0.0, w as f32, h as f32);
+                            Matrix::new(effective_scale, 0.0, 0.0, effective_scale, 0.0, 0.0);
+                        let scissor =
+                            mupdf::Rect::new(0.0, 0.0, page_bounds.width(), page_bounds.height());
                         (key, rect_ss, w, h, matrix, scissor)
                     } else {
                         let vis = rect_ss.intersect(&viewport_rect);
@@ -1063,116 +1059,89 @@ impl PdfViewer {
                         let render_offset_x = rect_ss.x0.x - vis.x0.x;
                         let render_offset_y = rect_ss.x0.y - vis.x0.y;
 
-                        // During a smooth pan the translation changes by sub-pixel amounts every
-                        // frame. Using raw floats as a cache key would force a full re-render on
-                        // every mouse event because the key would differ each time. We snap the
-                        // offset to whole pixels so the cached image survives small pans, and
-                        // compensate the draw rectangle by the rounding error so the visual
-                        // position stays accurate without paying the render cost.
-                        let snapped_offset_x = render_offset_x.round();
-                        let snapped_offset_y = render_offset_y.round();
+                        let key = RenderKey::Partial(i, effective_scale.to_bits(), vw, vh);
 
-                        let key = RenderKey::Partial(
-                            i,
-                            effective_scale.to_bits(),
-                            snapped_offset_x as i32,
-                            snapped_offset_y as i32,
-                            vw,
-                            vh,
-                        );
+                        let raster_tx = render_offset_x - page_bounds.x0.x * effective_scale;
+                        let raster_ty = render_offset_y - page_bounds.x0.y * effective_scale;
 
-                        let raster_tx = snapped_offset_x - page_bounds.x0.x * effective_scale;
-                        let raster_ty = snapped_offset_y - page_bounds.x0.y * effective_scale;
                         let matrix = Matrix::new(
                             effective_scale,
                             0.0,
                             0.0,
                             effective_scale,
-                            raster_tx,
-                            raster_ty,
+                            raster_tx.round(),
+                            raster_ty.round(),
                         );
+
+                        // NOTE: Controls what part of the pdf page is rendered, in what
+                        // coordinates? It "moves" along when I pan, thus it is NOT anchored to the
+                        // document but rather to the pixmap itself. The units are pixels, even
+                        // though they are floating point numbers. Thus the scissor area is
+                        // expressed entirely in pixmap coordinates.
+                        //
+                        // NOTE: What makes this more confusing is that a scissored render can still
+                        // draw outside of the scissored region. Any object in the pdf that is
+                        // within the scissored region will be rendered in its entirety. Its like a
+                        // crude frustrum cull
+                        //
+                        // NOTE: We want to draw the entire pixmap everytime, thus this is just the
+                        // pixmaps size.
                         let scissor = mupdf::Rect::new(0.0, 0.0, vw as f32, vh as f32);
 
-                        // Compensate for snapping so the image is drawn at the
-                        // correct sub-pixel position. draw_x = r.x0.x - snapped_offset_x
-                        // which is the rounding error in [-0.5, 0.5].
-                        let draw_rect = Rect::from_pos_size(
-                            Vector::new(
-                                rect_ss.x0.x - snapped_offset_x,
-                                rect_ss.x0.y - snapped_offset_y,
-                            ),
-                            Vector::new(vw as f32, vh as f32),
-                        );
-
-                        (key, draw_rect, vw, vh, matrix, scissor)
+                        (key, vis, vw, vh, matrix, scissor)
                     };
 
-                    let mut cache = self.render_cache.borrow_mut();
-                    let handle = cache
-                        .entry(key)
-                        .or_insert_with(|| {
-                            let _span = tracy_client::span!("Pdf cache miss");
-
-                            // Try to reuse a pixmap allocation for this page.
-                            let mut pool = self.pixmap_pool.borrow_mut();
-                            let mut pix = pool.remove(&i).unwrap_or_else(|| {
-                                Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true).unwrap()
-                            });
-
-                            // If the pooled pixmap has the wrong size, allocate a new one.
-                            if pix.width() as i32 != w || pix.height() as i32 != h {
-                                let _span = tracy_client::span!("Pixmap bounds mismatch");
-                                pix = Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true)
+                    // Try to reuse a pixmap allocation for this page.
+                    let mut pix = {
+                        let mut pool = self.pixmap_pool.borrow_mut();
+                        pool.remove(&i)
+                    };
+                    match pix {
+                        Some(_) => {}
+                        None => {
+                            let mut new_pix =
+                                Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true)
                                     .unwrap();
-                            }
+                            self.run(&mut new_pix, i, &matrix, scissor, key);
+                            pix = Some(new_pix);
+                        }
+                    }
+                    let mut pix = pix.unwrap();
 
-                            // MuPDF only overwrites pixels actually touched by page content.
-                            // Margins or transparent regions would keep stale data from the
-                            // previous pool user (or be uninitialized). Filling with white
-                            // guarantees the paper background that PDFs assume.
-                            pix.samples_mut().fill(255);
-                            let device = Device::from_pixmap(&pix).unwrap();
-                            self.display_lists[i]
-                                .run(&device, &matrix, scissor)
-                                .unwrap();
+                    // If the pooled pixmap has the wrong size, allocate a new one.
+                    if pix.width() as i32 != w || pix.height() as i32 != h {
+                        let _span = tracy_client::span!("Pixmap bounds mismatch");
+                        pix = Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true).unwrap();
 
-                            if self.pdf_dark_mode {
-                                cpu_pdf_dark_mode_shader(&mut pix, &self.gradient_cache);
-                            }
+                        if matches!(key, RenderKey::Full(_, _)) {
+                            self.run(&mut pix, i, &matrix, scissor, key);
+                        }
+                    }
+                    if matches!(key, RenderKey::Partial(_, _, _, _)) {
+                        self.run(&mut pix, i, &matrix, scissor, key);
+                    }
+                    // NOTE: I am not 100% sure how the key can be missing at this point, but it can
+                    // happen. This is a fallback filling of the cache in case that happens.
+                    let is_cache_missing = { !self.render_cache.borrow_mut().contains_key(&key) };
+                    if is_cache_missing {
+                        self.run(&mut pix, i, &matrix, scissor, key);
+                    }
 
-                            let samples = pix.samples();
+                    {
+                        let mut pool = self.pixmap_pool.borrow_mut();
+                        pool.insert(i, pix);
+                    }
 
-                            // NOTE: We have to copy the data at least once since the mupdf structures
-                            // NOTE: and their associated data aren't thread safe. Iced could render
-                            // NOTE: them on any thread without my control
-
-                            // Try to reuse a CPU buffer from the shared pool.
-                            let mut buf = self
-                                .buffer_pool
-                                .lock()
-                                .unwrap()
-                                .remove(&i)
-                                .and_then(|mut v| v.pop())
-                                .unwrap_or_else(|| Vec::with_capacity(samples.len()));
-                            buf.clear();
-                            buf.extend_from_slice(samples);
-                            // Return the mupdf pixmap to the pool for reuse.
-                            pool.insert(i, pix);
-
-                            image::Handle::from_rgba(
-                                w as u32,
-                                h as u32,
-                                image::Bytes::from_owner(PooledBuffer {
-                                    buf: Some(buf),
-                                    pool: Arc::downgrade(&self.buffer_pool),
-                                    page_idx: i,
-                                }),
-                            )
-                        })
-                        .clone();
-                    (handle, draw_rect)
+                    used_keys.push(key);
+                    let cache = self.render_cache.borrow_mut();
+                    (cache[&key].clone(), draw_rect)
                 })
                 .collect();
+
+            {
+                let mut cache = self.render_cache.borrow_mut();
+                cache.retain(|key, _| used_keys.contains(key));
+            }
 
             let pages_canvas = widget::canvas(Document::new(
                 with_handles,
@@ -1208,6 +1177,53 @@ impl PdfViewer {
         .into()
     }
 
+    fn run(
+        &self,
+        pix: &mut Pixmap,
+        i: usize,
+        matrix: &Matrix,
+        scissor: mupdf::Rect,
+        key: RenderKey,
+    ) -> image::Handle {
+        let _span = tracy_client::span!("run");
+        pix.samples_mut().fill(255);
+        let device = Device::from_pixmap(pix).unwrap();
+        self.display_lists[i].run(&device, matrix, scissor).unwrap();
+        if self.pdf_dark_mode {
+            cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);
+        }
+        let mut cache = self.render_cache.borrow_mut();
+        let samples = pix.samples();
+
+        // NOTE: We have to copy the data at least once since the mupdf structures
+        // NOTE: and their associated data aren't thread safe. Iced could render
+        // NOTE: them on any thread without my control
+
+        // Try to reuse a CPU buffer from the shared pool.
+        let mut buf = self
+            .buffer_pool
+            .lock()
+            .unwrap()
+            .remove(&i)
+            .and_then(|mut v| v.pop())
+            .unwrap_or_else(|| Vec::with_capacity(samples.len()));
+        buf.clear();
+        buf.extend_from_slice(samples);
+
+        let handle = image::Handle::from_rgba(
+            pix.width(),
+            pix.height(),
+            image::Bytes::from_owner(PooledBuffer {
+                buf: Some(buf),
+                pool: Arc::downgrade(&self.buffer_pool),
+                page_idx: i,
+            }),
+        );
+        cache.insert(key, handle.clone());
+
+        handle
+    }
+
     fn build_comment_popup(
         &self,
         viewport_size: iced::Size,
@@ -1224,8 +1240,10 @@ impl PdfViewer {
             .max(8.0);
         let clamped_y = popup_y.min(viewport_size.height - 100.0).max(8.0);
 
-        let mut author_font = iced::Font::default();
-        author_font.style = iced::font::Style::Italic;
+        let author_font = iced::Font {
+            style: iced::font::Style::Italic,
+            ..Default::default()
+        };
 
         let popup = widget::container(
             widget::column![
@@ -1307,22 +1325,7 @@ impl PdfViewer {
         Some(positioned.into())
     }
 
-    fn count_chars(display_lists: &[mupdf::DisplayList]) -> Result<usize> {
-        let _span = tracy_client::span!("Counting chars");
-        let mut count = 0;
-        for dl in display_lists {
-            let tp = dl.to_text_page(TextPageFlags::empty())?;
-            for block in tp.blocks() {
-                for line in block.lines() {
-                    for char in line.chars() {
-                        count += 1;
-                    }
-                }
-            }
-        }
-        Ok(count)
-    }
-
+    #[allow(clippy::type_complexity)]
     /// Returns (search haystack, Vec<(page number, byte offset, bounding box)>)
     fn extract_search_data(
         display_lists: &[mupdf::DisplayList],
@@ -1698,6 +1701,8 @@ impl PdfViewer {
         if self.pdf_dark_mode != dark_mode_enabled {
             self.pdf_dark_mode = dark_mode_enabled;
             self.render_cache.borrow_mut().clear();
+            self.buffer_pool.lock().unwrap().clear();
+            self.pixmap_pool.borrow_mut().clear();
         }
     }
 
