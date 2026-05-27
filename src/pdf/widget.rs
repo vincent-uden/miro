@@ -1069,8 +1069,8 @@ impl PdfViewer {
                             0.0,
                             0.0,
                             effective_scale,
-                            raster_tx,
-                            raster_ty,
+                            raster_tx.round(),
+                            raster_ty.round(),
                         );
 
                         // NOTE: Controls what part of the pdf page is rendered, in what
@@ -1159,19 +1159,10 @@ impl PdfViewer {
                 .width(iced::Length::Fill)
                 .height(iced::Length::Fill);
 
-            let buffers = self.buffer_pool.lock().unwrap().len();
-            let debug_overlay = widget::container(widget::text(format!(
-                "Render cache: {}\n Pixmap pool: {}\nBuffer pool {}",
-                self.render_cache.borrow().len(),
-                self.pixmap_pool.borrow().len(),
-                buffers
-            )));
-
             let mut stack_children: Vec<iced::Element<'_, PdfMessage>> = vec![
                 pages_canvas.into(),
                 selection_overlay.into(),
                 interactive_overlay.into(),
-                debug_overlay.into(),
             ];
 
             if let Some(popup) = self.build_comment_popup(size) {
