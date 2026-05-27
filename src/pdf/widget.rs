@@ -1066,19 +1066,10 @@ impl PdfViewer {
                         let render_offset_x = rect_ss.x0.x - vis.x0.x;
                         let render_offset_y = rect_ss.x0.y - vis.x0.y;
 
-                        // During a smooth pan the translation changes by sub-pixel amounts every
-                        // frame. Using raw floats as a cache key would force a full re-render on
-                        // every mouse event because the key would differ each time. We snap the
-                        // offset to whole pixels so the cached image survives small pans, and
-                        // compensate the draw rectangle by the rounding error so the visual
-                        // position stays accurate without paying the render cost.
-                        let snapped_offset_x = render_offset_x.round();
-                        let snapped_offset_y = render_offset_y.round();
-
                         let key = RenderKey::Partial(i, effective_scale.to_bits(), vw, vh);
 
-                        let raster_tx = snapped_offset_x - page_bounds.x0.x * effective_scale;
-                        let raster_ty = snapped_offset_y - page_bounds.x0.y * effective_scale;
+                        let raster_tx = render_offset_x - page_bounds.x0.x * effective_scale;
+                        let raster_ty = render_offset_y - page_bounds.x0.y * effective_scale;
                         let matrix = Matrix::new(
                             effective_scale,
                             0.0,
@@ -1088,23 +1079,22 @@ impl PdfViewer {
                             raster_ty,
                         );
 
-                        //let scissor = mupdf::Rect::new(0.0, 0.0, vw as f32, vh as f32);
                         // NOTE: Controls what part of the pdf page is rendered, in what
-                        // coordinates?
-                        let scissor = mupdf::Rect::new(100.0, 100.0, 200.0, 200.0);
+                        // coordinates? It "moves" along when I pan, thus it is NOT anchored to the
+                        // document but rather to the pixmap itself. The units are pixels, even
+                        // though they are floating point numbers. Thus the scissor area is
+                        // expressed entirely in pixmap coordinates.
+                        //
+                        // NOTE: What makes this more confusing is that a scissored render can still
+                        // draw outside of the scissored region. Any object in the pdf that is
+                        // within the scissored region will be rendered in its entirety. Its like a
+                        // crude frustrum cull
+                        //
+                        // NOTE: We want to draw the entire pixmap everytime, thus this is just the
+                        // pixmaps size.
+                        let scissor = mupdf::Rect::new(0.0, 0.0, vw as f32, vh as f32);
 
-                        // Compensate for snapping so the image is drawn at the
-                        // correct sub-pixel position. draw_x = r.x0.x - snapped_offset_x
-                        // which is the rounding error in [-0.5, 0.5].
-                        let draw_rect = Rect::from_pos_size(
-                            Vector::new(
-                                rect_ss.x0.x - snapped_offset_x,
-                                rect_ss.x0.y - snapped_offset_y,
-                            ),
-                            Vector::new(vw as f32, vh as f32),
-                        );
-
-                        (key, draw_rect, vw, vh, matrix, scissor)
+                        (key, vis, vw, vh, matrix, scissor)
                     };
 
                     // Try to reuse a pixmap allocation for this page.
@@ -1130,14 +1120,14 @@ impl PdfViewer {
                         pix = Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true).unwrap();
 
                         if matches!(key, RenderKey::Full(_, _)) {
-                            debug!("Full re-render");
                             self.run(&mut pix, i, &matrix, scissor);
                         }
                     }
                     if matches!(key, RenderKey::Partial(_, _, _, _)) {
                         debug!(
-                            "Partial pixmap run! With matrix: {:?} and scissor {:?}",
-                            matrix, scissor
+                            "Pixmap bounds: {:?} Scissor: {:?}",
+                            (pix.width(), pix.height()),
+                            scissor
                         );
                         self.run(&mut pix, i, &matrix, scissor);
                     }
@@ -1147,7 +1137,7 @@ impl PdfViewer {
                     let handle = cache
                         .entry(key)
                         .or_insert_with(|| {
-                            let _span = tracy_client::span!("Pdf cache miss");
+                            let _span = tracy_client::span!("GPU buffer cache miss");
 
                             let samples = pix.samples();
 
