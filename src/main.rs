@@ -51,11 +51,23 @@ impl Drop for TempFile {
 struct Args {
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = "Launch the program in fullscreen mode (can be combined with --presentation)"
+    )]
     fullscreen: bool,
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = "Launch the program in presentation mode (can be combined with --fullscreen)"
+    )]
     presentation: bool,
-    #[arg(long, value_name = "URL")]
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "Download a pdf from the specified URL to a temporary file and open it"
+    )]
     url: Option<String>,
 }
 
