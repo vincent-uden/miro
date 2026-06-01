@@ -31,6 +31,11 @@ mod recent_files;
 mod rpc;
 mod watch;
 
+// TODO: Canvas flickers like crazy as soon as I zoom in, only the page whos center is in the middle
+// of the screen
+// TODO: Figure out why hovering over a menu disables all other inputs/buttons in the program (write
+// my own menu??)
+
 const DARK_THEME: Theme = Theme::TokyoNight;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
