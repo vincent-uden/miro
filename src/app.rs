@@ -801,7 +801,7 @@ impl App {
                             AppMessage::PdfMessage(PdfMessage::ZoomFit),
                             cfg.get_binding_for_msg(BindableMessage::ZoomFit)
                         )),
-                        (menu_button_last(
+                        (menu_button(
                             if self.has_sidebar_pane() {
                                 "Close sidebar"
                             } else {
@@ -815,7 +815,7 @@ impl App {
                             AppMessage::TogglePresentationMode,
                             cfg.get_binding_for_msg(BindableMessage::TogglePresentationMode)
                         )),
-                        (menu_button(
+                        (menu_button_last(
                             "Toggle Fullscreen",
                             AppMessage::ToggleFullscreen,
                             cfg.get_binding_for_msg(BindableMessage::ToggleFullscreen)
@@ -842,7 +842,7 @@ impl App {
                             )),
                             cfg.get_binding_for_msg(BindableMessage::DoublePageTitlePageLayout)
                         )),
-                        (menu_button(
+                        (menu_button_last(
                             "Presentation",
                             AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::Presentation)),
                             cfg.get_binding_for_msg(BindableMessage::PresentationLayout)
@@ -1104,8 +1104,9 @@ impl App {
                         widget::button::Status::Pressed => {
                             Some(palette.primary.strong.color.into())
                         }
-                        widget::button::Status::Active => Some(palette.primary.base.color.into()),
-                        _ => None,
+                        widget::button::Status::Active | _ => {
+                            Some(palette.primary.base.color.into())
+                        }
                     },
                     border: Border {
                         radius: 4.0.into(),
@@ -1174,8 +1175,9 @@ impl App {
                         widget::button::Status::Pressed => {
                             Some(palette.primary.strong.color.into())
                         }
-                        widget::button::Status::Active => Some(palette.primary.base.color.into()),
-                        _ => None,
+                        widget::button::Status::Active | _ => {
+                            Some(palette.primary.base.color.into())
+                        }
                     },
                     border: Border {
                         radius: 4.0.into(),
