@@ -38,9 +38,9 @@ const DARK_THEME: Theme = Theme::TokyoNight;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 
-struct StdinTempFile(PathBuf);
+struct TempFile(PathBuf);
 
-impl Drop for StdinTempFile {
+impl Drop for TempFile {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.0);
     }
@@ -79,12 +79,16 @@ fn main() -> anyhow::Result<()> {
 
     let mut args = Args::parse();
 
+    // NOTE: Used to automatically delete the file when exiting the program (normally or when
+    // crashing)
+    let mut _tmp_file = None;
     if !io::stdin().is_terminal() {
         let mut bytes = Vec::new();
         match io::stdin().read_to_end(&mut bytes) {
             Ok(_) => match bytes_to_tmp(&bytes, "stdin") {
                 Ok(tmp) => {
                     args.path = Some(tmp.clone());
+                    _tmp_file = Some(TempFile(tmp.clone()));
                 }
                 Err(e) => {
                     eprintln!("Failed to write to temporary file: {e}");
@@ -96,23 +100,24 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    match home::home_dir() {
-        Some(path) => fs::create_dir_all(path.join(".config/miro-pdf"))
-            .expect("Couldn't create the required config directory"),
-        None => eprintln!("Couldn't find home directory"),
-    }
-
     if let Some(url) = args.url {
         let resp = reqwest::blocking::get(&url).map_err(|e| anyhow!("{e}"))?;
         let bytes: Vec<_> = resp.bytes()?.into_iter().collect();
         match bytes_to_tmp(&bytes, "url") {
             Ok(tmp) => {
                 args.path = Some(tmp.clone());
+                _tmp_file = Some(TempFile(tmp.clone()));
             }
             Err(e) => {
                 eprintln!("Faield to write to temporary file {e}");
             }
         }
+    }
+
+    match home::home_dir() {
+        Some(path) => fs::create_dir_all(path.join(".config/miro-pdf"))
+            .expect("Couldn't create the required config directory"),
+        None => eprintln!("Couldn't find home directory"),
     }
 
     if let Ok(cfg) = Config::system_config() {
