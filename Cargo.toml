@@ -1,6 +1,6 @@
 [package]
 name = "miro-pdf"
-version = "0.10.1"
+version = "0.11.0"
 edition = "2024"
 license = "AGPL-3.0"
 description = "A native pdf viewer for Windows and Linux (Wayland/X11) with configurable keybindings."
@@ -42,6 +42,7 @@ tracy-client = { version = "0.18.4", default-features = false, features = ["enab
 twox-hash = { version = "2.1.1", features = ["serialize"] }
 smol_str = "0.2.2"
 regex = "1.12.3"
+reqwest = { version = "0.13.4", features = ["blocking"] }
 
 [build-dependencies]
 embed-resource = "3.0.6"

@@ -1,13 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
-    fs, io,
-    io::{IsTerminal, Read},
+    fs,
+    io::{self, Bytes, IsTerminal, Read},
     path::PathBuf,
     sync::{LazyLock, RwLock},
     time::SystemTime,
 };
 
+use anyhow::anyhow;
 use app::App;
 use bookmarks::BookmarkStore;
 use clap::Parser;
@@ -37,9 +38,9 @@ const DARK_THEME: Theme = Theme::TokyoNight;
 
 static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(|| RwLock::new(Config::default()));
 
-struct StdinTempFile(PathBuf);
+struct TempFile(PathBuf);
 
-impl Drop for StdinTempFile {
+impl Drop for TempFile {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.0);
     }
@@ -50,13 +51,39 @@ impl Drop for StdinTempFile {
 struct Args {
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = "Launch the program in fullscreen mode (can be combined with --presentation)"
+    )]
     fullscreen: bool,
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = "Launch the program in presentation mode (can be combined with --fullscreen)"
+    )]
     presentation: bool,
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "Download a pdf from the specified URL to a temporary file and open it"
+    )]
+    url: Option<String>,
 }
 
-fn main() -> iced::Result {
+fn bytes_to_tmp(bytes: &[u8], file_prefix: &str) -> anyhow::Result<PathBuf> {
+    let ts = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let tmp = std::env::temp_dir().join(format!("miro-{file_prefix}-{ts}.pdf"));
+    match fs::write(&tmp, bytes) {
+        Ok(_) => Ok(tmp),
+        Err(e) => Err(anyhow!("{e}")),
+    }
+}
+
+fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_writer(io::stdout)
         .with_env_filter(EnvFilter::new("miro"))
@@ -64,36 +91,40 @@ fn main() -> iced::Result {
 
     let mut args = Args::parse();
 
-    let stdin_path = args
-        .path
-        .as_ref()
-        .map(|p| p.as_os_str().to_string_lossy() == "-")
-        .unwrap_or(false);
-    let _stdin_temp = if (stdin_path || args.path.is_none()) && !io::stdin().is_terminal() {
+    // NOTE: Used to automatically delete the file when exiting the program (normally or when
+    // crashing)
+    let mut _tmp_file = None;
+    if !io::stdin().is_terminal() {
         let mut bytes = Vec::new();
-        if let Err(e) = io::stdin().read_to_end(&mut bytes) {
-            eprintln!("Failed to read from stdin: {e}");
-            None
-        } else {
-            let ts = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let tmp = std::env::temp_dir().join(format!("miro-stdin-{ts}.pdf"));
-            if let Err(e) = fs::write(&tmp, &bytes) {
-                eprintln!("Failed to write stdin to temporary file: {e}");
-                None
-            } else {
-                args.path = Some(tmp.clone());
-                Some(StdinTempFile(tmp))
+        match io::stdin().read_to_end(&mut bytes) {
+            Ok(_) => match bytes_to_tmp(&bytes, "stdin") {
+                Ok(tmp) => {
+                    args.path = Some(tmp.clone());
+                    _tmp_file = Some(TempFile(tmp.clone()));
+                }
+                Err(e) => {
+                    eprintln!("Failed to write to temporary file: {e}");
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to read from stdin: {e}");
             }
         }
-    } else {
-        if stdin_path {
-            args.path = None;
+    }
+
+    if let Some(url) = args.url {
+        let resp = reqwest::blocking::get(&url).map_err(|e| anyhow!("{e}"))?;
+        let bytes: Vec<_> = resp.bytes()?.into_iter().collect();
+        match bytes_to_tmp(&bytes, "url") {
+            Ok(tmp) => {
+                args.path = Some(tmp.clone());
+                _tmp_file = Some(TempFile(tmp.clone()));
+            }
+            Err(e) => {
+                eprintln!("Faield to write to temporary file {e}");
+            }
         }
-        None
-    };
+    }
 
     match home::home_dir() {
         Some(path) => fs::create_dir_all(path.join(".config/miro-pdf"))
@@ -124,7 +155,7 @@ fn main() -> iced::Result {
         cfg_fullscreen = config.open_fullscreen_default;
     }
 
-    iced::application("Miro", App::update, App::view)
+    Ok(iced::application("Miro", App::update, App::view)
         .antialiasing(true)
         .theme(theme)
         .font(iced_fonts::REQUIRED_FONT_BYTES)
@@ -142,6 +173,7 @@ fn main() -> iced::Result {
                 None => iced::Task::none(),
             };
             let mut file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
+
             // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
             // thus deterministic.
             if args.fullscreen || cfg_fullscreen {
@@ -152,7 +184,7 @@ fn main() -> iced::Result {
             }
 
             (state, file_task)
-        })
+        })?)
 }
 
 pub fn theme(app: &App) -> Theme {
