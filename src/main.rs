@@ -104,6 +104,15 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(url) = args.url {
         let resp = reqwest::blocking::get(&url).map_err(|e| anyhow!("{e}"))?;
+        let bytes: Vec<_> = resp.bytes()?.into_iter().collect();
+        match bytes_to_tmp(&bytes, "url") {
+            Ok(tmp) => {
+                args.path = Some(tmp.clone());
+            }
+            Err(e) => {
+                eprintln!("Faield to write to temporary file {e}");
+            }
+        }
     }
 
     if let Ok(cfg) = Config::system_config() {
