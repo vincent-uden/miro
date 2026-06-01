@@ -11,6 +11,7 @@ readme = "README.md"
 [dependencies]
 anyhow = "1.0.97"
 arboard = { version = "3.6.0", features = ["wayland-data-control"] }
+bytes = "1"
 
 async-watcher = "0.3.0"
 axum = "0.8.4"
@@ -19,10 +20,10 @@ code-timing-macros = { version = "0.0.6", features = ["release", "tracing"] }
 colored = "2.1.0"
 colorgrad = "0.7.1"
 home = "0.5.11"
-iced = { version = "0.13.1", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg", "canvas"] }
-iced_aw = { version = "0.12.2", default-features = false, features = ["menu"] }
-iced_fonts = "0.2.0"
-keybinds = { version = "0.1.1", features = ["iced", "serde"] }
+iced = { version = "0.14.0", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg", "canvas"] }
+iced_aw = { version = "0.14.1", default-features = false, features = ["menu"] }
+iced_fonts = { version = "0.3.0", features = ["nerd"] }
+keybinds2 = { version = "0.2.0", features = ["iced", "serde"] }
 logos = "0.15.0"
 mupdf = { version = "0.7.0" }
 num = "0.4.3"

@@ -15,8 +15,7 @@ use iced::{
         canvas::{self, Cache, Stroke},
     },
 };
-use iced_aw::iced_fonts::REQUIRED_FONT;
-use iced_fonts::required::{RequiredIcons, icon_to_string};
+use bytes::Bytes;
 
 use mupdf::{
     Colorspace, Device, Matrix, Pixmap, TextPageFlags,
@@ -227,27 +226,26 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
     fn update(
         &self,
         state: &mut Self::State,
-        event: canvas::Event,
+        event: &canvas::Event,
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
-    ) -> (iced::event::Status, Option<PdfMessage>) {
-        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) =
-            event.clone()
-            && key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+    ) -> Option<canvas::Action<PdfMessage>> {
+        let event = (*event).clone();
+        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            ref key, modifiers, ..
+        }) = event
+            && key == &iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
             && !modifiers.control()
             && !modifiers.alt()
             && !modifiers.logo()
             && self.viewer.active_comment.is_some()
         {
-            return (
-                iced::event::Status::Captured,
-                Some(PdfMessage::CloseComment),
-            );
+            return Some(canvas::Action::publish(PdfMessage::CloseComment).and_capture());
         }
 
         if !self.viewer.show_link_hitboxes {
             state.was_active = false;
-            return (iced::event::Status::Ignored, None);
+            return None;
         }
 
         if !state.was_active {
@@ -260,14 +258,11 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         }) = event
         {
             if modifiers.control() || modifiers.alt() || modifiers.logo() {
-                return (iced::event::Status::Ignored, None);
+                return None;
             }
 
             if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
-                return (
-                    iced::event::Status::Captured,
-                    Some(PdfMessage::CloseLinkHitboxes),
-                );
+                return Some(canvas::Action::publish(PdfMessage::CloseLinkHitboxes).and_capture());
             }
 
             if let iced::keyboard::Key::Character(c) = key {
@@ -280,23 +275,22 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
 
                 if let Some(idx) = keys.iter().position(|k| k == &state.pending_key) {
                     state.pending_key.clear();
-                    return (
-                        iced::event::Status::Captured,
-                        Some(PdfMessage::ActivateLink(idx)),
+                    return Some(
+                        canvas::Action::publish(PdfMessage::ActivateLink(idx)).and_capture(),
                     );
                 }
 
                 let is_prefix = keys.iter().any(|k| k.starts_with(&state.pending_key));
                 if is_prefix {
-                    return (iced::event::Status::Captured, None);
+                    return Some(canvas::Action::capture());
                 }
 
                 state.pending_key.clear();
-                return (iced::event::Status::Captured, None);
+                return Some(canvas::Action::capture());
             }
         }
 
-        (iced::event::Status::Ignored, None)
+        None
     }
 
     fn draw(
@@ -382,12 +376,13 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
                 frame.fill_text(geometry::Text {
                     content: key.clone(),
                     position: iced::Point::new(bg_x + bg_w / 2.0, bg_y + bg_h / 2.0),
+                    max_width: bg_w,
                     color: iced::Color::WHITE,
                     size: text_size.into(),
                     line_height: widget::text::LineHeight::Relative(1.0),
                     font: iced::Font::default(),
-                    horizontal_alignment: iced::alignment::Horizontal::Center,
-                    vertical_alignment: iced::alignment::Vertical::Center,
+                    align_x: iced::alignment::Horizontal::Center.into(),
+                    align_y: iced::alignment::Vertical::Center,
                     shaping: widget::text::Shaping::Basic,
                 });
             }
@@ -1213,7 +1208,7 @@ impl PdfViewer {
         let handle = image::Handle::from_rgba(
             pix.width(),
             pix.height(),
-            image::Bytes::from_owner(PooledBuffer {
+            Bytes::from_owner(PooledBuffer {
                 buf: Some(buf),
                 pool: Arc::downgrade(&self.buffer_pool),
                 page_idx: i,
@@ -1256,12 +1251,11 @@ impl PdfViewer {
                                 color: Some(palette.primary.base.color),
                             }
                         }),
-                    widget::horizontal_space().width(iced::Length::Fill),
+                    widget::space::horizontal().width(iced::Length::Fill),
                     widget::button(
-                        widget::text(icon_to_string(RequiredIcons::X))
+                        widget::text("×")
                             .align_y(iced::alignment::Vertical::Bottom)
-                            .size(24.0)
-                            .font(REQUIRED_FONT),
+                            .size(24.0),
                     )
                     .padding(0.0)
                     .style(|theme: &iced::Theme, status: widget::button::Status| {

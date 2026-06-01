@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use std::{fs, path::PathBuf, str::FromStr, fmt};
 
 use colored::Colorize;
-use keybinds::{KeyInput, KeySeq, Keybind, Keybinds};
+use keybinds2::{KeyInput, KeySeq, Keybind, Keybinds};
 use strum::EnumString;
 
 use crate::{

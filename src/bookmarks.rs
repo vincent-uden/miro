@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Result, anyhow};
 use iced::{
     Length, Padding, Theme,
-    widget::{self, button, container, horizontal_rule, hover, text, text_input, vertical_space},
+    widget::{self, button, container, hover, rule, text, text_input},
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -108,15 +108,15 @@ impl BookmarkStore {
     pub fn view(&self) -> iced::Element<'_, BookmarkMessage> {
         let mut col = widget::column![
             text("Bookmarks").size(18.0),
-            vertical_space().height(8.0),
+            widget::space::vertical().height(8.0),
             text_input("New bookmark", &self.pending_name)
                 .on_input(BookmarkMessage::PendingName)
                 .on_submit(BookmarkMessage::RequestNewBookmark {
                     name: self.pending_name.clone()
                 }),
-            vertical_space().height(8.0),
-            horizontal_rule(2.0),
-            vertical_space().height(8.0),
+            widget::space::vertical().height(8.0),
+            rule::horizontal(2.0),
+            widget::space::vertical().height(8.0),
         ];
         for set in &self.sets {
             col = col.push(self.view_bookmark_set(set));
@@ -128,7 +128,7 @@ impl BookmarkStore {
     fn view_bookmark_set<'a>(&self, set: &'a BookmarkSet) -> iced::Element<'a, BookmarkMessage> {
         let mut marks = widget::column![
             text(set.path.file_name().unwrap().to_string_lossy()).shaping(text::Shaping::Advanced),
-            vertical_space().height(4.0)
+            widget::space::vertical().height(4.0)
         ];
         for mark in &set.marks {
             marks = marks.push(
