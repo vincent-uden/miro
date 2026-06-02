@@ -108,7 +108,7 @@ enum RenderKey {
 struct Document<'a> {
     cache: Cache,
     pages: Vec<(image::Handle, Rect<f32>)>,
-    viewer: &'a PdfViewer,
+    allocation_cache: &'a RefCell<HashMap<image::Id, image::Allocation>>,
     draw_page_borders: bool,
     pdf_dark_mode: bool,
 }
@@ -124,7 +124,7 @@ impl<'a> std::fmt::Debug for Document<'a> {
 
 impl<'a> Document<'a> {
     pub fn new(
-        viewer: &'a PdfViewer,
+        allocation_cache: &'a RefCell<HashMap<image::Id, image::Allocation>>,
         pages: Vec<(image::Handle, Rect<f32>)>,
         draw_page_borders: bool,
         pdf_dark_mode: bool,
@@ -132,7 +132,7 @@ impl<'a> Document<'a> {
         Self {
             cache: Cache::default(),
             pages,
-            viewer,
+            allocation_cache,
             draw_page_borders,
             pdf_dark_mode,
         }
@@ -161,7 +161,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
                 // Ensure the image is explicitly allocated on the GPU so the next
                 // frame is guaranteed to render it without asynchronous upload delay.
                 {
-                    let mut cache = self.viewer.allocation_cache.borrow_mut();
+                    let mut cache = self.allocation_cache.borrow_mut();
                     if !cache.contains_key(&handle.id()) {
                         if let Ok(allocation) = renderer.load_image(handle) {
                             cache.insert(handle.id(), allocation);
@@ -169,7 +169,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
                     }
                 }
 
-                let img = if let Some(allocation) = self.viewer.allocation_cache.borrow().get(&handle.id()) {
+                let img = if let Some(allocation) = self.allocation_cache.borrow().get(&handle.id()) {
                     image::Image::new(allocation.handle()).filter_method(image::FilterMethod::Nearest)
                 } else {
                     image::Image::new(handle).filter_method(image::FilterMethod::Nearest)
@@ -1169,7 +1169,7 @@ impl PdfViewer {
             }
 
             let pages_canvas = widget::canvas(Document::new(
-                self,
+                &self.allocation_cache,
                 with_handles,
                 self.draw_page_borders,
                 self.pdf_dark_mode,
