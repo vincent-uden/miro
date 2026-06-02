@@ -226,10 +226,10 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
     fn update(
         &self,
         state: &mut Self::State,
-        event: canvas::Event,
+        event: &iced::Event,
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
-    ) -> (iced::event::Status, Option<PdfMessage>) {
+    ) -> Option<iced::widget::Action<PdfMessage>> {
         if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) =
             event.clone()
             && key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
@@ -238,15 +238,12 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
             && !modifiers.logo()
             && self.viewer.active_comment.is_some()
         {
-            return (
-                iced::event::Status::Captured,
-                Some(PdfMessage::CloseComment),
-            );
+            return Some(iced::widget::Action::publish(PdfMessage::CloseComment).and_capture());
         }
 
         if !self.viewer.show_link_hitboxes {
             state.was_active = false;
-            return (iced::event::Status::Ignored, None);
+            return None;
         }
 
         if !state.was_active {
@@ -259,13 +256,12 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         }) = event
         {
             if modifiers.control() || modifiers.alt() || modifiers.logo() {
-                return (iced::event::Status::Ignored, None);
+                return None;
             }
 
-            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
-                return (
-                    iced::event::Status::Captured,
-                    Some(PdfMessage::CloseLinkHitboxes),
+            if *key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
+                return Some(
+                    iced::widget::Action::publish(PdfMessage::CloseLinkHitboxes).and_capture(),
                 );
             }
 
@@ -279,23 +275,20 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
 
                 if let Some(idx) = keys.iter().position(|k| k == &state.pending_key) {
                     state.pending_key.clear();
-                    return (
-                        iced::event::Status::Captured,
-                        Some(PdfMessage::ActivateLink(idx)),
+                    return Some(
+                        iced::widget::Action::publish(PdfMessage::ActivateLink(idx)).and_capture(),
                     );
                 }
 
                 let is_prefix = keys.iter().any(|k| k.starts_with(&state.pending_key));
-                if is_prefix {
-                    return (iced::event::Status::Captured, None);
+                if !is_prefix {
+                    state.pending_key.clear();
                 }
-
-                state.pending_key.clear();
-                return (iced::event::Status::Captured, None);
+                return Some(iced::widget::Action::capture());
             }
         }
 
-        (iced::event::Status::Ignored, None)
+        None
     }
 
     fn draw(
@@ -1212,7 +1205,7 @@ impl PdfViewer {
         let handle = image::Handle::from_rgba(
             pix.width(),
             pix.height(),
-            image::Bytes::from_owner(PooledBuffer {
+            bytes::Bytes::from_owner(PooledBuffer {
                 buf: Some(buf),
                 pool: Arc::downgrade(&self.buffer_pool),
                 page_idx: i,
@@ -1255,12 +1248,12 @@ impl PdfViewer {
                                 color: Some(palette.primary.base.color),
                             }
                         }),
-                    widget::horizontal_space().width(iced::Length::Fill),
+                    widget::space::horizontal(),
                     widget::button(
                         widget::text(icon_to_string(RequiredIcons::X))
                             .align_y(iced::alignment::Vertical::Bottom)
                             .size(24.0)
-                            .font(REQUIRED_FONT),
+                            .font(DEVICON_FONT),
                     )
                     .padding(0.0)
                     .style(|theme: &iced::Theme, status: widget::button::Status| {

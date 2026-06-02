@@ -578,7 +578,7 @@ impl App {
                 if self.search_open {
                     iced::Task::batch([
                         search_task,
-                        widget::text_input::focus(widget::text_input::Id::new("search_input"))
+                        widget::operation::focus(widget::Id::new("search_input"))
                             .map(|_: ()| AppMessage::PdfMessage(PdfMessage::None)),
                     ])
                 } else {
@@ -890,7 +890,7 @@ impl App {
             .map(|x| x.search_progress())
             .unwrap_or_default();
         widget::row![
-            widget::horizontal_space().width(Length::Fill),
+            widget::space::horizontal(),
             widget::mouse_area(
                 widget::container(
                     widget::column![
@@ -901,7 +901,7 @@ impl App {
                                 .map(|x| x.needle.as_str())
                                 .unwrap_or("")
                         )
-                        .id(widget::text_input::Id::new("search_input"))
+                        .id(widget::Id::new("search_input"))
                         .on_input(|x| AppMessage::PdfMessage(PdfMessage::UpdateSearchNeedle(x))),
                         widget::row![
                             widget::button("Plain text")
@@ -920,7 +920,7 @@ impl App {
                                     search_method == Some(SearchMethod::Regex)
                                 ))
                                 .on_press(PdfMessage::SetSearchMethod(SearchMethod::Regex).into()),
-                            widget::horizontal_space().width(Length::Fill),
+                            widget::space::horizontal(),
                             widget::text(search_progress),
                         ]
                         .align_y(alignment::Vertical::Center)
@@ -1188,19 +1188,15 @@ impl App {
             SidebarTab::Bookmark => self.bookmark_store.view().map(AppMessage::BookmarkMessage),
         };
 
-        widget::column![
-            sidebar_picker,
-            widget::vertical_space().height(8.0),
-            contents,
-        ]
-        .padding(8.0)
-        .into()
+        widget::column![sidebar_picker, widget::space().height(8.0), contents,]
+            .padding(8.0)
+            .into()
     }
 
     fn view_outline(&self) -> Element<'_, AppMessage> {
         let mut col = widget::column![
             text("Document Outline").size(18.0),
-            vertical_space().height(8.0),
+            widget::space().height(8.0),
         ];
 
         if self.pdfs.is_empty() {
@@ -1531,7 +1527,7 @@ fn menu_label(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced::
 }
 
 fn menu_separator() -> Element<'static, AppMessage> {
-    container(widget::horizontal_rule(1))
+    container(widget::rule::horizontal(1))
         .height(Length::Fixed(6.0))
         .padding(0.0)
         .into()
@@ -1549,7 +1545,7 @@ fn menu_button(
     base_button(
         row![
             text(label),
-            horizontal_space(),
+            widget::space::horizontal(),
             text(txt).style(|theme: &Theme| {
                 let palette = theme.extended_palette();
                 text::Style {
@@ -1653,7 +1649,7 @@ fn file_tab<'a>(
                 text(icon_to_string(RequiredIcons::X))
                     .align_y(alignment::Vertical::Bottom)
                     .size(24.0)
-                    .font(REQUIRED_FONT),
+                    .font(DEVICON_FONT),
                 on_close
             )
             .padding(0.0)
@@ -1724,11 +1720,11 @@ fn disabled(style: &button::Style) -> button::Style {
 }
 
 fn toggle_fullscreen() -> iced::Task<AppMessage> {
-    iced::window::get_latest()
-        .and_then(move |id| iced::window::get_mode(id).map(move |mode| (id, mode)))
+    iced::window::latest()
+        .and_then(move |id| iced::window::mode(id).map(move |mode| (id, mode)))
         .then(|(id, current_mode)| match current_mode {
-            window::Mode::Fullscreen => iced::window::change_mode(id, window::Mode::Windowed),
-            _ => iced::window::change_mode(id, window::Mode::Fullscreen),
+            window::Mode::Fullscreen => iced::window::set_mode(id, window::Mode::Windowed),
+            _ => iced::window::set_mode(id, window::Mode::Fullscreen),
         })
 }
 
