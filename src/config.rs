@@ -835,7 +835,7 @@ enum Command {
 
 #[cfg(test)]
 mod tests {
-    use keybinds::{KeyInput, Keybind};
+    use keybinds2::{KeyInput, Keybind};
 
     use super::*;
 

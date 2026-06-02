@@ -1104,9 +1104,7 @@ impl App {
                         widget::button::Status::Pressed => {
                             Some(palette.primary.strong.color.into())
                         }
-                        widget::button::Status::Active | _ => {
-                            Some(palette.primary.base.color.into())
-                        }
+                        _ => Some(palette.primary.base.color.into()),
                     },
                     border: Border {
                         radius: 4.0.into(),
@@ -1175,9 +1173,7 @@ impl App {
                         widget::button::Status::Pressed => {
                             Some(palette.primary.strong.color.into())
                         }
-                        widget::button::Status::Active | _ => {
-                            Some(palette.primary.base.color.into())
-                        }
+                        _ => Some(palette.primary.base.color.into()),
                     },
                     border: Border {
                         radius: 4.0.into(),

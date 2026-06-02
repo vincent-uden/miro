@@ -68,7 +68,7 @@ pub fn icon_button<'a, T>(
                     .color
                     .into(),
                 ),
-                widget::button::Status::Active | _ => Some(
+                _ => Some(
                     (match variant {
                         ButtonVariant::Primary => palette.primary.base,
                         ButtonVariant::Danger => palette.danger.base,

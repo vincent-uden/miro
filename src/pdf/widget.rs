@@ -23,7 +23,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{error};
 
 use crate::{
     CONFIG, DARK_THEME,
