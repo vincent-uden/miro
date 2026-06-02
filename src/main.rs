@@ -207,14 +207,69 @@ pub fn theme(app: &App) -> Theme {
             warning: Color::from_rgb8(255, 165, 0),
             danger: Color::from_rgb8(255, 0, 0),
         },
-        |palette: Palette| Extended {
-            background: Background::new(palette.background, palette.text),
-            primary: Primary::generate(palette.primary, palette.background, palette.text),
-            secondary: Secondary::generate(palette.background, palette.text),
-            success: Success::generate(palette.success, palette.background, palette.text),
-            warning: Warning::generate(palette.warning, palette.background, palette.text),
-            danger: Danger::generate(palette.danger, palette.background, palette.text),
-            is_dark: false,
+        |palette: Palette| {
+            let bg = Background::new(palette.background, palette.text);
+            let secondary = Secondary::generate(palette.background, palette.text);
+            Extended {
+                background: Background {
+                    base: Pair {
+                        color: Color::from_rgb8(240, 239, 238),
+                        text: Color::from_rgb8(30, 30, 30),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(255, 255, 255),
+                        text: Color::from_rgb8(30, 30, 30),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(187, 184, 187),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                    weakest: bg.weakest,
+                    weaker: bg.weaker,
+                    neutral: bg.neutral,
+                    stronger: bg.stronger,
+                    strongest: bg.strongest,
+                },
+                primary: Primary {
+                    base: Pair {
+                        color: Color::from_rgb8(167, 143, 135),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(228, 226, 226),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(147, 123, 115),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                },
+                secondary: Secondary {
+                    base: Pair {
+                        color: Color::from_rgb8(217, 217, 217),
+                        text: Color::from_rgb8(122, 122, 122),
+                    },
+                    weak: secondary.weak,
+                    strong: secondary.strong,
+                },
+                success: Success::generate(palette.success, palette.background, palette.text),
+                warning: Warning::generate(palette.warning, palette.background, palette.text),
+                danger: Danger {
+                    base: Pair {
+                        color: Color::from_rgb8(167, 143, 135),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(228, 226, 226),
+                        text: Color::from_rgb8(30, 30, 30),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(147, 123, 115),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                },
+                is_dark: false,
+            }
         },
     );
     let miro_dark = Theme::custom_with_fn(
@@ -227,14 +282,87 @@ pub fn theme(app: &App) -> Theme {
             warning: Color::from_rgb8(255, 165, 0),
             danger: Color::from_rgb8(247, 118, 142),
         },
-        |palette: Palette| Extended {
-            background: Background::new(palette.background, palette.text),
-            primary: Primary::generate(palette.primary, palette.background, palette.text),
-            secondary: Secondary::generate(palette.background, palette.text),
-            success: Success::generate(palette.success, palette.background, palette.text),
-            warning: Warning::generate(palette.warning, palette.background, palette.text),
-            danger: Danger::generate(palette.danger, palette.background, palette.text),
-            is_dark: true,
+        |palette: Palette| {
+            let bg = Background::new(palette.background, palette.text);
+            Extended {
+                background: Background {
+                    base: Pair {
+                        color: Color::from_rgb8(26, 27, 38),
+                        text: Color::from_rgb8(154, 165, 206),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(36, 40, 59),
+                        text: Color::from_rgb8(154, 165, 206),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(51, 56, 71),
+                        text: Color::from_rgb8(154, 165, 206),
+                    },
+                    weakest: bg.weakest,
+                    weaker: bg.weaker,
+                    neutral: bg.neutral,
+                    stronger: bg.stronger,
+                    strongest: bg.strongest,
+                },
+                primary: Primary {
+                    base: Pair {
+                        color: Color::from_rgb8(42, 195, 222),
+                        text: Color::from_rgb8(26, 27, 38),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(73, 219, 240),
+                        text: Color::from_rgb8(26, 27, 38),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(21, 171, 204),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                },
+                secondary: Secondary {
+                    base: Pair {
+                        color: Color::from_rgb8(51, 56, 71),
+                        text: Color::from_rgb8(154, 165, 206),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(68, 75, 95),
+                        text: Color::from_rgb8(154, 165, 206),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(34, 39, 47),
+                        text: Color::from_rgb8(154, 165, 206),
+                    },
+                },
+                success: Success {
+                    base: Pair {
+                        color: Color::from_rgb8(158, 206, 106),
+                        text: Color::from_rgb8(26, 27, 38),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(180, 220, 140),
+                        text: Color::from_rgb8(26, 27, 38),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(136, 192, 72),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                },
+                warning: Warning::generate(palette.warning, palette.background, palette.text),
+                danger: Danger {
+                    base: Pair {
+                        color: Color::from_rgb8(247, 118, 142),
+                        text: Color::from_rgb8(26, 27, 38),
+                    },
+                    weak: Pair {
+                        color: Color::from_rgb8(250, 150, 170),
+                        text: Color::from_rgb8(26, 27, 38),
+                    },
+                    strong: Pair {
+                        color: Color::from_rgb8(244, 86, 114),
+                        text: Color::from_rgb8(255, 255, 255),
+                    },
+                },
+                is_dark: true,
+            }
         },
     );
     match app.dark_mode {
