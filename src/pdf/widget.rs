@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex, Weak},
 };
@@ -15,6 +15,7 @@ use iced::{
         canvas::{self, Cache, Stroke},
     },
 };
+use iced::advanced::image::Renderer as _;
 use bytes::Bytes;
 
 use mupdf::{
@@ -104,14 +105,15 @@ enum RenderKey {
     Partial(usize, u32, i32, i32),
 }
 
-struct Document {
+struct Document<'a> {
     cache: Cache,
     pages: Vec<(image::Handle, Rect<f32>)>,
+    viewer: &'a PdfViewer,
     draw_page_borders: bool,
     pdf_dark_mode: bool,
 }
 
-impl std::fmt::Debug for Document {
+impl<'a> std::fmt::Debug for Document<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Document")
             .field("cache", &self.cache)
@@ -120,8 +122,9 @@ impl std::fmt::Debug for Document {
     }
 }
 
-impl Document {
+impl<'a> Document<'a> {
     pub fn new(
+        viewer: &'a PdfViewer,
         pages: Vec<(image::Handle, Rect<f32>)>,
         draw_page_borders: bool,
         pdf_dark_mode: bool,
@@ -129,13 +132,14 @@ impl Document {
         Self {
             cache: Cache::default(),
             pages,
+            viewer,
             draw_page_borders,
             pdf_dark_mode,
         }
     }
 }
 
-impl widget::canvas::Program<PdfMessage> for Document {
+impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
     type State = ();
 
     fn draw(
@@ -153,10 +157,25 @@ impl widget::canvas::Program<PdfMessage> for Document {
 
             for (handle, rect) in &self.pages {
                 let bounds: iced::Rectangle = (*rect).into();
-                frame.draw_image(
-                    bounds,
-                    image::Image::new(handle).filter_method(image::FilterMethod::Nearest),
-                );
+
+                // Ensure the image is explicitly allocated on the GPU so the next
+                // frame is guaranteed to render it without asynchronous upload delay.
+                {
+                    let mut cache = self.viewer.allocation_cache.borrow_mut();
+                    if !cache.contains_key(&handle.id()) {
+                        if let Ok(allocation) = renderer.load_image(handle) {
+                            cache.insert(handle.id(), allocation);
+                        }
+                    }
+                }
+
+                let img = if let Some(allocation) = self.viewer.allocation_cache.borrow().get(&handle.id()) {
+                    image::Image::new(allocation.handle()).filter_method(image::FilterMethod::Nearest)
+                } else {
+                    image::Image::new(handle).filter_method(image::FilterMethod::Nearest)
+                };
+
+                frame.draw_image(bounds, img);
             }
         });
         vec![bg]
@@ -446,6 +465,9 @@ pub struct PdfViewer {
     /// Final iced image handles cached by render key. Kept separately so iced can reuse the
     /// GPU texture without re-uploading when the widget redraws for non-visual reasons.
     render_cache: RefCell<HashMap<RenderKey, image::Handle>>,
+    /// Explicit image allocations that guarantee GPU textures are uploaded and retained
+    /// for visible pages.
+    allocation_cache: RefCell<HashMap<image::Id, image::Allocation>>,
     /// Reusable MuPDF pixmaps keyed by page. These are expensive to allocate and are not Send,
     /// so we pool them separately from the plain CPU buffers.
     pixmap_pool: RefCell<HashMap<usize, Pixmap>>,
@@ -585,6 +607,7 @@ impl PdfViewer {
             doc,
             display_lists,
             render_cache: RefCell::default(),
+            allocation_cache: RefCell::default(),
             pixmap_pool: RefCell::default(),
             buffer_pool: Arc::new(Mutex::new(HashMap::new())),
             translation: Vector::zero(),
@@ -842,6 +865,7 @@ impl PdfViewer {
             }
             PdfMessage::FileChanged => {
                 self.render_cache.borrow_mut().clear();
+                self.allocation_cache.borrow_mut().clear();
                 self.pixmap_pool.borrow_mut().clear();
 
                 if let Some(path_str) = self.path.to_str()
@@ -1138,7 +1162,14 @@ impl PdfViewer {
                 cache.retain(|key, _| used_keys.contains(key));
             }
 
+            {
+                let render_cache = self.render_cache.borrow();
+                let active_ids: HashSet<_> = render_cache.values().map(|h| h.id()).collect();
+                self.allocation_cache.borrow_mut().retain(|id, _| active_ids.contains(id));
+            }
+
             let pages_canvas = widget::canvas(Document::new(
+                self,
                 with_handles,
                 self.draw_page_borders,
                 self.pdf_dark_mode,
@@ -1695,6 +1726,7 @@ impl PdfViewer {
         if self.pdf_dark_mode != dark_mode_enabled {
             self.pdf_dark_mode = dark_mode_enabled;
             self.render_cache.borrow_mut().clear();
+            self.allocation_cache.borrow_mut().clear();
             self.buffer_pool.lock().unwrap().clear();
             self.pixmap_pool.borrow_mut().clear();
         }
@@ -1704,6 +1736,7 @@ impl PdfViewer {
         if self.interface_dark_mode != dark_mode_enabled {
             self.interface_dark_mode = dark_mode_enabled;
             self.render_cache.borrow_mut().clear();
+            self.allocation_cache.borrow_mut().clear();
         }
     }
 
