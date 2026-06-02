@@ -23,7 +23,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{error};
+use tracing::{debug, error};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -158,21 +158,21 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
             for (handle, rect) in &self.pages {
                 let bounds: iced::Rectangle = (*rect).into();
 
-                // Ensure the image is explicitly allocated on the GPU so the next
+                // NOTE: Ensure the image is explicitly allocated on the GPU so the next
                 // frame is guaranteed to render it without asynchronous upload delay.
-                {
+                let img = {
                     let mut cache = self.allocation_cache.borrow_mut();
-                    if !cache.contains_key(&handle.id()) {
-                        if let Ok(allocation) = renderer.load_image(handle) {
-                            cache.insert(handle.id(), allocation);
-                        }
+                    if !cache.contains_key(&handle.id())
+                        && let Ok(allocation) = renderer.load_image(handle)
+                    {
+                        let handle = allocation.handle().clone();
+                        cache.insert(handle.id(), allocation);
+                        image::Image::new(handle).filter_method(image::FilterMethod::Nearest)
+                    } else {
+                        // NOTE: This should in practice never happen but I still dont want to crash
+                        // if we for some reason fail to upload an image
+                        image::Image::new(handle).filter_method(image::FilterMethod::Nearest)
                     }
-                }
-
-                let img = if let Some(allocation) = self.allocation_cache.borrow().get(&handle.id()) {
-                    image::Image::new(allocation.handle()).filter_method(image::FilterMethod::Nearest)
-                } else {
-                    image::Image::new(handle).filter_method(image::FilterMethod::Nearest)
                 };
 
                 frame.draw_image(bounds, img);
@@ -1165,7 +1165,9 @@ impl PdfViewer {
             {
                 let render_cache = self.render_cache.borrow();
                 let active_ids: HashSet<_> = render_cache.values().map(|h| h.id()).collect();
-                self.allocation_cache.borrow_mut().retain(|id, _| active_ids.contains(id));
+                self.allocation_cache
+                    .borrow_mut()
+                    .retain(|id, _| active_ids.contains(id));
             }
 
             let pages_canvas = widget::canvas(Document::new(
