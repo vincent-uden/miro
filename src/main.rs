@@ -84,6 +84,10 @@ fn bytes_to_tmp(bytes: &[u8], file_prefix: &str) -> anyhow::Result<PathBuf> {
 }
 
 fn main() -> anyhow::Result<()> {
+    unsafe {
+        std::env::set_var("ICED_PRESENT_MODE", "mailbox");
+    }
+
     tracing_subscriber::fmt()
         .with_writer(io::stdout)
         .with_env_filter(EnvFilter::new("miro"))
@@ -156,11 +160,11 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(iced::application("Miro", App::update, App::view)
-        .antialiasing(true)
         .theme(theme)
         .font(iced_fonts::REQUIRED_FONT_BYTES)
         .subscription(App::subscription)
         .window(settings())
+        .antialiasing(true)
         .font(include_bytes!("../assets/font/Geist-VariableFont_wght.ttf").as_slice())
         .default_font(Font::with_name("Geist"))
         .run_with(move || {
