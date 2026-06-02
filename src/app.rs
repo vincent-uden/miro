@@ -13,20 +13,18 @@ use iced::{
     keyboard::Modifiers,
     theme::palette,
     widget::{
-        self, button, container, horizontal_space, pane_grid, row, scrollable,
+        self, button, container, pane_grid, row, scrollable,
         scrollable::{Direction, Scrollbar},
-        stack, text, vertical_space, PaneGrid,
+        stack, text, PaneGrid,
     },
-    window::{get_scale_factor},
     Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
-use iced_aw::{Menu, iced_fonts::REQUIRED_FONT, menu::primary, menu_items};
+use iced_aw::{Menu, iced_fonts::DEVICON_FONT, menu::primary, menu_items};
 use iced_aw::{
     menu::{self, Item},
     menu_bar,
 };
-use iced_fonts::required::{RequiredIcons, icon_to_string};
-use keybinds::{KeySeq, Keybind};
+use keybinds2::{KeySeq, Keybind};
 use rfd::AsyncFileDialog;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;

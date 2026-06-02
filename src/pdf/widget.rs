@@ -15,8 +15,7 @@ use iced::{
         canvas::{self, Cache, Stroke},
     },
 };
-use iced_aw::iced_fonts::REQUIRED_FONT;
-use iced_fonts::required::{RequiredIcons, icon_to_string};
+use iced_aw::iced_fonts::DEVICON_FONT;
 
 use mupdf::{
     Colorspace, Device, Matrix, Pixmap, TextPageFlags,

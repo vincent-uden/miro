@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Result, anyhow};
 use iced::{
     Length, Padding, Theme,
-    widget::{self, button, container, horizontal_rule, hover, text, text_input, vertical_space},
+    widget::{self, button, container, hover, text, text_input},
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumString;

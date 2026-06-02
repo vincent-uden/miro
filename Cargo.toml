@@ -21,7 +21,7 @@ colorgrad = "0.7.1"
 home = "0.5.11"
 iced = { version = "0.14.0", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg", "canvas"] }
 iced_aw = { version = "0.14.0", default-features = false, features = ["menu"] }
-iced_fonts = "0.3.0"
+iced_fonts = { version = "0.3.0", features = ["devicon"] }
 keybinds2 = { version = "0.2.0", features = ["iced", "serde"] }
 logos = "0.15.0"
 mupdf = { version = "0.7.0" }

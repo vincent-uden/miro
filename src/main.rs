@@ -15,7 +15,7 @@ use clap::Parser;
 use recent_files::RecentFiles;
 use config::Config;
 use iced::{
-    window::{get_latest, icon::from_file_data},
+    window::{icon::from_file_data},
     Color, Font, Theme,
 };
 use tracing::info;
@@ -158,7 +158,7 @@ fn main() -> anyhow::Result<()> {
     Ok(iced::application("Miro", App::update, App::view)
         .antialiasing(true)
         .theme(theme)
-        .font(iced_fonts::REQUIRED_FONT_BYTES)
+        .font(iced_fonts::DEVICON_FONT_BYTES)
         .subscription(App::subscription)
         .window(settings())
         .font(include_bytes!("../assets/font/Geist-VariableFont_wght.ttf").as_slice())
@@ -172,7 +172,8 @@ fn main() -> anyhow::Result<()> {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
-            let mut file_task = file_task.chain(get_latest().map(app::AppMessage::FoundWindowId));
+            let mut file_task =
+                file_task.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
 
             // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
             // thus deterministic.
