@@ -46,7 +46,7 @@ impl Drop for TempFile {
     }
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(version, name = "miro", about = "A pdf viewer")]
 struct Args {
     #[arg(value_name = "PATH")]
@@ -89,53 +89,56 @@ fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::new("miro"))
         .init();
 
-    let mut args = Args::parse();
-
-    // NOTE: Used to automatically delete the file when exiting the program (normally or when
-    // crashing)
-    let mut _tmp_file = None;
-    if !io::stdin().is_terminal() {
-        let mut bytes = Vec::new();
-        match io::stdin().read_to_end(&mut bytes) {
-            Ok(_) => match bytes_to_tmp(&bytes, "stdin") {
-                Ok(tmp) => {
-                    args.path = Some(tmp.clone());
-                    _tmp_file = Some(TempFile(tmp.clone()));
+    Ok(iced::application(
+        || {
+            let mut args = Args::parse();
+            // NOTE: Used to automatically delete the file when exiting the program (normally or when
+            // crashing)
+            let mut _tmp_file = None;
+            if !io::stdin().is_terminal() {
+                let mut bytes = Vec::new();
+                match io::stdin().read_to_end(&mut bytes) {
+                    Ok(_) => match bytes_to_tmp(&bytes, "stdin") {
+                        Ok(tmp) => {
+                            args.path = Some(tmp.clone());
+                            _tmp_file = Some(TempFile(tmp.clone()));
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to write to temporary file: {e}");
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Failed to read from stdin: {e}");
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Failed to write to temporary file: {e}");
+            }
+
+            if let Some(url) = args.url {
+                let resp = reqwest::blocking::get(&url)
+                    .map_err(|e| anyhow!("{e}"))
+                    .unwrap();
+                let bytes: Vec<_> = resp.bytes().unwrap().into_iter().collect();
+                match bytes_to_tmp(&bytes, "url") {
+                    Ok(tmp) => {
+                        args.path = Some(tmp.clone());
+                        _tmp_file = Some(TempFile(tmp.clone()));
+                    }
+                    Err(e) => {
+                        eprintln!("Faield to write to temporary file {e}");
+                    }
                 }
-            },
-            Err(e) => {
-                eprintln!("Failed to read from stdin: {e}");
             }
-        }
-    }
 
-    if let Some(url) = args.url {
-        let resp = reqwest::blocking::get(&url).map_err(|e| anyhow!("{e}"))?;
-        let bytes: Vec<_> = resp.bytes()?.into_iter().collect();
-        match bytes_to_tmp(&bytes, "url") {
-            Ok(tmp) => {
-                args.path = Some(tmp.clone());
-                _tmp_file = Some(TempFile(tmp.clone()));
+            match home::home_dir() {
+                Some(path) => fs::create_dir_all(path.join(".config/miro-pdf"))
+                    .expect("Couldn't create the required config directory"),
+                None => eprintln!("Couldn't find home directory"),
             }
-            Err(e) => {
-                eprintln!("Faield to write to temporary file {e}");
-            }
-        }
-    }
 
-    match home::home_dir() {
-        Some(path) => fs::create_dir_all(path.join(".config/miro-pdf"))
-            .expect("Couldn't create the required config directory"),
-        None => eprintln!("Couldn't find home directory"),
-    }
-
-    if let Ok(cfg) = Config::system_config() {
-        let mut config = CONFIG.write().unwrap();
-        *config = cfg;
-        info!(
+            if let Ok(cfg) = Config::system_config() {
+                let mut config = CONFIG.write().unwrap();
+                *config = cfg;
+                info!(
             "Using system config file located at {}",
             Config::system_config_path()
                 .expect(
@@ -146,24 +149,14 @@ fn main() -> anyhow::Result<()> {
                 .to_str()
                 .unwrap()
         );
-    }
-    let cfg_fullscreen;
-    let cfg_presentation;
-    {
-        let config = CONFIG.read().unwrap();
-        cfg_presentation = config.open_presentation_default;
-        cfg_fullscreen = config.open_fullscreen_default;
-    }
-
-    Ok(iced::application("Miro", App::update, App::view)
-        .antialiasing(true)
-        .theme(theme)
-        .font(iced_fonts::DEVICON_FONT_BYTES)
-        .subscription(App::subscription)
-        .window(settings())
-        .font(include_bytes!("../assets/font/Geist-VariableFont_wght.ttf").as_slice())
-        .default_font(Font::with_name("Geist"))
-        .run_with(move || {
+            }
+            let cfg_fullscreen;
+            let cfg_presentation;
+            {
+                let config = CONFIG.read().unwrap();
+                cfg_presentation = config.open_presentation_default;
+                cfg_fullscreen = config.open_fullscreen_default;
+            }
             let state = App::new(
                 BookmarkStore::system_store().unwrap_or_default(),
                 RecentFiles::system_store().unwrap_or_default(),
@@ -185,7 +178,18 @@ fn main() -> anyhow::Result<()> {
             }
 
             (state, file_task)
-        })?)
+        },
+        App::update,
+        App::view,
+    )
+    .antialiasing(true)
+    .theme(theme)
+    .font(iced_fonts::DEVICON_FONT_BYTES)
+    .subscription(App::subscription)
+    .window(settings())
+    .font(include_bytes!("../assets/font/Geist-VariableFont_wght.ttf").as_slice())
+    .default_font(Font::with_name("Geist"))
+    .run()?)
 }
 
 pub fn theme(app: &App) -> Theme {

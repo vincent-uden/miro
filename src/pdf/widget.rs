@@ -378,9 +378,10 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
                     size: text_size.into(),
                     line_height: widget::text::LineHeight::Relative(1.0),
                     font: iced::Font::default(),
-                    horizontal_alignment: iced::alignment::Horizontal::Center,
-                    vertical_alignment: iced::alignment::Vertical::Center,
                     shaping: widget::text::Shaping::Basic,
+                    align_x: widget::text::Alignment::Center,
+                    align_y: iced::alignment::Vertical::Center,
+                    ..Default::default()
                 });
             }
         }
@@ -1250,7 +1251,8 @@ impl PdfViewer {
                         }),
                     widget::space::horizontal(),
                     widget::button(
-                        widget::text(icon_to_string(RequiredIcons::X))
+                        // TODO: Svg x
+                        widget::text("x")
                             .align_y(iced::alignment::Vertical::Bottom)
                             .size(24.0)
                             .font(DEVICON_FONT),

@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf, time::Duration};
 
 use async_watcher::{AsyncDebouncer, notify::RecursiveMode};
 use iced::{
-    futures::{SinkExt, Stream},
+    futures::{SinkExt, Stream, channel::mpsc::Sender},
     stream,
 };
 use tokio::sync::mpsc;
@@ -20,7 +20,7 @@ pub enum WatchNotification {
 }
 
 pub fn file_watcher() -> impl Stream<Item = WatchNotification> {
-    stream::channel(100, |mut output| async move {
+    stream::channel(100, |mut output: Sender<WatchNotification>| async move {
         let (sender, mut receiver) = mpsc::channel(100);
         let _ = output.send(WatchNotification::Ready(sender)).await;
 
