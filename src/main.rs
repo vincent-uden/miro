@@ -208,22 +208,13 @@ pub fn theme(app: &App) -> Theme {
             primary: Color::from_rgb8(167, 143, 135),
             success: Color::from_rgb8(0, 255, 0),
             danger: Color::from_rgb8(255, 0, 0),
+            warning: Color::from_rgb8(255, 0, 0),
         },
         |_: Palette| Extended {
-            background: Background {
-                base: Pair {
-                    color: Color::from_rgb8(240, 239, 238),
-                    text: Color::from_rgb8(30, 30, 30),
-                },
-                weak: Pair {
-                    color: Color::from_rgb8(255, 255, 255),
-                    text: Color::from_rgb8(30, 30, 30),
-                },
-                strong: Pair {
-                    color: Color::from_rgb8(187, 184, 187),
-                    text: Color::from_rgb8(255, 255, 255),
-                },
-            },
+            background: Background::new(
+                Color::from_rgb8(240, 239, 238),
+                Color::from_rgb8(30, 30, 30),
+            ),
             primary: Primary {
                 base: Pair {
                     color: Color::from_rgb8(167, 143, 135),
@@ -266,6 +257,20 @@ pub fn theme(app: &App) -> Theme {
                 },
             },
             is_dark: false,
+            warning: Warning {
+                base: Pair {
+                    color: Color::from_rgb8(167, 143, 135),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(228, 226, 226),
+                    text: Color::from_rgb8(30, 30, 30),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(147, 123, 115),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
         },
     );
     let miro_dark = Theme::custom_with_fn(
@@ -276,22 +281,13 @@ pub fn theme(app: &App) -> Theme {
             primary: Color::from_rgb8(42, 195, 222),
             success: Color::from_rgb8(158, 206, 106),
             danger: Color::from_rgb8(247, 118, 142),
+            warning: Color::from_rgb8(247, 118, 142),
         },
         |_: Palette| Extended {
-            background: Background {
-                base: Pair {
-                    color: Color::from_rgb8(26, 27, 38),
-                    text: Color::from_rgb8(154, 165, 206),
-                },
-                weak: Pair {
-                    color: Color::from_rgb8(36, 40, 59),
-                    text: Color::from_rgb8(154, 165, 206),
-                },
-                strong: Pair {
-                    color: Color::from_rgb8(51, 56, 71),
-                    text: Color::from_rgb8(154, 165, 206),
-                },
-            },
+            background: Background::new(
+                Color::from_rgb8(26, 27, 38),
+                Color::from_rgb8(154, 165, 206),
+            ),
             primary: Primary {
                 base: Pair {
                     color: Color::from_rgb8(42, 195, 222),
@@ -349,6 +345,20 @@ pub fn theme(app: &App) -> Theme {
                 },
             },
             is_dark: true,
+            warning: Warning {
+                base: Pair {
+                    color: Color::from_rgb8(247, 118, 142),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                weak: Pair {
+                    color: Color::from_rgb8(250, 150, 170),
+                    text: Color::from_rgb8(26, 27, 38),
+                },
+                strong: Pair {
+                    color: Color::from_rgb8(244, 86, 114),
+                    text: Color::from_rgb8(255, 255, 255),
+                },
+            },
         },
     );
     match app.dark_mode {
