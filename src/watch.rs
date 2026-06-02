@@ -2,10 +2,10 @@ use std::{fs, path::PathBuf, time::Duration};
 
 use async_watcher::{AsyncDebouncer, notify::RecursiveMode};
 use iced::{
-    futures::{SinkExt, Stream},
+    futures::{SinkExt, Stream, channel::mpsc},
     stream,
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc as tokio_mpsc;
 
 #[derive(Debug)]
 pub enum WatchMessage {
@@ -15,52 +15,55 @@ pub enum WatchMessage {
 
 #[derive(Debug, Clone)]
 pub enum WatchNotification {
-    Ready(mpsc::Sender<WatchMessage>),
+    Ready(tokio_mpsc::Sender<WatchMessage>),
     Changed(PathBuf),
 }
 
 pub fn file_watcher() -> impl Stream<Item = WatchNotification> {
-    stream::channel(100, |mut output| async move {
-        let (sender, mut receiver) = mpsc::channel(100);
-        let _ = output.send(WatchNotification::Ready(sender)).await;
+    stream::channel(
+        100,
+        |mut output: mpsc::Sender<WatchNotification>| async move {
+            let (sender, mut receiver) = tokio_mpsc::channel(100);
+            let _ = output.send(WatchNotification::Ready(sender)).await;
 
-        let (mut debouncer, mut file_events) = AsyncDebouncer::new_with_channel(
-            Duration::from_millis(200),
-            Some(Duration::from_millis(200)),
-        )
-        .await
-        .unwrap();
+            let (mut debouncer, mut file_events) = AsyncDebouncer::new_with_channel(
+                Duration::from_millis(200),
+                Some(Duration::from_millis(200)),
+            )
+            .await
+            .unwrap();
 
-        loop {
-            tokio::select! {
-                Some(msg) = receiver.recv() => {
-                    match msg {
-                        WatchMessage::StartWatch(path_buf) => {
-                            let canonical = fs::canonicalize(path_buf).unwrap();
-                            debouncer.watcher().watch(&canonical, RecursiveMode::Recursive).unwrap()
-                        }
-                        WatchMessage::StopWatch(path_buf) => {
-                            let canonical = fs::canonicalize(path_buf).unwrap();
-                            debouncer.watcher().unwatch(&canonical).unwrap()
-                        }
-                    }
-                }
-                Some(file_event) = file_events.recv() => {
-                    match file_event {
-                        Ok(events) => {
-                            for e in &events {
-                                if let async_watcher::notify::EventKind::Modify(_) = e.event.kind {
-                                    let _ = output.send(WatchNotification::Changed(e.event.paths[0].clone())).await;
-                                }
+            loop {
+                tokio::select! {
+                    Some(msg) = receiver.recv() => {
+                        match msg {
+                            WatchMessage::StartWatch(path_buf) => {
+                                let canonical = fs::canonicalize(path_buf).unwrap();
+                                debouncer.watcher().watch(&canonical, RecursiveMode::Recursive).unwrap()
+                            }
+                            WatchMessage::StopWatch(path_buf) => {
+                                let canonical = fs::canonicalize(path_buf).unwrap();
+                                debouncer.watcher().unwatch(&canonical).unwrap()
                             }
                         }
-                        Err(_) => todo!(),
+                    }
+                    Some(file_event) = file_events.recv() => {
+                        match file_event {
+                            Ok(events) => {
+                                for e in &events {
+                                    if let async_watcher::notify::EventKind::Modify(_) = e.event.kind {
+                                        let _ = output.send(WatchNotification::Changed(e.event.paths[0].clone())).await;
+                                    }
+                                }
+                            }
+                            Err(_) => todo!(),
+                        }
+                    }
+                    else => {
+                        panic!("File watcher channels closed, this shouldn't happen.");
                     }
                 }
-                else => {
-                    panic!("File watcher channels closed, this shouldn't happen.");
-                }
             }
-        }
-    })
+        },
+    )
 }

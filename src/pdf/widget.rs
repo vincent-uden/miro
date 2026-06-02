@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex, Weak},
 };
@@ -15,8 +15,8 @@ use iced::{
         canvas::{self, Cache, Stroke},
     },
 };
-use iced_aw::iced_fonts::REQUIRED_FONT;
-use iced_fonts::required::{RequiredIcons, icon_to_string};
+use iced::advanced::image::Renderer as _;
+use bytes::Bytes;
 
 use mupdf::{
     Colorspace, Device, Matrix, Pixmap, TextPageFlags,
@@ -105,14 +105,15 @@ enum RenderKey {
     Partial(usize, u32, i32, i32),
 }
 
-struct Document {
+struct Document<'a> {
     cache: Cache,
     pages: Vec<(image::Handle, Rect<f32>)>,
+    allocation_cache: &'a RefCell<HashMap<image::Id, image::Allocation>>,
     draw_page_borders: bool,
     pdf_dark_mode: bool,
 }
 
-impl std::fmt::Debug for Document {
+impl<'a> std::fmt::Debug for Document<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Document")
             .field("cache", &self.cache)
@@ -121,8 +122,9 @@ impl std::fmt::Debug for Document {
     }
 }
 
-impl Document {
+impl<'a> Document<'a> {
     pub fn new(
+        allocation_cache: &'a RefCell<HashMap<image::Id, image::Allocation>>,
         pages: Vec<(image::Handle, Rect<f32>)>,
         draw_page_borders: bool,
         pdf_dark_mode: bool,
@@ -130,13 +132,14 @@ impl Document {
         Self {
             cache: Cache::default(),
             pages,
+            allocation_cache,
             draw_page_borders,
             pdf_dark_mode,
         }
     }
 }
 
-impl widget::canvas::Program<PdfMessage> for Document {
+impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
     type State = ();
 
     fn draw(
@@ -154,10 +157,25 @@ impl widget::canvas::Program<PdfMessage> for Document {
 
             for (handle, rect) in &self.pages {
                 let bounds: iced::Rectangle = (*rect).into();
-                frame.draw_image(
-                    bounds,
-                    image::Image::new(handle).filter_method(image::FilterMethod::Nearest),
-                );
+
+                // NOTE: Ensure the image is explicitly allocated on the GPU so the next
+                // frame is guaranteed to render it without asynchronous upload delay.
+                let img = {
+                    let mut cache = self.allocation_cache.borrow_mut();
+                    if !cache.contains_key(&handle.id())
+                        && let Ok(allocation) = renderer.load_image(handle)
+                    {
+                        let handle = allocation.handle().clone();
+                        cache.insert(handle.id(), allocation);
+                        image::Image::new(handle).filter_method(image::FilterMethod::Nearest)
+                    } else {
+                        // NOTE: This should in practice never happen but I still dont want to crash
+                        // if we for some reason fail to upload an image
+                        image::Image::new(handle).filter_method(image::FilterMethod::Nearest)
+                    }
+                };
+
+                frame.draw_image(bounds, img);
             }
         });
         vec![bg]
@@ -227,27 +245,26 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
     fn update(
         &self,
         state: &mut Self::State,
-        event: canvas::Event,
+        event: &canvas::Event,
         _bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
-    ) -> (iced::event::Status, Option<PdfMessage>) {
-        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) =
-            event.clone()
-            && key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+    ) -> Option<canvas::Action<PdfMessage>> {
+        let event = (*event).clone();
+        if let canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            ref key, modifiers, ..
+        }) = event
+            && key == &iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
             && !modifiers.control()
             && !modifiers.alt()
             && !modifiers.logo()
             && self.viewer.active_comment.is_some()
         {
-            return (
-                iced::event::Status::Captured,
-                Some(PdfMessage::CloseComment),
-            );
+            return Some(canvas::Action::publish(PdfMessage::CloseComment).and_capture());
         }
 
         if !self.viewer.show_link_hitboxes {
             state.was_active = false;
-            return (iced::event::Status::Ignored, None);
+            return None;
         }
 
         if !state.was_active {
@@ -260,14 +277,11 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         }) = event
         {
             if modifiers.control() || modifiers.alt() || modifiers.logo() {
-                return (iced::event::Status::Ignored, None);
+                return None;
             }
 
             if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
-                return (
-                    iced::event::Status::Captured,
-                    Some(PdfMessage::CloseLinkHitboxes),
-                );
+                return Some(canvas::Action::publish(PdfMessage::CloseLinkHitboxes).and_capture());
             }
 
             if let iced::keyboard::Key::Character(c) = key {
@@ -280,23 +294,22 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
 
                 if let Some(idx) = keys.iter().position(|k| k == &state.pending_key) {
                     state.pending_key.clear();
-                    return (
-                        iced::event::Status::Captured,
-                        Some(PdfMessage::ActivateLink(idx)),
+                    return Some(
+                        canvas::Action::publish(PdfMessage::ActivateLink(idx)).and_capture(),
                     );
                 }
 
                 let is_prefix = keys.iter().any(|k| k.starts_with(&state.pending_key));
                 if is_prefix {
-                    return (iced::event::Status::Captured, None);
+                    return Some(canvas::Action::capture());
                 }
 
                 state.pending_key.clear();
-                return (iced::event::Status::Captured, None);
+                return Some(canvas::Action::capture());
             }
         }
 
-        (iced::event::Status::Ignored, None)
+        None
     }
 
     fn draw(
@@ -382,12 +395,13 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
                 frame.fill_text(geometry::Text {
                     content: key.clone(),
                     position: iced::Point::new(bg_x + bg_w / 2.0, bg_y + bg_h / 2.0),
+                    max_width: bg_w,
                     color: iced::Color::WHITE,
                     size: text_size.into(),
                     line_height: widget::text::LineHeight::Relative(1.0),
                     font: iced::Font::default(),
-                    horizontal_alignment: iced::alignment::Horizontal::Center,
-                    vertical_alignment: iced::alignment::Vertical::Center,
+                    align_x: iced::alignment::Horizontal::Center.into(),
+                    align_y: iced::alignment::Vertical::Center,
                     shaping: widget::text::Shaping::Basic,
                 });
             }
@@ -451,6 +465,9 @@ pub struct PdfViewer {
     /// Final iced image handles cached by render key. Kept separately so iced can reuse the
     /// GPU texture without re-uploading when the widget redraws for non-visual reasons.
     render_cache: RefCell<HashMap<RenderKey, image::Handle>>,
+    /// Explicit image allocations that guarantee GPU textures are uploaded and retained
+    /// for visible pages.
+    allocation_cache: RefCell<HashMap<image::Id, image::Allocation>>,
     /// Reusable MuPDF pixmaps keyed by page. These are expensive to allocate and are not Send,
     /// so we pool them separately from the plain CPU buffers.
     pixmap_pool: RefCell<HashMap<usize, Pixmap>>,
@@ -590,6 +607,7 @@ impl PdfViewer {
             doc,
             display_lists,
             render_cache: RefCell::default(),
+            allocation_cache: RefCell::default(),
             pixmap_pool: RefCell::default(),
             buffer_pool: Arc::new(Mutex::new(HashMap::new())),
             translation: Vector::zero(),
@@ -847,6 +865,7 @@ impl PdfViewer {
             }
             PdfMessage::FileChanged => {
                 self.render_cache.borrow_mut().clear();
+                self.allocation_cache.borrow_mut().clear();
                 self.pixmap_pool.borrow_mut().clear();
 
                 if let Some(path_str) = self.path.to_str()
@@ -1143,7 +1162,16 @@ impl PdfViewer {
                 cache.retain(|key, _| used_keys.contains(key));
             }
 
+            {
+                let render_cache = self.render_cache.borrow();
+                let active_ids: HashSet<_> = render_cache.values().map(|h| h.id()).collect();
+                self.allocation_cache
+                    .borrow_mut()
+                    .retain(|id, _| active_ids.contains(id));
+            }
+
             let pages_canvas = widget::canvas(Document::new(
+                &self.allocation_cache,
                 with_handles,
                 self.draw_page_borders,
                 self.pdf_dark_mode,
@@ -1213,7 +1241,7 @@ impl PdfViewer {
         let handle = image::Handle::from_rgba(
             pix.width(),
             pix.height(),
-            image::Bytes::from_owner(PooledBuffer {
+            Bytes::from_owner(PooledBuffer {
                 buf: Some(buf),
                 pool: Arc::downgrade(&self.buffer_pool),
                 page_idx: i,
@@ -1256,12 +1284,11 @@ impl PdfViewer {
                                 color: Some(palette.primary.base.color),
                             }
                         }),
-                    widget::horizontal_space().width(iced::Length::Fill),
+                    widget::space::horizontal().width(iced::Length::Fill),
                     widget::button(
-                        widget::text(icon_to_string(RequiredIcons::X))
+                        widget::text("×")
                             .align_y(iced::alignment::Vertical::Bottom)
-                            .size(24.0)
-                            .font(REQUIRED_FONT),
+                            .size(24.0),
                     )
                     .padding(0.0)
                     .style(|theme: &iced::Theme, status: widget::button::Status| {
@@ -1701,6 +1728,7 @@ impl PdfViewer {
         if self.pdf_dark_mode != dark_mode_enabled {
             self.pdf_dark_mode = dark_mode_enabled;
             self.render_cache.borrow_mut().clear();
+            self.allocation_cache.borrow_mut().clear();
             self.buffer_pool.lock().unwrap().clear();
             self.pixmap_pool.borrow_mut().clear();
         }
@@ -1710,6 +1738,7 @@ impl PdfViewer {
         if self.interface_dark_mode != dark_mode_enabled {
             self.interface_dark_mode = dark_mode_enabled;
             self.render_cache.borrow_mut().clear();
+            self.allocation_cache.borrow_mut().clear();
         }
     }
 
