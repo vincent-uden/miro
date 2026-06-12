@@ -26,11 +26,11 @@ mod config;
 mod geometry;
 mod icons;
 mod jumplist;
+mod macos_menu;
 mod pdf;
 mod recent_files;
 mod rpc;
 mod watch;
-mod macos_menu;
 
 // of the screen
 // TODO: Figure out why hovering over a menu disables all other inputs/buttons in the program (write
@@ -163,23 +163,24 @@ fn main() -> anyhow::Result<()> {
                 BookmarkStore::system_store().unwrap_or_default(),
                 RecentFiles::system_store().unwrap_or_default(),
             );
-            let file_task = match path {
+            let startup_tasks = match path {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
-            let mut file_task =
-                file_task.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
+            let mut startup_tasks = startup_tasks.chain(iced::Task::done(app::AppMessage::InitializeNativeMenuBar));
+            startup_tasks =
+                startup_tasks.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
 
             // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
             // thus deterministic.
             if args.fullscreen || cfg_fullscreen {
-                file_task = file_task.chain(iced::Task::done(AppMessage::ToggleFullscreen));
+                startup_tasks = startup_tasks.chain(iced::Task::done(AppMessage::ToggleFullscreen));
             }
             if args.presentation || cfg_presentation {
-                file_task = file_task.chain(iced::Task::done(AppMessage::TogglePresentationMode));
+                startup_tasks = startup_tasks.chain(iced::Task::done(AppMessage::TogglePresentationMode));
             }
 
-            (state, file_task)
+            (state, startup_tasks)
         },
         App::update,
         App::view,

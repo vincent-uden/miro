@@ -1,10 +1,9 @@
 use muda::{AcceleratorParseError, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
-use muda::accelerator::{Accelerator};
+use muda::accelerator::{KeyAccelerator};
 use crate::CONFIG;
 use keybinds2::{Keybind};
 use crate::config::BindableMessage;
 use crate::app::AppMessage;
-use crate::pdf::PdfMessage;
 use std::fmt;
 use std::str::FromStr;
 
@@ -38,52 +37,32 @@ impl AppMenu {
         // The first item appended always has to be the app (sub)menu (mac will override whatever else is present)
         menu.append(&app_submenu).unwrap();
 
-        let cfg = CONFIG.read().unwrap();
         let file_submenu = Submenu::with_items(
             "&File",
             true,
             &[
-                &MenuItem::with_id(
-                    "OpenFileFinder",
-                    "Open File",
-                    true,
-                    Some(
-                        keybind_to_accelerator(
-                            cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                                .unwrap(),
-                        )
-                        .unwrap(),
-                    ),
-                ),
-                &MenuItem::with_id(
-                    "PrintPdf",
-                    "Print",
-                    true,
-                    Some(
-                        keybind_to_accelerator(
-                            cfg.get_binding_for_msg(BindableMessage::PrintPdf).unwrap(),
-                        )
-                        .unwrap(),
-                    ),
-                ),
+                &new_menu_item("Open File", BindableMessage::OpenFileFinder),
+                &new_menu_item("Print PDF", BindableMessage::PrintPdf),
             ],
         )
         .unwrap();
         let view_submenu = Submenu::with_items(
             "&View",
             true,
-            &[&MenuItem::with_id(
-                "ToggleUIDarkMode",
-                "Toggle UI Dark Mode",
-                true,
-                Some(
-                    keybind_to_accelerator(
-                        cfg.get_binding_for_msg(BindableMessage::ToggleDarkModeUi)
-                            .unwrap(),
-                    )
-                    .unwrap(),
+            &[
+                &new_menu_item("Toggle UI Dark Mode", BindableMessage::ToggleDarkModeUi),
+                &new_menu_item("Toggle PDF Dark Mode", BindableMessage::ToggleDarkModePdf),
+                &new_menu_item("Toggle Page Borders", BindableMessage::TogglePageBorders),
+                &new_menu_item("Zoom In", BindableMessage::ZoomIn),
+                &new_menu_item("Zoom Out", BindableMessage::ZoomOut),
+                &new_menu_item("Zoom to 100%", BindableMessage::ZoomHome),
+                &new_menu_item("Fit To Screen", BindableMessage::ZoomFit),
+                &new_menu_item("Toggle Sidebar", BindableMessage::ToggleSidebar),
+                &new_menu_item(
+                    "Toggle Presentation Mode",
+                    BindableMessage::TogglePresentationMode,
                 ),
-            )],
+            ],
         )
         .unwrap();
         let window_submenu = Submenu::with_items(
@@ -108,7 +87,6 @@ impl AppMenu {
         }
     }
 
-    // This can not be called inside new(), must be done in the view.
     pub fn init(&self) {
         // #[cfg(target_os = "macos")]
         // {
@@ -117,6 +95,41 @@ impl AppMenu {
         self.help_submenu.set_as_help_menu_for_nsapp();
         // }
     }
+}
+
+// This is used to convert a BindableMessage to itself but as a string
+impl fmt::Display for BindableMessage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+// Our MenuItems will have id equal to the BindableMessage enum values as a string.
+// For example, the Open file menu item will have id of "OpenFileFinder" (corresponding to BindableMessage::OpenFileFinder)
+pub fn new_menu_item(label: &str, msg: BindableMessage) -> MenuItem {
+    let cfg = CONFIG.read().unwrap();
+    println!("{:?}", msg.to_string());
+    let menu_item = MenuItem::with_id(
+        msg.to_string(),
+        label,
+        true,
+        None,
+        
+    );
+    let keyaccel = keybind_to_keyaccelerator(cfg.get_binding_for_msg(msg).unwrap()).unwrap();
+    menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
+
+    return menu_item;
+}
+
+// Converts a keybinds2::Keybind into a muda::KeyAccelerator.
+// Ideally we'd want a single system for managing keybinds, but as muda uses KeyAccelerator
+// realistically I don't see how this is possible. This is fine for now.
+pub fn keybind_to_keyaccelerator(
+    keybind: Keybind<BindableMessage>,
+) -> Result<KeyAccelerator, AcceleratorParseError> {
+    let keybind_as_string = keybind.seq.as_slice()[0].to_string();
+    return KeyAccelerator::from_str(&keybind_as_string);
 }
 
 // Dummy debug for now (muda doesn't implement debug for some reason?)
@@ -130,31 +143,11 @@ pub fn menu_bar_listener() -> impl iced::futures::Stream<Item = AppMessage> {
     iced::stream::channel(100, async |mut sender| {
         loop {
             if let Ok(event) = MenuEvent::receiver().try_recv() {
-                match (&event.id().0).as_str() {
-                    "OpenFileFinder" => {
-                        let _ = sender.try_send(AppMessage::OpenNewFileFinder);
-                    }
-                    "PrintPdf" => {
-                        let _ = sender.try_send(AppMessage::PdfMessage(PdfMessage::PrintPdf));
-                    }
-                    "ToggleUIDarkMode" => {
-                        let _ = sender.try_send(AppMessage::ToggleDarkModeUi);
-                    }
-                    _ => {}
-                }
+                let msg = BindableMessage::from_str((&event.id().0).as_str()).unwrap();
+                let _ = sender.try_send(AppMessage::from(msg));
             } else {
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
         }
     })
-}
-
-// Converts a keybinds2::Keybind into a muda::Accelerator.
-// Ideally we'd want a single system for managing keybinds, but as muda uses Accelerator
-// realistically I don't see how this is possible. This is fine for now.
-pub fn keybind_to_accelerator(
-    keybind: Keybind<BindableMessage>,
-) -> Result<Accelerator, AcceleratorParseError> {
-    let keybind_as_string = keybind.seq.as_slice()[0].to_string();
-    return Accelerator::from_str(&keybind_as_string);
 }

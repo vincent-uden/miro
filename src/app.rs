@@ -92,6 +92,7 @@ pub struct App {
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum AppMessage {
+    InitializeNativeMenuBar,
     OpenFile(PathBuf),
     CloseFile(PathBuf),
     OpenNewFileFinder,
@@ -172,10 +173,8 @@ impl App {
         if CONFIG.read().unwrap().open_sidebar {
             Self::open_sidebar(&mut ps, pdf_id);
         }
-        let app_menu = AppMenu::new();
-
         Self {
-            app_menu: app_menu,
+            app_menu: AppMenu::new(),
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
@@ -234,6 +233,10 @@ impl App {
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         let _span = tracy_client::span!("App update");
         match message {
+            AppMessage::InitializeNativeMenuBar => {
+                self.app_menu.init();
+                iced::Task::none()
+            },
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 self.recent_files.add_recent(path_buf.clone());
@@ -1004,7 +1007,6 @@ impl App {
     }
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
-        self.app_menu.init();
         let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
             pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
