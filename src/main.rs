@@ -30,6 +30,7 @@ mod pdf;
 mod recent_files;
 mod rpc;
 mod watch;
+mod macos_menu;
 
 // of the screen
 // TODO: Figure out why hovering over a menu disables all other inputs/buttons in the program (write
@@ -155,7 +156,6 @@ fn main() -> anyhow::Result<()> {
         cfg_presentation = config.open_presentation_default;
         cfg_fullscreen = config.open_fullscreen_default;
     }
-
     Ok(iced::application(
         move || {
             let path = args.path.clone();
@@ -197,6 +197,7 @@ fn main() -> anyhow::Result<()> {
 pub fn theme(app: &App) -> Theme {
     use iced::theme::palette::{*};
 
+    // TODO: Custom themes for UI, and maybe custom pdf background color (perhaps in json files?).
     let miro_light = Theme::custom_with_fn(
         "Miro Light".to_string(),
         iced::theme::Palette {

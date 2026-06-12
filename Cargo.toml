@@ -22,6 +22,7 @@ colorgrad = "0.7.1"
 home = "0.5.11"
 iced = { version = "0.14.0", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg", "canvas"] }
 iced_aw = { version = "0.14.1", default-features = false, features = ["menu"] }
+muda = "0.19.2"
 iced_fonts = { version = "0.3.0", features = ["nerd"] }
 keybinds2 = { version = "0.2.0", features = ["iced", "serde"] }
 logos = "0.15.0"

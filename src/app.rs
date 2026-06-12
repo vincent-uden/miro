@@ -4,6 +4,7 @@ use std::{
 };
 
 use iced::{
+    Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
     advanced::graphics::core::window,
     alignment,
     border::{self, Radius},
@@ -13,11 +14,10 @@ use iced::{
     keyboard::Modifiers,
     theme::palette,
     widget::{
-        self, button, container, pane_grid, row, scrollable,
+        self, PaneGrid, button, container, pane_grid, row, scrollable,
         scrollable::{Direction, Scrollbar},
-        stack, text, PaneGrid,
+        stack, text,
     },
-    Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
 use iced_aw::{Menu, menu::primary, menu_items};
 use iced_aw::{
@@ -44,6 +44,7 @@ use crate::{
         page_layout::PageLayout,
         widget::{OutlineItem, PdfViewer},
     },
+    macos_menu::{AppMenu, menu_bar_listener},
     recent_files::RecentFiles,
     rpc::rpc_server,
     watch::{WatchMessage, WatchNotification, file_watcher},
@@ -69,6 +70,7 @@ pub enum SidebarTab {
 
 #[derive(Debug)]
 pub struct App {
+    app_menu: AppMenu,
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
@@ -170,8 +172,10 @@ impl App {
         if CONFIG.read().unwrap().open_sidebar {
             Self::open_sidebar(&mut ps, pdf_id);
         }
+        let app_menu = AppMenu::new();
 
         Self {
+            app_menu: app_menu,
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
@@ -628,7 +632,6 @@ impl App {
     fn create_menu_bar(&self) -> Element<'_, AppMessage> {
         let menu_tpl_1 = |items| Menu::new(items).max_width(300.0).offset(0.0).spacing(0.0);
         let cfg = CONFIG.read().unwrap();
-
         let exit_close_label = if self.pdfs.is_empty() {
             "Exit"
         } else {
@@ -1001,6 +1004,7 @@ impl App {
     }
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
+        self.app_menu.init();
         let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
             pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
@@ -1323,6 +1327,7 @@ impl App {
 
         let mut subs = vec![
             keys,
+            Subscription::run(menu_bar_listener),
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
         ];
 
