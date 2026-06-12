@@ -65,6 +65,21 @@ impl AppMenu {
             ],
         )
         .unwrap();
+        let layout_submenu = Submenu::with_items(
+            "&Layout",
+            true,
+            &[
+                &new_menu_item("Toggle Sidebar", BindableMessage::ToggleSidebar),
+                &new_menu_item("Single Page", BindableMessage::SinglePageLayout),
+                &new_menu_item("Double Page", BindableMessage::DoublePageLayout),
+                &new_menu_item(
+                    "Double Page With Title Page",
+                    BindableMessage::DoublePageTitlePageLayout,
+                ),
+                &new_menu_item("Presentation", BindableMessage::PresentationLayout),
+            ],
+        )
+        .unwrap();
         let window_submenu = Submenu::with_items(
             "&Window",
             true,
@@ -78,7 +93,7 @@ impl AppMenu {
         )
         .unwrap();
         let help_submenu = Submenu::new("&Help", true);
-        menu.append_items(&[&file_submenu, &view_submenu, &window_submenu, &help_submenu])
+        menu.append_items(&[&file_submenu, &view_submenu, &layout_submenu, &window_submenu, &help_submenu])
             .unwrap();
         Self {
             menu,
@@ -108,14 +123,7 @@ impl fmt::Display for BindableMessage {
 // For example, the Open file menu item will have id of "OpenFileFinder" (corresponding to BindableMessage::OpenFileFinder)
 pub fn new_menu_item(label: &str, msg: BindableMessage) -> MenuItem {
     let cfg = CONFIG.read().unwrap();
-    println!("{:?}", msg.to_string());
-    let menu_item = MenuItem::with_id(
-        msg.to_string(),
-        label,
-        true,
-        None,
-        
-    );
+    let menu_item = MenuItem::with_id(msg.to_string(), label, true, None);
     let keyaccel = keybind_to_keyaccelerator(cfg.get_binding_for_msg(msg).unwrap()).unwrap();
     menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
 
