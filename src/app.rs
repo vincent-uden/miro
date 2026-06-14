@@ -1339,9 +1339,11 @@ impl App {
 
         let mut subs = vec![
             keys,
-            Subscription::run(menu_bar_listener),
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
         ];
+        if self.native_menu_bar.is_some() {
+            subs.push(Subscription::run(menu_bar_listener));
+        }
 
         let config = CONFIG.read().unwrap();
         if config.rpc_enabled {
