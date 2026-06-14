@@ -151,10 +151,12 @@ fn main() -> anyhow::Result<()> {
     }
     let cfg_fullscreen;
     let cfg_presentation;
+    let cfg_native_menu_bar;
     {
         let config = CONFIG.read().unwrap();
         cfg_presentation = config.open_presentation_default;
         cfg_fullscreen = config.open_fullscreen_default;
+        cfg_native_menu_bar = config.native_menu_bar;
     }
     Ok(iced::application(
         move || {
@@ -167,9 +169,13 @@ fn main() -> anyhow::Result<()> {
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
-            let mut startup_tasks = startup_tasks.chain(iced::Task::done(app::AppMessage::InitializeNativeMenuBar));
-            startup_tasks =
+            let mut startup_tasks =
                 startup_tasks.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
+
+            if cfg_native_menu_bar {
+                startup_tasks =
+                    startup_tasks.chain(iced::Task::done(app::AppMessage::InitializeNativeMenuBar));
+            }
 
             // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
             // thus deterministic.
@@ -177,7 +183,8 @@ fn main() -> anyhow::Result<()> {
                 startup_tasks = startup_tasks.chain(iced::Task::done(AppMessage::ToggleFullscreen));
             }
             if args.presentation || cfg_presentation {
-                startup_tasks = startup_tasks.chain(iced::Task::done(AppMessage::TogglePresentationMode));
+                startup_tasks =
+                    startup_tasks.chain(iced::Task::done(AppMessage::TogglePresentationMode));
             }
 
             (state, startup_tasks)

@@ -199,6 +199,13 @@ pub enum BindableMessage {
     PresentationLayout,
 }
 
+// This is used to convert a BindableMessage to itself but as a string
+impl fmt::Display for BindableMessage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl From<BindableMessage> for AppMessage {
     fn from(val: BindableMessage) -> Self {
         match val {
@@ -278,6 +285,7 @@ pub struct Config {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     pub open_sidebar: bool,
+    pub native_menu_bar: bool,
     pub default_search_method: SearchMethod,
     pub open_fullscreen_default: bool,
     pub open_presentation_default: bool,
@@ -288,11 +296,11 @@ impl Config {
         Config {
             keyboard: Keybinds::new(vec![]),
             mouse: Vec::new(),
+            native_menu_bar: true,
             trackpad_sensitivity: 1.0,
             ..Default::default()
         }
     }
-
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
         let binds = self.keyboard.as_slice();
         binds.iter().find(|b| b.action == msg).cloned()
@@ -808,6 +816,10 @@ impl Default for Config {
             default_search_method: SearchMethod::PlainText,
             open_fullscreen_default: false,
             open_presentation_default: false,
+            #[cfg(target_os = "macos")]
+            native_menu_bar: true,
+            #[cfg(not(target_os = "macos"))]
+            native_menu_bar: false,
         }
     }
 }

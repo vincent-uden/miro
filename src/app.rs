@@ -44,7 +44,7 @@ use crate::{
         page_layout::PageLayout,
         widget::{OutlineItem, PdfViewer},
     },
-    macos_menu::{AppMenu, menu_bar_listener},
+    macos_menu::{MudaMenu, menu_bar_listener},
     recent_files::RecentFiles,
     rpc::rpc_server,
     watch::{WatchMessage, WatchNotification, file_watcher},
@@ -70,7 +70,7 @@ pub enum SidebarTab {
 
 #[derive(Debug)]
 pub struct App {
-    app_menu: AppMenu,
+    native_menu_bar: Option<MudaMenu>,
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
@@ -167,14 +167,16 @@ impl App {
     }
 
     pub fn new(bookmark_store: BookmarkStore, recent_files: RecentFiles) -> Self {
+        let cfg = CONFIG.read().unwrap();
         let (mut ps, pdf_id) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
         });
-        if CONFIG.read().unwrap().open_sidebar {
+        if cfg.open_sidebar {
             Self::open_sidebar(&mut ps, pdf_id);
         }
+
         Self {
-            app_menu: AppMenu::new(),
+            native_menu_bar: None,
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
@@ -233,10 +235,14 @@ impl App {
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         let _span = tracy_client::span!("App update");
         match message {
+            // This never gets called unless cfg.native_menu_bar is true, and the app is just
+            // starting up. This is why no `if cfg.native_menu_bar` is neccessary here.
             AppMessage::InitializeNativeMenuBar => {
-                self.app_menu.init();
+                let m = MudaMenu::new();
+                m.init();
+                self.native_menu_bar = Some(m);
                 iced::Task::none()
-            },
+            }
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 self.recent_files.add_recent(path_buf.clone());
@@ -1011,7 +1017,6 @@ impl App {
             pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
                 PaneType::Pdf => {
-                    let menu_bar = self.create_menu_bar();
                     let pdf_content: iced::Element<'_, AppMessage> = if self.pdfs.is_empty() {
                         widget::space::vertical().into()
                     } else {
@@ -1040,7 +1045,12 @@ impl App {
                                     .into(),
                             );
                         }
-                        widget::column![menu_bar, stack(stack_children)].into()
+                        if self.native_menu_bar.is_none() {
+                            let menu_bar = self.create_menu_bar();
+                            widget::column![menu_bar, stack(stack_children)].into()
+                        } else {
+                            widget::column![stack(stack_children)].into()
+                        }
                     }
                 }
             })

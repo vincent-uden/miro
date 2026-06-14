@@ -7,7 +7,7 @@ use crate::app::AppMessage;
 use std::fmt;
 use std::str::FromStr;
 
-pub struct AppMenu {
+pub struct MudaMenu {
     menu: Menu,
     // These are special in the macos menu bar
     window_submenu: Submenu,
@@ -15,8 +15,7 @@ pub struct AppMenu {
 }
 // TODO:
 // - Support different languages
-// - test on non-mac OSes
-impl AppMenu {
+impl MudaMenu {
     pub fn new() -> Self {
         let menu = Menu::new();
 
@@ -34,8 +33,7 @@ impl AppMenu {
                 &PredefinedMenuItem::quit(None),
             ])
             .unwrap();
-        // The first item appended always has to be the app (sub)menu (mac will override whatever else is present)
-        menu.append(&app_submenu).unwrap();
+        
 
         let file_submenu = Submenu::with_items(
             "&File",
@@ -93,7 +91,9 @@ impl AppMenu {
         )
         .unwrap();
         let help_submenu = Submenu::new("&Help", true);
-        menu.append_items(&[&file_submenu, &view_submenu, &layout_submenu, &window_submenu, &help_submenu])
+        
+        // The first item appended always has to be the app (sub)menu (mac will override whatever else is present)
+        menu.append_items(&[&app_submenu, &file_submenu, &view_submenu, &layout_submenu, &window_submenu, &help_submenu])
             .unwrap();
         Self {
             menu,
@@ -103,19 +103,9 @@ impl AppMenu {
     }
 
     pub fn init(&self) {
-        // #[cfg(target_os = "macos")]
-        // {
         self.menu.init_for_nsapp();
         self.window_submenu.set_as_windows_menu_for_nsapp();
         self.help_submenu.set_as_help_menu_for_nsapp();
-        // }
-    }
-}
-
-// This is used to convert a BindableMessage to itself but as a string
-impl fmt::Display for BindableMessage {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
     }
 }
 
@@ -141,7 +131,7 @@ pub fn keybind_to_keyaccelerator(
 }
 
 // Dummy debug for now (muda doesn't implement debug for some reason?)
-impl fmt::Debug for AppMenu {
+impl fmt::Debug for MudaMenu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppMenu").finish()
     }
