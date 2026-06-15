@@ -91,6 +91,9 @@ pub struct App {
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum AppMessage {
     OpenFile(PathBuf),
+    #[strum(disabled)]
+    #[serde(skip)]
+    OpenTempFile(PathBuf),
     CloseFile(PathBuf),
     OpenNewFileFinder,
     #[strum(disabled)]
@@ -192,6 +195,26 @@ impl App {
         }
     }
 
+    fn open_pdf(&mut self, path_buf: PathBuf) -> iced::Task<AppMessage> {
+        let out = match PdfViewer::from_path(path_buf.clone()) {
+            Ok(mut viewer) => {
+                viewer.set_scale_factor(self.scale_factor);
+                viewer.set_pdf_dark_mode(self.invert_pdf);
+                self.pdfs.push(viewer);
+                iced::Task::done(AppMessage::OpenTab(self.pdfs.len() - 1))
+            }
+            Err(e) => {
+                error!("Couldn't create pdf viewer or {path_buf:?} {e}");
+                iced::Task::none()
+            }
+        };
+        if let Some(sender) = self.file_watcher.as_ref() {
+            // We should never fill this up from here, thus blocking is alright
+            let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
+        }
+        out
+    }
+
     fn has_sidebar_pane(&self) -> bool {
         self.pane_state
             .panes
@@ -233,23 +256,11 @@ impl App {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 self.recent_files.add_recent(path_buf.clone());
-                let out = match PdfViewer::from_path(path_buf.clone()) {
-                    Ok(mut viewer) => {
-                        viewer.set_scale_factor(self.scale_factor);
-                        viewer.set_pdf_dark_mode(self.invert_pdf);
-                        self.pdfs.push(viewer);
-                        iced::Task::done(AppMessage::OpenTab(self.pdfs.len() - 1))
-                    }
-                    Err(e) => {
-                        error!("Couldn't create pdf viewer or {path_buf:?} {e}");
-                        iced::Task::none()
-                    }
-                };
-                if let Some(sender) = self.file_watcher.as_ref() {
-                    // We should never fill this up from here, thus blocking is alright
-                    let _ = sender.blocking_send(WatchMessage::StartWatch(path_buf.clone()));
-                }
-                out
+                self.open_pdf(path_buf)
+            }
+            AppMessage::OpenTempFile(path_buf) => {
+                let path_buf = canonicalize(path_buf).unwrap();
+                self.open_pdf(path_buf)
             }
             AppMessage::CloseFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
