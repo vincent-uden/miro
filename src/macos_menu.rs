@@ -33,7 +33,6 @@ impl MudaMenu {
                 &PredefinedMenuItem::quit(None),
             ])
             .unwrap();
-        
 
         let file_submenu = Submenu::with_items(
             "&File",
@@ -91,10 +90,17 @@ impl MudaMenu {
         )
         .unwrap();
         let help_submenu = Submenu::new("&Help", true);
-        
+
         // The first item appended always has to be the app (sub)menu (mac will override whatever else is present)
-        menu.append_items(&[&app_submenu, &file_submenu, &view_submenu, &layout_submenu, &window_submenu, &help_submenu])
-            .unwrap();
+        menu.append_items(&[
+            &app_submenu,
+            &file_submenu,
+            &view_submenu,
+            &layout_submenu,
+            &window_submenu,
+            &help_submenu,
+        ])
+        .unwrap();
         Self {
             menu,
             window_submenu,
@@ -103,9 +109,12 @@ impl MudaMenu {
     }
 
     pub fn init(&self) {
-        self.menu.init_for_nsapp();
-        self.window_submenu.set_as_windows_menu_for_nsapp();
-        self.help_submenu.set_as_help_menu_for_nsapp();
+        #[cfg(target_os = "macos")]
+        {
+            self.menu.init_for_nsapp();
+            self.window_submenu.set_as_windows_menu_for_nsapp();
+            self.help_submenu.set_as_help_menu_for_nsapp();
+        }
     }
 }
 

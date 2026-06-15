@@ -235,8 +235,7 @@ impl App {
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         let _span = tracy_client::span!("App update");
         match message {
-            // This never gets called unless cfg.native_menu_bar is true, and the app is just
-            // starting up. This is why no `if cfg.native_menu_bar` is neccessary here.
+            // This only get's called at startup when target_os = "macos"
             AppMessage::InitializeNativeMenuBar => {
                 let m = MudaMenu::new();
                 m.init();

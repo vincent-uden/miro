@@ -285,7 +285,6 @@ pub struct Config {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     pub open_sidebar: bool,
-    pub native_menu_bar: bool,
     pub default_search_method: SearchMethod,
     pub open_fullscreen_default: bool,
     pub open_presentation_default: bool,
@@ -296,7 +295,6 @@ impl Config {
         Config {
             keyboard: Keybinds::new(vec![]),
             mouse: Vec::new(),
-            native_menu_bar: true,
             trackpad_sensitivity: 1.0,
             ..Default::default()
         }
@@ -816,10 +814,6 @@ impl Default for Config {
             default_search_method: SearchMethod::PlainText,
             open_fullscreen_default: false,
             open_presentation_default: false,
-            #[cfg(target_os = "macos")]
-            native_menu_bar: true,
-            #[cfg(not(target_os = "macos"))]
-            native_menu_bar: false,
         }
     }
 }

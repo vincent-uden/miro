@@ -151,12 +151,10 @@ fn main() -> anyhow::Result<()> {
     }
     let cfg_fullscreen;
     let cfg_presentation;
-    let cfg_native_menu_bar;
     {
         let config = CONFIG.read().unwrap();
         cfg_presentation = config.open_presentation_default;
         cfg_fullscreen = config.open_fullscreen_default;
-        cfg_native_menu_bar = config.native_menu_bar;
     }
     Ok(iced::application(
         move || {
@@ -172,7 +170,8 @@ fn main() -> anyhow::Result<()> {
             let mut startup_tasks =
                 startup_tasks.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
 
-            if cfg_native_menu_bar {
+            #[cfg(target_os = "macos")]
+            {
                 startup_tasks =
                     startup_tasks.chain(iced::Task::done(app::AppMessage::InitializeNativeMenuBar));
             }
