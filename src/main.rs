@@ -95,7 +95,7 @@ fn main() -> anyhow::Result<()> {
     // NOTE: Used to automatically delete the file when exiting the program (normally or when
     // crashing)
     let mut tmp_file = None;
-    if !io::stdin().is_terminal() {
+    if !io::stdin().is_terminal() && args.path.is_none() && args.url.is_none() {
         let mut bytes = Vec::new();
         match io::stdin().read_to_end(&mut bytes) {
             Ok(_) => match bytes_to_tmp(&bytes, "stdin") {
