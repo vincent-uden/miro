@@ -1,5 +1,5 @@
-use muda::{AcceleratorParseError, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use muda::accelerator::{KeyAccelerator};
+use muda::AcceleratorParseError;
 use crate::CONFIG;
 use keybinds2::{Keybind};
 use crate::config::BindableMessage;
@@ -7,34 +7,34 @@ use crate::app::AppMessage;
 use std::fmt;
 use std::str::FromStr;
 
-pub struct MudaMenu {
-    menu: Menu,
+pub struct Menu {
+    menu: muda::Menu,
     // These are special in the macos menu bar
-    window_submenu: Submenu,
-    help_submenu: Submenu,
+    window_submenu: muda::Submenu,
+    help_submenu: muda::Submenu,
 }
 // TODO:
 // - Support different languages
-impl MudaMenu {
+impl Menu {
     pub fn new() -> Self {
-        let menu = Menu::new();
+        let menu = muda::Menu::new();
 
-        let app_submenu = Submenu::new("App", true);
+        let app_submenu = muda::Submenu::new("App", true);
         app_submenu
             .append_items(&[
-                &PredefinedMenuItem::about(None, None),
-                &PredefinedMenuItem::separator(),
-                &PredefinedMenuItem::services(None),
-                &PredefinedMenuItem::separator(),
-                &PredefinedMenuItem::hide(None),
-                &PredefinedMenuItem::hide_others(None),
-                &PredefinedMenuItem::show_all(None),
-                &PredefinedMenuItem::separator(),
-                &PredefinedMenuItem::quit(None),
+                &muda::PredefinedMenuItem::about(None, None),
+                &muda::PredefinedMenuItem::separator(),
+                &muda::PredefinedMenuItem::services(None),
+                &muda::PredefinedMenuItem::separator(),
+                &muda::PredefinedMenuItem::hide(None),
+                &muda::PredefinedMenuItem::hide_others(None),
+                &muda::PredefinedMenuItem::show_all(None),
+                &muda::PredefinedMenuItem::separator(),
+                &muda::PredefinedMenuItem::quit(None),
             ])
             .unwrap();
 
-        let file_submenu = Submenu::with_items(
+        let file_submenu = muda::Submenu::with_items(
             "&File",
             true,
             &[
@@ -43,7 +43,7 @@ impl MudaMenu {
             ],
         )
         .unwrap();
-        let view_submenu = Submenu::with_items(
+        let view_submenu = muda::Submenu::with_items(
             "&View",
             true,
             &[
@@ -62,7 +62,7 @@ impl MudaMenu {
             ],
         )
         .unwrap();
-        let layout_submenu = Submenu::with_items(
+        let layout_submenu = muda::Submenu::with_items(
             "&Layout",
             true,
             &[
@@ -77,19 +77,19 @@ impl MudaMenu {
             ],
         )
         .unwrap();
-        let window_submenu = Submenu::with_items(
+        let window_submenu = muda::Submenu::with_items(
             "&Window",
             true,
             &[
-                &PredefinedMenuItem::minimize(None),
-                &PredefinedMenuItem::maximize(None),
-                &PredefinedMenuItem::close_window(None),
-                &PredefinedMenuItem::fullscreen(None),
-                &PredefinedMenuItem::bring_all_to_front(None),
+                &muda::PredefinedMenuItem::minimize(None),
+                &muda::PredefinedMenuItem::maximize(None),
+                &muda::PredefinedMenuItem::close_window(None),
+                &muda::PredefinedMenuItem::fullscreen(None),
+                &muda::PredefinedMenuItem::bring_all_to_front(None),
             ],
         )
         .unwrap();
-        let help_submenu = Submenu::new("&Help", true);
+        let help_submenu = muda::Submenu::new("&Help", true);
 
         // The first item appended always has to be the app (sub)menu (mac will override whatever else is present)
         menu.append_items(&[
@@ -120,9 +120,9 @@ impl MudaMenu {
 
 // Our MenuItems will have id equal to the BindableMessage enum values as a string.
 // For example, the Open file menu item will have id of "OpenFileFinder" (corresponding to BindableMessage::OpenFileFinder)
-pub fn new_menu_item(label: &str, msg: BindableMessage) -> MenuItem {
+pub fn new_menu_item(label: &str, msg: BindableMessage) -> muda::MenuItem {
     let cfg = CONFIG.read().unwrap();
-    let menu_item = MenuItem::with_id(msg.to_string(), label, true, None);
+    let menu_item = muda::MenuItem::with_id(msg.to_string(), label, true, None);
     let keyaccel = keybind_to_keyaccelerator(cfg.get_binding_for_msg(msg).unwrap()).unwrap();
     menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
 
@@ -140,16 +140,16 @@ pub fn keybind_to_keyaccelerator(
 }
 
 // Dummy debug for now (muda doesn't implement debug for some reason?)
-impl fmt::Debug for MudaMenu {
+impl fmt::Debug for Menu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppMenu").finish()
     }
 }
 
-pub fn menu_bar_listener() -> impl iced::futures::Stream<Item = AppMessage> {
+pub fn menu_listener() -> impl iced::futures::Stream<Item = AppMessage> {
     iced::stream::channel(100, async |mut sender| {
         loop {
-            if let Ok(event) = MenuEvent::receiver().try_recv() {
+            if let Ok(event) = muda::MenuEvent::receiver().try_recv() {
                 let msg = BindableMessage::from_str((&event.id().0).as_str()).unwrap();
                 let _ = sender.try_send(AppMessage::from(msg));
             } else {

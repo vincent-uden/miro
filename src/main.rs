@@ -26,8 +26,8 @@ mod config;
 mod geometry;
 mod icons;
 mod jumplist;
-mod macos_menu;
 mod pdf;
+mod platform_specific;
 mod recent_files;
 mod rpc;
 mod watch;
@@ -171,10 +171,8 @@ fn main() -> anyhow::Result<()> {
             let mut startup_tasks =
                 startup_tasks.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
 
-            #[cfg(target_os = "macos")]
-            {
-                startup_tasks =
-                    startup_tasks.chain(iced::Task::done(app::AppMessage::InitializeNativeMenuBar));
+            for task in platform_specific::startup_tasks().into_iter() {
+                startup_tasks = startup_tasks.chain(task);
             }
 
             // NOTE: The default state is in windowed, non presentation mode. Using the toggles is

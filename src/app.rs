@@ -44,7 +44,7 @@ use crate::{
         page_layout::PageLayout,
         widget::{OutlineItem, PdfViewer},
     },
-    macos_menu::{MudaMenu, menu_bar_listener},
+    platform_specific,
     recent_files::RecentFiles,
     rpc::rpc_server,
     watch::{WatchMessage, WatchNotification, file_watcher},
@@ -70,7 +70,7 @@ pub enum SidebarTab {
 
 #[derive(Debug)]
 pub struct App {
-    native_menu_bar: Option<MudaMenu>,
+    mac_menu: Option<platform_specific::macos::Menu>,
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
@@ -92,7 +92,7 @@ pub struct App {
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum AppMessage {
-    InitializeNativeMenuBar,
+    InitializeMacMenu,
     OpenFile(PathBuf),
     #[strum(disabled)]
     #[serde(skip)]
@@ -179,7 +179,7 @@ impl App {
         }
 
         Self {
-            native_menu_bar: None,
+            mac_menu: None,
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
@@ -258,11 +258,10 @@ impl App {
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         let _span = tracy_client::span!("App update");
         match message {
-            // This only get's called at startup when target_os = "macos"
-            AppMessage::InitializeNativeMenuBar => {
-                let m = MudaMenu::new();
+            AppMessage::InitializeMacMenu => {
+                let m = platform_specific::macos::Menu::new();
                 m.init();
-                self.native_menu_bar = Some(m);
+                self.mac_menu = Some(m);
                 iced::Task::none()
             }
             AppMessage::OpenFile(path_buf) => {
@@ -1055,7 +1054,7 @@ impl App {
                                     .into(),
                             );
                         }
-                        if self.native_menu_bar.is_none() {
+                        if self.mac_menu.is_none() {
                             let menu_bar = self.create_menu_bar();
                             widget::column![menu_bar, stack(stack_children)].into()
                         } else {
@@ -1351,9 +1350,7 @@ impl App {
             keys,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
         ];
-        if self.native_menu_bar.is_some() {
-            subs.push(Subscription::run(menu_bar_listener));
-        }
+        subs.append(&mut platform_specific::listeners());
 
         let config = CONFIG.read().unwrap();
         if config.rpc_enabled {
