@@ -95,14 +95,14 @@ fn main() -> anyhow::Result<()> {
 
     // NOTE: Used to automatically delete the file when exiting the program (normally or when
     // crashing)
-    let mut _tmp_file = None;
-    if !io::stdin().is_terminal() {
+    let mut tmp_file = None;
+    if !io::stdin().is_terminal() && args.path.is_none() && args.url.is_none() {
         let mut bytes = Vec::new();
         match io::stdin().read_to_end(&mut bytes) {
             Ok(_) => match bytes_to_tmp(&bytes, "stdin") {
                 Ok(tmp) => {
                     args.path = Some(tmp.clone());
-                    _tmp_file = Some(TempFile(tmp.clone()));
+                    tmp_file = Some(TempFile(tmp.clone()));
                 }
                 Err(e) => {
                     eprintln!("Failed to write to temporary file: {e}");
@@ -120,7 +120,7 @@ fn main() -> anyhow::Result<()> {
         match bytes_to_tmp(&bytes, "url") {
             Ok(tmp) => {
                 args.path = Some(tmp.clone());
-                _tmp_file = Some(TempFile(tmp.clone()));
+                tmp_file = Some(TempFile(tmp.clone()));
             }
             Err(e) => {
                 eprintln!("Faield to write to temporary file {e}");
@@ -164,6 +164,7 @@ fn main() -> anyhow::Result<()> {
                 RecentFiles::system_store().unwrap_or_default(),
             );
             let startup_tasks = match path {
+                Some(p) if tmp_file.is_some() => iced::Task::done(app::AppMessage::OpenTempFile(p)),
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
