@@ -259,7 +259,8 @@ impl App {
         let _span = tracy_client::span!("App update");
         match message {
             AppMessage::InitializeMacMenu => {
-                let m = platform_specific::macos::Menu::new();
+                let recent_files = self.recent_files.get_recent();
+                let m = platform_specific::macos::Menu::new(recent_files);
                 m.init();
                 self.mac_menu = Some(m);
                 iced::Task::none()
@@ -267,6 +268,10 @@ impl App {
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 self.recent_files.add_recent(path_buf.clone());
+                if let Some(m) = &self.mac_menu {
+                    let recent_files = self.recent_files.get_recent();
+                    m.shared_menu.update_recent_files_submenu(recent_files);
+                }
                 self.open_pdf(path_buf)
             }
             AppMessage::OpenTempFile(path_buf) => {

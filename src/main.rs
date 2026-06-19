@@ -28,6 +28,7 @@ mod icons;
 mod jumplist;
 mod pdf;
 mod platform_specific;
+mod common_menu;
 mod recent_files;
 mod rpc;
 mod watch;
