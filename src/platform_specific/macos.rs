@@ -36,8 +36,7 @@ impl Menu {
             .unwrap();
         menu.append(&app_submenu).unwrap();
 
-        let common_menu = crate::common_menu::CommonMenu::new();
-        let skeleton = common_menu.skeleton;
+        let skeleton = crate::common_menu::items();
         let recent_files_submenu = muda::Submenu::new("Recent Files", true);
 
         for tuple in skeleton {

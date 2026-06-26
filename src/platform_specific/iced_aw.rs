@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use crate::{
     CONFIG,
     app::{self, AppMessage},
-    common_menu::{CommonMenu, CommonMenuItem},
+    common_menu::{self, CommonMenuItem},
     config::BindableMessage,
 };
 
@@ -23,8 +23,6 @@ pub fn create_menu_bar(
     recent_files: &[PathBuf],
 ) -> Element<'static, AppMessage> {
     let cfg = CONFIG.read().unwrap();
-    let common_menu = CommonMenu::new();
-
     let exit_close_label = if pdfs_empty { "Exit" } else { "Close" };
 
     let resolve_label = |msg: &BindableMessage| -> String {
@@ -57,7 +55,7 @@ pub fn create_menu_bar(
 
     let mut bar_items = Vec::new();
 
-    for (category_name, skeleton_items) in &common_menu.skeleton {
+    for (category_name, skeleton_items) in &common_menu::items() {
         let mut descs: Vec<ItemDesc> = Vec::new();
 
         for item in skeleton_items {
