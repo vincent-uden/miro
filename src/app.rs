@@ -420,7 +420,7 @@ impl App {
                 self.recent_files.add_recent(path_buf.clone());
                 if let Some(m) = &self.mac_menu {
                     let recent_files = self.recent_files.get_recent();
-                    m.shared_menu.update_recent_files_submenu(recent_files);
+                    m.update_recent_files(recent_files);
                 }
                 self.open_pdf(path_buf)
             }
