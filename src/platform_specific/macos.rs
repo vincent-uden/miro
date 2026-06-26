@@ -23,8 +23,9 @@ impl SharedSubmenu {
             let submenu = muda::Submenu::new(format!("&{}", tuple.0), true);
             for common_menu_item in tuple.1 {
                 match common_menu_item {
-                    CommonMenuItem::Button(label, msg) => {
-                        submenu.append(&new_menu_item(label.as_str(), msg)).unwrap();
+                    CommonMenuItem::Button(msg) => {
+                        let label = msg.default_menu_label().unwrap_or("(unnamed)");
+                        submenu.append(&new_menu_item(label, msg)).unwrap();
                     }
                     CommonMenuItem::RecentFiles => {
                         for path in recent_files {

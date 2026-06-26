@@ -274,6 +274,37 @@ impl AppMessage {
             _ => None,
         }
     }
+
+    pub fn default_menu_label(&self) -> Option<&'static str> {
+        match self {
+            AppMessage::OpenNewFileFinder => Some("Open"),
+            AppMessage::PdfMessage(PdfMessage::PrintPdf) => Some("Print"),
+            AppMessage::CloseActiveTab => Some("Close"),
+            AppMessage::ToggleDarkModeUi => Some("Dark Interface"),
+            AppMessage::ToggleDarkModePdf => Some("Dark Pdf"),
+            AppMessage::TogglePageBorders => Some("Page Borders"),
+            AppMessage::PdfMessage(PdfMessage::ZoomIn) => Some("Zoom In"),
+            AppMessage::PdfMessage(PdfMessage::ZoomOut) => Some("Zoom Out"),
+            AppMessage::PdfMessage(PdfMessage::ZoomHome) => Some("Zoom 100%"),
+            AppMessage::PdfMessage(PdfMessage::ZoomFit) => Some("Fit To Screen"),
+            AppMessage::ToggleSidebar => Some("Sidebar"),
+            AppMessage::TogglePresentationMode => Some("Presentation Mode"),
+            AppMessage::ToggleFullscreen => Some("Fullscreen"),
+            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage)) => {
+                Some("Single Page")
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::DoublePage)) => {
+                Some("Double Page")
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(
+                PageLayout::DoublePageTitlePage,
+            )) => Some("Double Page w/ Title"),
+            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::Presentation)) => {
+                Some("Presentation")
+            }
+            _ => None,
+        }
+    }
 }
 
 impl App {

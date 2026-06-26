@@ -3,7 +3,7 @@ use crate::pdf::PdfMessage;
 use crate::pdf::page_layout::PageLayout;
 
 pub enum CommonMenuItem {
-    Button(String, AppMessage),
+    Button(AppMessage),
     RecentFiles,
     Separator,
 }
@@ -17,77 +17,44 @@ impl CommonMenu {
             (
                 String::from("File"),
                 vec![
-                    CommonMenuItem::Button(String::from("Open"), AppMessage::OpenNewFileFinder),
+                    CommonMenuItem::Button(AppMessage::OpenNewFileFinder),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::PrintPdf)),
                     CommonMenuItem::RecentFiles,
                     CommonMenuItem::Separator,
-                    CommonMenuItem::Button(
-                        String::from("Print"),
-                        AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    ),
-                    CommonMenuItem::Button(String::from("Close"), AppMessage::CloseActiveTab),
+                    CommonMenuItem::Button(AppMessage::CloseActiveTab),
                 ],
             ),
             (
                 String::from("View"),
                 vec![
-                    CommonMenuItem::Button(
-                        String::from("Dark Interface"),
-                        AppMessage::ToggleDarkModeUi,
-                    ),
-                    CommonMenuItem::Button(String::from("Dark Pdf"), AppMessage::ToggleDarkModePdf),
-                    CommonMenuItem::Button(
-                        String::from("Page Borders"),
-                        AppMessage::TogglePageBorders,
-                    ),
-                    CommonMenuItem::Button(
-                        String::from("Zoom In"),
-                        AppMessage::PdfMessage(PdfMessage::ZoomIn),
-                    ),
-                    CommonMenuItem::Button(
-                        String::from("Zoom Out"),
-                        AppMessage::PdfMessage(PdfMessage::ZoomOut),
-                    ),
-                    CommonMenuItem::Button(
-                        String::from("Zoom 100%"),
-                        AppMessage::PdfMessage(PdfMessage::ZoomHome),
-                    ),
-                    CommonMenuItem::Button(
-                        String::from("Fit To Screen"),
-                        AppMessage::PdfMessage(PdfMessage::ZoomFit),
-                    ),
-                    CommonMenuItem::Button(String::from("Sidebar"), AppMessage::ToggleSidebar),
-                    CommonMenuItem::Button(
-                        String::from("Presentation Mode"),
-                        AppMessage::TogglePresentationMode,
-                    ),
+                    CommonMenuItem::Button(AppMessage::ToggleDarkModeUi),
+                    CommonMenuItem::Button(AppMessage::ToggleDarkModePdf),
+                    CommonMenuItem::Button(AppMessage::TogglePageBorders),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::ZoomIn)),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::ZoomOut)),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::ZoomHome)),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::ZoomFit)),
+                    CommonMenuItem::Button(AppMessage::ToggleSidebar),
+                    CommonMenuItem::Button(AppMessage::TogglePresentationMode),
                     CommonMenuItem::Separator,
-                    CommonMenuItem::Button(
-                        String::from("Fullscreen"),
-                        AppMessage::ToggleFullscreen,
-                    ),
+                    CommonMenuItem::Button(AppMessage::ToggleFullscreen),
                 ],
             ),
             (
                 String::from("Layout"),
                 vec![
-                    CommonMenuItem::Button(
-                        String::from("Single Page"),
-                        AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage)),
-                    ),
-                    CommonMenuItem::Button(
-                        String::from("Double Page"),
-                        AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::DoublePage)),
-                    ),
-                    CommonMenuItem::Button(
-                        String::from("Double Page w/ Title"),
-                        AppMessage::PdfMessage(PdfMessage::SetLayout(
-                            PageLayout::DoublePageTitlePage,
-                        )),
-                    ),
-                    CommonMenuItem::Button(
-                        String::from("Presentation"),
-                        AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::Presentation)),
-                    ),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::SetLayout(
+                        PageLayout::SinglePage,
+                    ))),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::SetLayout(
+                        PageLayout::DoublePage,
+                    ))),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::SetLayout(
+                        PageLayout::DoublePageTitlePage,
+                    ))),
+                    CommonMenuItem::Button(AppMessage::PdfMessage(PdfMessage::SetLayout(
+                        PageLayout::Presentation,
+                    ))),
                 ],
             ),
         ];
