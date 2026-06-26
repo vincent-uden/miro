@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf, str::FromStr, fmt};
 
 use colored::Colorize;
 use keybinds2::{KeyInput, KeySeq, Keybind, Keybinds};
-use strum::EnumString;
+use strum::{Display, EnumString};
 
 use crate::{
     app::AppMessage,
@@ -157,7 +157,7 @@ impl FromStr for MouseInput {
 // That does inherently mean that each menu button needs to be able to be key-bound
 // If that isn't desirable, each menu button could have an Option<BindableMessage> instead
 
-#[derive(Debug, EnumString, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, EnumString, Display, Clone, Copy, PartialEq, Eq)]
 pub enum BindableMessage {
     MoveUp,
     MoveDown,
@@ -181,6 +181,7 @@ pub enum BindableMessage {
     ToggleSidebar,
     ToggleLinkHitboxes,
     OpenFileFinder,
+    #[strum(serialize = "CloseActiveTab", serialize = "CloseTab")]
     CloseTab,
     PrintPdf,
     Exit,
@@ -199,11 +200,32 @@ pub enum BindableMessage {
     PresentationLayout,
 }
 
-// This is used to convert a BindableMessage to itself but as a string
-impl fmt::Display for BindableMessage {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+impl BindableMessage {
+    pub fn default_menu_label(&self) -> Option<&'static str> {
+        match self {
+            BindableMessage::OpenFileFinder => Some("Open"),
+            BindableMessage::PrintPdf => Some("Print"),
+            BindableMessage::CloseTab => Some("Close"),
+            BindableMessage::ToggleDarkModeUi => Some("Dark Interface"),
+            BindableMessage::ToggleDarkModePdf => Some("Dark Pdf"),
+            BindableMessage::TogglePageBorders => Some("Page Borders"),
+            BindableMessage::ZoomIn => Some("Zoom In"),
+            BindableMessage::ZoomOut => Some("Zoom Out"),
+            BindableMessage::ZoomHome => Some("Zoom 100%"),
+            BindableMessage::ZoomFit => Some("Fit To Screen"),
+            BindableMessage::ToggleSidebar => Some("Sidebar"),
+            BindableMessage::TogglePresentationMode => Some("Presentation Mode"),
+            BindableMessage::ToggleFullscreen => Some("Fullscreen"),
+            BindableMessage::SinglePageLayout => Some("Single Page"),
+            BindableMessage::DoublePageLayout => Some("Double Page"),
+            BindableMessage::DoublePageTitlePageLayout => {
+                Some("Double Page w/ Title")
+            }
+            BindableMessage::PresentationLayout => Some("Presentation"),
+            _ => None,
+        }
     }
+
 }
 
 impl From<BindableMessage> for AppMessage {

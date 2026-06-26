@@ -31,25 +31,21 @@ pub fn create_menu_bar(
 
     let exit_close_label = if pdfs_empty { "Exit" } else { "Close" };
 
-    let get_binding = |msg: &AppMessage| -> Option<Keybind<BindableMessage>> {
-        msg.bindable().and_then(|b| cfg.get_binding_for_msg(b))
-    };
-
-    let resolve_label = |msg: &AppMessage| -> String {
+    let resolve_label = |msg: &BindableMessage| -> String {
         match msg {
-            AppMessage::ToggleDarkModeUi => {
+            BindableMessage::ToggleDarkModeUi => {
                 (if dark_mode { "Light Interface" } else { "Dark Interface" }).to_string()
             }
-            AppMessage::ToggleDarkModePdf => {
+            BindableMessage::ToggleDarkModePdf => {
                 (if invert_pdf { "Light Pdf" } else { "Dark Pdf" }).to_string()
             }
-            AppMessage::TogglePageBorders => {
+            BindableMessage::TogglePageBorders => {
                 (if draw_page_borders { "No Page Borders" } else { "Page Borders" }).to_string()
             }
-            AppMessage::ToggleSidebar => {
+            BindableMessage::ToggleSidebar => {
                 (if has_sidebar_pane { "Close sidebar" } else { "Open sidebar" }).to_string()
             }
-            AppMessage::CloseActiveTab => exit_close_label.to_string(),
+            BindableMessage::CloseTab => exit_close_label.to_string(),
             _ => msg.default_menu_label().unwrap_or("(unnamed)").to_string(),
         }
     };
@@ -62,7 +58,7 @@ pub fn create_menu_bar(
         for item in skeleton_items {
             match item {
                 CommonMenuItem::Button(msg) => {
-                    descs.push(ItemDesc::Button(msg.clone()));
+                    descs.push(ItemDesc::Button(*msg));
                 }
                 CommonMenuItem::RecentFiles => {
                     if !recent_files.is_empty() {
@@ -87,7 +83,7 @@ pub fn create_menu_bar(
             match desc {
                 ItemDesc::Button(msg) => {
                     let label = resolve_label(&msg);
-                    let binding = get_binding(&msg);
+                    let binding = cfg.get_binding_for_msg(msg);
                     let is_last = Some(i) == last_button_idx;
                     let widget: Element<'static, AppMessage> = if is_last {
                         menu_button_last(label, msg, binding).into()
@@ -154,7 +150,7 @@ pub fn create_menu_bar(
 }
 
 enum ItemDesc {
-    Button(AppMessage),
+    Button(BindableMessage),
     Label(String),
     RecentFile(PathBuf),
     Separator,
@@ -271,7 +267,7 @@ fn create_recent_file_button(
 
 fn menu_button(
     label: String,
-    msg: AppMessage,
+    msg: BindableMessage,
     binding: Option<Keybind<BindableMessage>>,
 ) -> button::Button<'static, AppMessage, Theme, iced::Renderer> {
     let txt = format!(
@@ -289,7 +285,7 @@ fn menu_button(
                 }
             })
         ],
-        msg,
+        msg.into(),
     )
     .width(Length::Fill)
     .style(move |theme, status| {
@@ -314,7 +310,7 @@ fn menu_button(
 
 fn menu_button_last(
     label: String,
-    msg: AppMessage,
+    msg: BindableMessage,
     binding: Option<Keybind<BindableMessage>>,
 ) -> button::Button<'static, AppMessage, Theme, iced::Renderer> {
     let txt = format!(
@@ -332,7 +328,7 @@ fn menu_button_last(
                 }
             })
         ],
-        msg,
+        msg.into(),
     )
     .width(Length::Fill)
     .style(move |theme, status| {
