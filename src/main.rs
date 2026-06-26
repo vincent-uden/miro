@@ -22,13 +22,13 @@ use crate::app::AppMessage;
 
 mod app;
 mod bookmarks;
+mod common_menu;
 mod config;
 mod geometry;
 mod icons;
 mod jumplist;
 mod pdf;
 mod platform_specific;
-mod common_menu;
 mod recent_files;
 mod rpc;
 mod watch;

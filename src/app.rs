@@ -33,7 +33,10 @@ use crate::{
     geometry::Vector,
     icons,
     jumplist::{JumpLocation, Jumplist},
-    pdf::{PdfMessage, SearchMethod, widget::{OutlineItem, PdfViewer}},
+    pdf::{
+        PdfMessage, SearchMethod,
+        widget::{OutlineItem, PdfViewer},
+    },
     platform_specific,
     recent_files::RecentFiles,
     rpc::rpc_server,

@@ -9,8 +9,6 @@ use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-
-
 pub struct Menu {
     menu: muda::Menu,
     recent_files_submenu: muda::Submenu,

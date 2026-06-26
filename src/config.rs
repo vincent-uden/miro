@@ -218,14 +218,11 @@ impl BindableMessage {
             BindableMessage::ToggleFullscreen => Some("Fullscreen"),
             BindableMessage::SinglePageLayout => Some("Single Page"),
             BindableMessage::DoublePageLayout => Some("Double Page"),
-            BindableMessage::DoublePageTitlePageLayout => {
-                Some("Double Page w/ Title")
-            }
+            BindableMessage::DoublePageTitlePageLayout => Some("Double Page w/ Title"),
             BindableMessage::PresentationLayout => Some("Presentation"),
             _ => None,
         }
     }
-
 }
 
 impl From<BindableMessage> for AppMessage {

@@ -1,10 +1,6 @@
 use iced::{
-    Background, Border, Element, Length, Padding, Shadow, Theme,
-    alignment,
-    border,
-    widget::{
-        self, button, container, row, text,
-    },
+    Background, Border, Element, Length, Padding, Shadow, Theme, alignment, border,
+    widget::{self, button, container, row, text},
 };
 use iced_aw::menu::{self, primary, DrawPath};
 use keybinds2::{KeySeq, Keybind};
@@ -33,18 +29,27 @@ pub fn create_menu_bar(
 
     let resolve_label = |msg: &BindableMessage| -> String {
         match msg {
-            BindableMessage::ToggleDarkModeUi => {
-                (if dark_mode { "Light Interface" } else { "Dark Interface" }).to_string()
-            }
+            BindableMessage::ToggleDarkModeUi => (if dark_mode {
+                "Light Interface"
+            } else {
+                "Dark Interface"
+            })
+            .to_string(),
             BindableMessage::ToggleDarkModePdf => {
                 (if invert_pdf { "Light Pdf" } else { "Dark Pdf" }).to_string()
             }
-            BindableMessage::TogglePageBorders => {
-                (if draw_page_borders { "No Page Borders" } else { "Page Borders" }).to_string()
-            }
-            BindableMessage::ToggleSidebar => {
-                (if has_sidebar_pane { "Close sidebar" } else { "Open sidebar" }).to_string()
-            }
+            BindableMessage::TogglePageBorders => (if draw_page_borders {
+                "No Page Borders"
+            } else {
+                "Page Borders"
+            })
+            .to_string(),
+            BindableMessage::ToggleSidebar => (if has_sidebar_pane {
+                "Close sidebar"
+            } else {
+                "Open sidebar"
+            })
+            .to_string(),
             BindableMessage::CloseTab => exit_close_label.to_string(),
             _ => msg.default_menu_label().unwrap_or("(unnamed)").to_string(),
         }
@@ -62,12 +67,10 @@ pub fn create_menu_bar(
                 }
                 CommonMenuItem::RecentFiles => {
                     if !recent_files.is_empty() {
-                        descs.push(ItemDesc::Separator);
                         descs.push(ItemDesc::Label("Recent".to_string()));
                         for path in recent_files {
                             descs.push(ItemDesc::RecentFile(path.clone()));
                         }
-                        descs.push(ItemDesc::Separator);
                     }
                 }
                 CommonMenuItem::Separator => {
@@ -159,21 +162,24 @@ enum ItemDesc {
 fn menu_category_button(
     label: String,
 ) -> button::Button<'static, AppMessage, Theme, iced::Renderer> {
-    app::base_button(text(label).align_y(alignment::Vertical::Center), AppMessage::None)
-        .width(Length::Shrink)
-        .style(move |theme, status| {
-            let palette = theme.extended_palette();
-            let pair = match status {
-                button::Status::Active => palette.background.weak,
-                button::Status::Hovered | button::Status::Disabled => palette.background.base,
-                button::Status::Pressed => palette.primary.base,
-            };
-            button::Style {
-                text_color: pair.text,
-                background: Some(Background::Color(pair.color)),
-                ..Default::default()
-            }
-        })
+    app::base_button(
+        text(label).align_y(alignment::Vertical::Center),
+        AppMessage::None,
+    )
+    .width(Length::Shrink)
+    .style(move |theme, status| {
+        let palette = theme.extended_palette();
+        let pair = match status {
+            button::Status::Active => palette.background.weak,
+            button::Status::Hovered | button::Status::Disabled => palette.background.base,
+            button::Status::Pressed => palette.primary.base,
+        };
+        button::Style {
+            text_color: pair.text,
+            background: Some(Background::Color(pair.color)),
+            ..Default::default()
+        }
+    })
 }
 
 fn format_key_sequence(seq: &KeySeq) -> String {
