@@ -157,6 +157,125 @@ pub enum AppMessage {
     ToggleSearchMethod,
 }
 
+impl AppMessage {
+    pub fn menu_id(&self) -> Option<String> {
+        match self {
+            AppMessage::OpenNewFileFinder => Some(String::from("OpenFileFinder")),
+            AppMessage::CloseActiveTab => Some(String::from("CloseActiveTab")),
+            AppMessage::ToggleDarkModeUi => Some(String::from("ToggleDarkModeUi")),
+            AppMessage::ToggleDarkModePdf => Some(String::from("ToggleDarkModePdf")),
+            AppMessage::TogglePageBorders => Some(String::from("TogglePageBorders")),
+            AppMessage::ToggleSidebar => Some(String::from("ToggleSidebar")),
+            AppMessage::TogglePresentationMode => {
+                Some(String::from("TogglePresentationMode"))
+            }
+            AppMessage::ToggleFullscreen => Some(String::from("ToggleFullscreen")),
+            AppMessage::PdfMessage(PdfMessage::PrintPdf) => {
+                Some(String::from("PrintPdf"))
+            }
+            AppMessage::PdfMessage(PdfMessage::ZoomIn) => Some(String::from("ZoomIn")),
+            AppMessage::PdfMessage(PdfMessage::ZoomOut) => {
+                Some(String::from("ZoomOut"))
+            }
+            AppMessage::PdfMessage(PdfMessage::ZoomHome) => {
+                Some(String::from("ZoomHome"))
+            }
+            AppMessage::PdfMessage(PdfMessage::ZoomFit) => {
+                Some(String::from("ZoomFit"))
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage)) => {
+                Some(String::from("SinglePageLayout"))
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::DoublePage)) => {
+                Some(String::from("DoublePageLayout"))
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(
+                PageLayout::DoublePageTitlePage,
+            )) => Some(String::from("DoublePageTitlePageLayout")),
+            AppMessage::PdfMessage(PdfMessage::SetLayout(
+                PageLayout::Presentation,
+            )) => Some(String::from("PresentationLayout")),
+            _ => None,
+        }
+    }
+
+    pub fn bindable(&self) -> Option<BindableMessage> {
+        match self {
+            AppMessage::OpenNewFileFinder => Some(BindableMessage::OpenFileFinder),
+            AppMessage::CloseActiveTab => Some(BindableMessage::CloseTab),
+            AppMessage::ToggleDarkModeUi => Some(BindableMessage::ToggleDarkModeUi),
+            AppMessage::ToggleDarkModePdf => Some(BindableMessage::ToggleDarkModePdf),
+            AppMessage::TogglePageBorders => Some(BindableMessage::TogglePageBorders),
+            AppMessage::ToggleSidebar => Some(BindableMessage::ToggleSidebar),
+            AppMessage::TogglePresentationMode => {
+                Some(BindableMessage::TogglePresentationMode)
+            }
+            AppMessage::ToggleFullscreen => Some(BindableMessage::ToggleFullscreen),
+            AppMessage::PdfMessage(PdfMessage::PrintPdf) => {
+                Some(BindableMessage::PrintPdf)
+            }
+            AppMessage::PdfMessage(PdfMessage::ZoomIn) => {
+                Some(BindableMessage::ZoomIn)
+            }
+            AppMessage::PdfMessage(PdfMessage::ZoomOut) => {
+                Some(BindableMessage::ZoomOut)
+            }
+            AppMessage::PdfMessage(PdfMessage::ZoomHome) => {
+                Some(BindableMessage::ZoomHome)
+            }
+            AppMessage::PdfMessage(PdfMessage::ZoomFit) => {
+                Some(BindableMessage::ZoomFit)
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage)) => {
+                Some(BindableMessage::SinglePageLayout)
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::DoublePage)) => {
+                Some(BindableMessage::DoublePageLayout)
+            }
+            AppMessage::PdfMessage(PdfMessage::SetLayout(
+                PageLayout::DoublePageTitlePage,
+            )) => Some(BindableMessage::DoublePageTitlePageLayout),
+            AppMessage::PdfMessage(PdfMessage::SetLayout(
+                PageLayout::Presentation,
+            )) => Some(BindableMessage::PresentationLayout),
+            _ => None,
+        }
+    }
+
+    pub fn from_menu_id(s: &str) -> Option<Self> {
+        match s {
+            "OpenFileFinder" => Some(AppMessage::OpenNewFileFinder),
+            "CloseActiveTab" => Some(AppMessage::CloseActiveTab),
+            "ToggleDarkModeUi" => Some(AppMessage::ToggleDarkModeUi),
+            "ToggleDarkModePdf" => Some(AppMessage::ToggleDarkModePdf),
+            "TogglePageBorders" => Some(AppMessage::TogglePageBorders),
+            "ToggleSidebar" => Some(AppMessage::ToggleSidebar),
+            "TogglePresentationMode" => {
+                Some(AppMessage::TogglePresentationMode)
+            }
+            "ToggleFullscreen" => Some(AppMessage::ToggleFullscreen),
+            "PrintPdf" => Some(AppMessage::PdfMessage(PdfMessage::PrintPdf)),
+            "ZoomIn" => Some(AppMessage::PdfMessage(PdfMessage::ZoomIn)),
+            "ZoomOut" => Some(AppMessage::PdfMessage(PdfMessage::ZoomOut)),
+            "ZoomHome" => Some(AppMessage::PdfMessage(PdfMessage::ZoomHome)),
+            "ZoomFit" => Some(AppMessage::PdfMessage(PdfMessage::ZoomFit)),
+            "SinglePageLayout" => Some(AppMessage::PdfMessage(
+                PdfMessage::SetLayout(PageLayout::SinglePage),
+            )),
+            "DoublePageLayout" => Some(AppMessage::PdfMessage(
+                PdfMessage::SetLayout(PageLayout::DoublePage),
+            )),
+            "DoublePageTitlePageLayout" => Some(AppMessage::PdfMessage(
+                PdfMessage::SetLayout(PageLayout::DoublePageTitlePage),
+            )),
+            "PresentationLayout" => Some(AppMessage::PdfMessage(
+                PdfMessage::SetLayout(PageLayout::Presentation),
+            )),
+            _ => None,
+        }
+    }
+}
+
 impl App {
     fn get_mouse_action(&self, button: MouseButton) -> Option<MouseAction> {
         let input = MouseInput {

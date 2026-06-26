@@ -183,13 +183,17 @@ impl Menu {
     }
 }
 
-// Our MenuItems will have id equal to the BindableMessage enum values as a string.
-// For example, the Open file menu item will have id of "OpenFileFinder" (corresponding to BindableMessage::OpenFileFinder)
-pub fn new_menu_item(label: &str, msg: BindableMessage) -> muda::MenuItem {
+pub fn new_menu_item(label: &str, msg: AppMessage) -> muda::MenuItem {
     let cfg = CONFIG.read().unwrap();
-    let menu_item = muda::MenuItem::with_id(msg.to_string(), label, true, None);
-    let keyaccel = keybind_to_keyaccelerator(cfg.get_binding_for_msg(msg).unwrap()).unwrap();
-    menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
+    let menu_id = msg.menu_id().expect("Menu item must have a menu_id");
+    let menu_item = muda::MenuItem::with_id(menu_id, label, true, None);
+    if let Some(bindable) = msg.bindable() {
+        if let Some(keybind) = cfg.get_binding_for_msg(bindable) {
+            if let Ok(keyaccel) = keybind_to_keyaccelerator(keybind) {
+                menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
+            }
+        }
+    }
 
     return menu_item;
 }
@@ -216,11 +220,11 @@ pub fn menu_listener() -> impl iced::futures::Stream<Item = AppMessage> {
         loop {
             if let Ok(event) = muda::MenuEvent::receiver().try_recv() {
                 let id = (&event.id().0).as_str();
-                match BindableMessage::from_str(id) {
-                    Ok(msg) => {
-                        let _ = sender.try_send(AppMessage::from(msg));
+                match AppMessage::from_menu_id(id) {
+                    Some(msg) => {
+                        let _ = sender.try_send(msg);
                     }
-                    Err(_) => {
+                    None => {
                         let _ = sender.try_send(AppMessage::OpenFile(PathBuf::from(id)));
                     }
                 }
