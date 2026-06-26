@@ -797,11 +797,6 @@ impl App {
                         }
                         if self.mac_menu.is_none() {
                             let menu_bar = platform_specific::iced_aw::create_menu_bar(
-                                self.pdfs.is_empty(),
-                                self.has_sidebar_pane(),
-                                self.dark_mode,
-                                self.invert_pdf,
-                                self.draw_page_borders,
                                 self.pdf_idx,
                                 &self.recent_files.get_recent(),
                             );

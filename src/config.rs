@@ -203,17 +203,17 @@ pub enum BindableMessage {
 impl BindableMessage {
     pub fn default_menu_label(&self) -> Option<&'static str> {
         match self {
-            BindableMessage::OpenFileFinder => Some("Open"),
+            BindableMessage::OpenFileFinder => Some("Open File"),
             BindableMessage::PrintPdf => Some("Print"),
             BindableMessage::CloseTab => Some("Close"),
-            BindableMessage::ToggleDarkModeUi => Some("Dark Interface"),
-            BindableMessage::ToggleDarkModePdf => Some("Dark Pdf"),
+            BindableMessage::ToggleDarkModeUi => Some("Toggle Interface Dark Mode"),
+            BindableMessage::ToggleDarkModePdf => Some("Toggle PDF Dark Mode"),
             BindableMessage::TogglePageBorders => Some("Page Borders"),
             BindableMessage::ZoomIn => Some("Zoom In"),
             BindableMessage::ZoomOut => Some("Zoom Out"),
             BindableMessage::ZoomHome => Some("Zoom 100%"),
             BindableMessage::ZoomFit => Some("Fit To Screen"),
-            BindableMessage::ToggleSidebar => Some("Sidebar"),
+            BindableMessage::ToggleSidebar => Some("Toggle Sidebar"),
             BindableMessage::TogglePresentationMode => Some("Presentation Mode"),
             BindableMessage::ToggleFullscreen => Some("Fullscreen"),
             BindableMessage::SinglePageLayout => Some("Single Page"),

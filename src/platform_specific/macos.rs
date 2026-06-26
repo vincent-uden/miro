@@ -49,17 +49,7 @@ impl Menu {
                     }
                     CommonMenuItem::RecentFiles => {
                         for path in recent_files {
-                            let file_name = path
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_else(|| path.to_string_lossy().to_string());
-                            let item = muda::MenuItem::with_id(
-                                path.to_str().unwrap(),
-                                file_name,
-                                true,
-                                None,
-                            );
-                            recent_files_submenu.append(&item).unwrap();
+                            recent_files_submenu.append(&new_recent_file_menu_item(path)).unwrap();
                         }
                         submenu.append(&recent_files_submenu).unwrap();
                     }
@@ -102,12 +92,7 @@ impl Menu {
             self.recent_files_submenu.remove_at(0).unwrap();
         }
         for path in recent_files {
-            let file_name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.to_string_lossy().to_string());
-            let item = muda::MenuItem::with_id(path.to_str().unwrap(), file_name, true, None);
-            self.recent_files_submenu.append(&item).unwrap();
+            self.recent_files_submenu.append(&new_recent_file_menu_item(path)).unwrap();
         }
     }
 
@@ -119,6 +104,15 @@ impl Menu {
             self.help_submenu.set_as_help_menu_for_nsapp();
         }
     }
+}
+
+pub fn new_recent_file_menu_item(path: &PathBuf) -> muda::MenuItem {
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+    let menu_item = muda::MenuItem::with_id(path.to_str().unwrap(), file_name, true, None);
+    return menu_item;
 }
 
 pub fn new_menu_item(label: &str, msg: BindableMessage) -> muda::MenuItem {

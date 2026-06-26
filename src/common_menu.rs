@@ -32,7 +32,6 @@ pub fn items() -> Vec<(String, Vec<CommonMenuItem>)> {
                 CommonMenuItem::Button(BindableMessage::ZoomFit),
                 CommonMenuItem::Separator,
                 CommonMenuItem::Button(BindableMessage::TogglePresentationMode),
-                CommonMenuItem::Button(BindableMessage::ToggleFullscreen),
             ],
         ),
         (

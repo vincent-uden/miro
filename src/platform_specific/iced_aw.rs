@@ -14,45 +14,10 @@ use crate::{
 };
 
 pub fn create_menu_bar(
-    pdfs_empty: bool,
-    has_sidebar_pane: bool,
-    dark_mode: bool,
-    invert_pdf: bool,
-    draw_page_borders: bool,
     _pdf_idx: usize,
     recent_files: &[PathBuf],
 ) -> Element<'static, AppMessage> {
     let cfg = CONFIG.read().unwrap();
-    let exit_close_label = if pdfs_empty { "Exit" } else { "Close" };
-
-    let resolve_label = |msg: &BindableMessage| -> String {
-        match msg {
-            BindableMessage::ToggleDarkModeUi => (if dark_mode {
-                "Light Interface"
-            } else {
-                "Dark Interface"
-            })
-            .to_string(),
-            BindableMessage::ToggleDarkModePdf => {
-                (if invert_pdf { "Light Pdf" } else { "Dark Pdf" }).to_string()
-            }
-            BindableMessage::TogglePageBorders => (if draw_page_borders {
-                "No Page Borders"
-            } else {
-                "Page Borders"
-            })
-            .to_string(),
-            BindableMessage::ToggleSidebar => (if has_sidebar_pane {
-                "Close sidebar"
-            } else {
-                "Open sidebar"
-            })
-            .to_string(),
-            BindableMessage::CloseTab => exit_close_label.to_string(),
-            _ => msg.default_menu_label().unwrap_or("(unnamed)").to_string(),
-        }
-    };
-
     let mut bar_items = Vec::new();
 
     for (category_name, skeleton_items) in &common_menu::items() {
@@ -83,7 +48,7 @@ pub fn create_menu_bar(
         for (i, desc) in descs.into_iter().enumerate() {
             match desc {
                 ItemDesc::Button(msg) => {
-                    let label = resolve_label(&msg);
+                    let label = msg.default_menu_label().unwrap_or("(unnamed)").to_string();
                     let binding = cfg.get_binding_for_msg(msg);
                     let is_last = Some(i) == last_button_idx;
                     let widget: Element<'static, AppMessage> = if is_last {
