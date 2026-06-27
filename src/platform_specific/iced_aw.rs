@@ -13,10 +13,7 @@ use crate::{
     config::BindableMessage,
 };
 
-pub fn create_menu_bar(
-    _pdf_idx: usize,
-    recent_files: &[PathBuf],
-) -> Element<'static, AppMessage> {
+pub fn create_menu_bar(_pdf_idx: usize, recent_files: &[PathBuf]) -> Element<'static, AppMessage> {
     let cfg = CONFIG.read().unwrap();
     let mut bar_items = Vec::new();
 

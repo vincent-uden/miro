@@ -43,13 +43,19 @@ impl Menu {
             let submenu = muda::Submenu::new(format!("&{}", tuple.0), true);
             for common_menu_item in tuple.1 {
                 match common_menu_item {
+                    // NOTE: Apparently any program can be fullscreened on mac thus making the
+                    // fullscreen button unnecessary and unexpected to mac users.
                     CommonMenuItem::Button(msg) => {
-                        let label = msg.default_menu_label().unwrap_or("(unnamed)");
-                        submenu.append(&new_menu_item(label, msg)).unwrap();
+                        if !matches!(msg, BindableMessage::ToggleFullscreen) {
+                            let label = msg.default_menu_label().unwrap_or("(unnamed)");
+                            submenu.append(&new_menu_item(label, msg)).unwrap();
+                        }
                     }
                     CommonMenuItem::RecentFiles => {
                         for path in recent_files {
-                            recent_files_submenu.append(&new_recent_file_menu_item(path)).unwrap();
+                            recent_files_submenu
+                                .append(&new_recent_file_menu_item(path))
+                                .unwrap();
                         }
                         submenu.append(&recent_files_submenu).unwrap();
                     }
@@ -92,7 +98,9 @@ impl Menu {
             self.recent_files_submenu.remove_at(0).unwrap();
         }
         for path in recent_files {
-            self.recent_files_submenu.append(&new_recent_file_menu_item(path)).unwrap();
+            self.recent_files_submenu
+                .append(&new_recent_file_menu_item(path))
+                .unwrap();
         }
     }
 
