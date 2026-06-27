@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf, str::FromStr, fmt};
 
 use colored::Colorize;
 use keybinds2::{KeyInput, KeySeq, Keybind, Keybinds};
-use strum::EnumString;
+use strum::{Display, EnumString};
 
 use crate::{
     app::AppMessage,
@@ -157,7 +157,7 @@ impl FromStr for MouseInput {
 // That does inherently mean that each menu button needs to be able to be key-bound
 // If that isn't desirable, each menu button could have an Option<BindableMessage> instead
 
-#[derive(Debug, EnumString, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, EnumString, Display, Clone, Copy, PartialEq, Eq)]
 pub enum BindableMessage {
     MoveUp,
     MoveDown,
@@ -181,6 +181,7 @@ pub enum BindableMessage {
     ToggleSidebar,
     ToggleLinkHitboxes,
     OpenFileFinder,
+    #[strum(serialize = "CloseActiveTab", serialize = "CloseTab")]
     CloseTab,
     PrintPdf,
     Exit,
@@ -197,6 +198,31 @@ pub enum BindableMessage {
     DoublePageLayout,
     DoublePageTitlePageLayout,
     PresentationLayout,
+}
+
+impl BindableMessage {
+    pub fn default_menu_label(&self) -> Option<&'static str> {
+        match self {
+            BindableMessage::OpenFileFinder => Some("Open File"),
+            BindableMessage::PrintPdf => Some("Print"),
+            BindableMessage::CloseTab => Some("Close"),
+            BindableMessage::ToggleDarkModeUi => Some("Toggle Interface Dark Mode"),
+            BindableMessage::ToggleDarkModePdf => Some("Toggle PDF Dark Mode"),
+            BindableMessage::TogglePageBorders => Some("Toggle Page Borders"),
+            BindableMessage::ZoomIn => Some("Zoom In"),
+            BindableMessage::ZoomOut => Some("Zoom Out"),
+            BindableMessage::ZoomHome => Some("Zoom 100%"),
+            BindableMessage::ZoomFit => Some("Fit To Screen"),
+            BindableMessage::ToggleSidebar => Some("Toggle Sidebar"),
+            BindableMessage::TogglePresentationMode => Some("Presentation Mode"),
+            BindableMessage::ToggleFullscreen => Some("Toggle Fullscreen"),
+            BindableMessage::SinglePageLayout => Some("Single Page"),
+            BindableMessage::DoublePageLayout => Some("Double Page"),
+            BindableMessage::DoublePageTitlePageLayout => Some("Double Page w/ Title"),
+            BindableMessage::PresentationLayout => Some("Presentation"),
+            _ => None,
+        }
+    }
 }
 
 impl From<BindableMessage> for AppMessage {
@@ -292,7 +318,6 @@ impl Config {
             ..Default::default()
         }
     }
-
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
         let binds = self.keyboard.as_slice();
         binds.iter().find(|b| b.action == msg).cloned()

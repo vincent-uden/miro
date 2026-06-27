@@ -4,6 +4,7 @@ use std::{
 };
 
 use iced::{
+    Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
     advanced::graphics::core::window,
     alignment,
     border::{self, Radius},
@@ -13,18 +14,11 @@ use iced::{
     keyboard::Modifiers,
     theme::palette,
     widget::{
-        self, button, container, pane_grid, row, scrollable,
+        self, PaneGrid, button, container, pane_grid, scrollable,
         scrollable::{Direction, Scrollbar},
-        stack, text, PaneGrid,
+        stack, text,
     },
-    Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
 };
-use iced_aw::{Menu, menu::primary, menu_items};
-use iced_aw::{
-    menu::{self},
-    menu_bar,
-};
-use keybinds2::{KeySeq, Keybind};
 use rfd::AsyncFileDialog;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -35,15 +29,15 @@ use tracing::error;
 use crate::{
     CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
-    config::{BindableMessage, MouseAction, MouseButton, MouseInput, MouseModifiers},
+    config::{MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
     jumplist::{JumpLocation, Jumplist},
     pdf::{
         PdfMessage, SearchMethod,
-        page_layout::PageLayout,
         widget::{OutlineItem, PdfViewer},
     },
+    platform_specific,
     recent_files::RecentFiles,
     rpc::rpc_server,
     watch::{WatchMessage, WatchNotification, file_watcher},
@@ -69,6 +63,7 @@ pub enum SidebarTab {
 
 #[derive(Debug)]
 pub struct App {
+    mac_menu: Option<platform_specific::macos::Menu>,
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
     pub file_watcher: Option<mpsc::Sender<WatchMessage>>,
@@ -90,6 +85,7 @@ pub struct App {
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
 pub enum AppMessage {
+    InitializeMacMenu,
     OpenFile(PathBuf),
     #[strum(disabled)]
     #[serde(skip)]
@@ -167,14 +163,16 @@ impl App {
     }
 
     pub fn new(bookmark_store: BookmarkStore, recent_files: RecentFiles) -> Self {
+        let cfg = CONFIG.read().unwrap();
         let (mut ps, pdf_id) = pane_grid::State::new(Pane {
             pane_type: PaneType::Pdf,
         });
-        if CONFIG.read().unwrap().open_sidebar {
+        if cfg.open_sidebar {
             Self::open_sidebar(&mut ps, pdf_id);
         }
 
         Self {
+            mac_menu: None,
             pdfs: vec![],
             pdf_idx: 0,
             file_watcher: None,
@@ -253,9 +251,20 @@ impl App {
     pub fn update(&mut self, message: AppMessage) -> iced::Task<AppMessage> {
         let _span = tracy_client::span!("App update");
         match message {
+            AppMessage::InitializeMacMenu => {
+                let recent_files = self.recent_files.get_recent();
+                let m = platform_specific::macos::Menu::new(recent_files);
+                m.init();
+                self.mac_menu = Some(m);
+                iced::Task::none()
+            }
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 self.recent_files.add_recent(path_buf.clone());
+                if let Some(m) = &self.mac_menu {
+                    let recent_files = self.recent_files.get_recent();
+                    m.update_recent_files(recent_files);
+                }
                 self.open_pdf(path_buf)
             }
             AppMessage::OpenTempFile(path_buf) => {
@@ -636,264 +645,6 @@ impl App {
         };
     }
 
-    fn create_menu_bar(&self) -> Element<'_, AppMessage> {
-        let menu_tpl_1 = |items| Menu::new(items).max_width(300.0).offset(0.0).spacing(0.0);
-        let cfg = CONFIG.read().unwrap();
-
-        let exit_close_label = if self.pdfs.is_empty() {
-            "Exit"
-        } else {
-            "Close"
-        };
-
-        let recent_files = self.recent_files.get_recent();
-
-        let file_menu_items = match recent_files.len() {
-            0 => menu_items!(
-                (menu_button(
-                    "Open",
-                    AppMessage::OpenNewFileFinder,
-                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                )),
-                (menu_button(
-                    "Print",
-                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                )),
-                (menu_button_last(exit_close_label, AppMessage::CloseTab(self.pdf_idx), None,))
-            ),
-            1 => menu_items!(
-                (menu_button(
-                    "Open",
-                    AppMessage::OpenNewFileFinder,
-                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                )),
-                (menu_separator()),
-                (menu_label("Recent")),
-                (create_recent_file_button(recent_files[0].clone())),
-                (menu_separator()),
-                (menu_button(
-                    "Print",
-                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                )),
-                (menu_button_last(exit_close_label, AppMessage::CloseTab(self.pdf_idx), None,))
-            ),
-            2 => menu_items!(
-                (menu_button(
-                    "Open",
-                    AppMessage::OpenNewFileFinder,
-                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                )),
-                (menu_separator()),
-                (menu_label("Recent")),
-                (create_recent_file_button(recent_files[0].clone())),
-                (create_recent_file_button(recent_files[1].clone())),
-                (menu_separator()),
-                (menu_button(
-                    "Print",
-                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                )),
-                (menu_button_last(exit_close_label, AppMessage::CloseTab(self.pdf_idx), None,))
-            ),
-            3 => menu_items!(
-                (menu_button(
-                    "Open",
-                    AppMessage::OpenNewFileFinder,
-                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                )),
-                (menu_separator()),
-                (menu_label("Recent")),
-                (create_recent_file_button(recent_files[0].clone())),
-                (create_recent_file_button(recent_files[1].clone())),
-                (create_recent_file_button(recent_files[2].clone())),
-                (menu_separator()),
-                (menu_button(
-                    "Print",
-                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                )),
-                (menu_button_last(exit_close_label, AppMessage::CloseTab(self.pdf_idx), None,))
-            ),
-            4 => menu_items!(
-                (menu_button(
-                    "Open",
-                    AppMessage::OpenNewFileFinder,
-                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                )),
-                (menu_separator()),
-                (menu_label("Recent")),
-                (create_recent_file_button(recent_files[0].clone())),
-                (create_recent_file_button(recent_files[1].clone())),
-                (create_recent_file_button(recent_files[2].clone())),
-                (create_recent_file_button(recent_files[3].clone())),
-                (menu_separator()),
-                (menu_button(
-                    "Print",
-                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                )),
-                (menu_button_last(exit_close_label, AppMessage::CloseTab(self.pdf_idx), None,))
-            ),
-            _ => menu_items!(
-                (menu_button(
-                    "Open",
-                    AppMessage::OpenNewFileFinder,
-                    cfg.get_binding_for_msg(BindableMessage::OpenFileFinder)
-                )),
-                (menu_separator()),
-                (menu_label("Recent")),
-                (create_recent_file_button(recent_files[0].clone())),
-                (create_recent_file_button(recent_files[1].clone())),
-                (create_recent_file_button(recent_files[2].clone())),
-                (create_recent_file_button(recent_files[3].clone())),
-                (create_recent_file_button(recent_files[4].clone())),
-                (menu_separator()),
-                (menu_button(
-                    "Print",
-                    AppMessage::PdfMessage(PdfMessage::PrintPdf),
-                    cfg.get_binding_for_msg(BindableMessage::PrintPdf)
-                )),
-                (menu_button_last(exit_close_label, AppMessage::CloseTab(self.pdf_idx), None,))
-            ),
-        };
-
-        container(row![
-            menu_bar!(
-                (menu_category_button("File"), menu_tpl_1(file_menu_items)),
-                (
-                    menu_category_button("View"),
-                    menu_tpl_1(menu_items!(
-                        (menu_button(
-                            if self.dark_mode {
-                                "Light Interface"
-                            } else {
-                                "Dark Interface"
-                            },
-                            AppMessage::ToggleDarkModeUi,
-                            cfg.get_binding_for_msg(BindableMessage::ToggleDarkModeUi)
-                        )),
-                        (menu_button(
-                            if self.invert_pdf {
-                                "Light Pdf"
-                            } else {
-                                "Dark Pdf"
-                            },
-                            AppMessage::ToggleDarkModePdf,
-                            cfg.get_binding_for_msg(BindableMessage::ToggleDarkModePdf)
-                        )),
-                        (menu_button(
-                            if self.draw_page_borders {
-                                "No Page Borders"
-                            } else {
-                                "Page Borders"
-                            },
-                            AppMessage::TogglePageBorders,
-                            cfg.get_binding_for_msg(BindableMessage::TogglePageBorders)
-                        )),
-                        (menu_button(
-                            "Zoom In",
-                            AppMessage::PdfMessage(PdfMessage::ZoomIn),
-                            cfg.get_binding_for_msg(BindableMessage::ZoomIn)
-                        )),
-                        (menu_button(
-                            "Zoom Out",
-                            AppMessage::PdfMessage(PdfMessage::ZoomOut),
-                            cfg.get_binding_for_msg(BindableMessage::ZoomOut)
-                        )),
-                        (menu_button(
-                            "Zoom 100%",
-                            AppMessage::PdfMessage(PdfMessage::ZoomHome),
-                            cfg.get_binding_for_msg(BindableMessage::ZoomHome)
-                        )),
-                        (menu_button(
-                            "Fit To Screen",
-                            AppMessage::PdfMessage(PdfMessage::ZoomFit),
-                            cfg.get_binding_for_msg(BindableMessage::ZoomFit)
-                        )),
-                        (menu_button(
-                            if self.has_sidebar_pane() {
-                                "Close sidebar"
-                            } else {
-                                "Open sidebar"
-                            },
-                            AppMessage::ToggleSidebar,
-                            cfg.get_binding_for_msg(BindableMessage::ToggleSidebar)
-                        )),
-                        (menu_button(
-                            "Toggle Presentation Mode",
-                            AppMessage::TogglePresentationMode,
-                            cfg.get_binding_for_msg(BindableMessage::TogglePresentationMode)
-                        )),
-                        (menu_button_last(
-                            "Toggle Fullscreen",
-                            AppMessage::ToggleFullscreen,
-                            cfg.get_binding_for_msg(BindableMessage::ToggleFullscreen)
-                        ))
-                    ))
-                ),
-                (
-                    menu_category_button("Layout"),
-                    menu_tpl_1(menu_items!(
-                        (menu_button(
-                            "Single page",
-                            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage)),
-                            cfg.get_binding_for_msg(BindableMessage::SinglePageLayout)
-                        )),
-                        (menu_button(
-                            "Double page",
-                            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::DoublePage)),
-                            cfg.get_binding_for_msg(BindableMessage::DoublePageLayout)
-                        )),
-                        (menu_button(
-                            "Double page with title page",
-                            AppMessage::PdfMessage(PdfMessage::SetLayout(
-                                PageLayout::DoublePageTitlePage
-                            )),
-                            cfg.get_binding_for_msg(BindableMessage::DoublePageTitlePageLayout)
-                        )),
-                        (menu_button_last(
-                            "Presentation",
-                            AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::Presentation)),
-                            cfg.get_binding_for_msg(BindableMessage::PresentationLayout)
-                        ))
-                    ))
-                )
-            )
-            .draw_path(menu::DrawPath::Backdrop)
-            .style(
-                |theme: &iced::Theme, status: iced_aw::style::Status| menu::Style {
-                    menu_background: theme.extended_palette().background.weak.color.into(),
-                    bar_background: theme.extended_palette().background.weak.color.into(),
-                    menu_border: Border {
-                        radius: Radius::new(0.0).bottom(8.0),
-                        ..Default::default()
-                    },
-                    bar_shadow: Shadow::default(),
-                    menu_shadow: Shadow::default(),
-                    ..primary(theme, status)
-                },
-            ),
-            container(widget::space::horizontal())
-                .width(Length::Fill)
-                .height(28.0)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(theme.extended_palette().background.weak.color.into()),
-                    ..Default::default()
-                })
-        ])
-        .width(Length::Fill)
-        .padding(Padding::default().bottom(2.0))
-        .style(|theme| container::Style {
-            background: Some(Background::Color(
-                theme.extended_palette().background.weak.color,
-            )),
-            ..Default::default()
-        })
-        .into()
-    }
-
     fn create_tabs(&self) -> Element<'_, AppMessage> {
         let mut command_bar = widget::Row::new();
         for (i, pdf) in self.pdfs.iter().enumerate() {
@@ -1016,7 +767,6 @@ impl App {
             pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
                 PaneType::Pdf => {
-                    let menu_bar = self.create_menu_bar();
                     let pdf_content: iced::Element<'_, AppMessage> = if self.pdfs.is_empty() {
                         widget::space::vertical().into()
                     } else {
@@ -1045,7 +795,15 @@ impl App {
                                     .into(),
                             );
                         }
-                        widget::column![menu_bar, stack(stack_children)].into()
+                        if self.mac_menu.is_none() {
+                            let menu_bar = platform_specific::iced_aw::create_menu_bar(
+                                self.pdf_idx,
+                                &self.recent_files.get_recent(),
+                            );
+                            widget::column![menu_bar, stack(stack_children)].into()
+                        } else {
+                            widget::column![stack(stack_children)].into()
+                        }
                     }
                 }
             })
@@ -1336,6 +1094,7 @@ impl App {
             keys,
             Subscription::run(file_watcher).map(AppMessage::FileWatcher),
         ];
+        subs.append(&mut platform_specific::listeners());
 
         let config = CONFIG.read().unwrap();
         if config.rpc_enabled {
@@ -1418,7 +1177,7 @@ fn view_outline_items<'a>(items: &'a [OutlineItem], level: u32) -> widget::Colum
     col
 }
 
-fn base_button<'a>(
+pub(crate) fn base_button<'a>(
     content: impl Into<Element<'a, AppMessage>>,
     msg: AppMessage,
 ) -> button::Button<'a, AppMessage> {
@@ -1457,202 +1216,6 @@ fn debug_button_s(label: &str) -> button::Button<'_, AppMessage, iced::Theme, ic
                 ..Default::default()
             }
         })
-}
-
-fn menu_category_button(
-    label: &str,
-) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
-    labeled_button(label, AppMessage::None)
-        .width(Length::Shrink)
-        .style(move |theme, status| {
-            let palette = theme.extended_palette();
-            let pair = match status {
-                button::Status::Active => palette.background.weak,
-                button::Status::Hovered | button::Status::Disabled => palette.background.base,
-                button::Status::Pressed => palette.primary.base,
-            };
-            button::Style {
-                text_color: pair.text,
-                background: Some(Background::Color(pair.color)),
-                ..Default::default()
-            }
-        })
-}
-
-fn format_key_sequence(seq: &KeySeq) -> String {
-    let parts = seq.as_slice().iter().map(|inp| format!("{inp} "));
-    let mut out = String::from("(");
-    for p in parts {
-        out.push_str(&p);
-    }
-    out.pop();
-    out.push(')');
-    out
-}
-
-fn create_recent_file_button<'a>(
-    path: PathBuf,
-) -> button::Button<'a, AppMessage, iced::Theme, iced::Renderer> {
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string_lossy().to_string());
-    base_button(
-        row![
-            text(file_name),
-            widget::space::horizontal(),
-            text("").style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                text::Style {
-                    color: Some(palette.primary.base.color),
-                }
-            })
-        ],
-        AppMessage::OpenFile(path),
-    )
-    .width(Length::Fill)
-    .style(move |theme, status| {
-        let palette = theme.extended_palette();
-        let pair = match status {
-            button::Status::Active => palette.background.weak,
-            button::Status::Hovered => palette.background.base,
-            button::Status::Pressed => palette.background.strong,
-            button::Status::Disabled => palette.secondary.weak,
-        };
-        button::Style {
-            text_color: pair.text,
-            background: Some(Background::Color(pair.color)),
-            border: Border {
-                radius: Radius::default(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    })
-}
-
-fn menu_label(label: &str) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
-    button(
-        row![
-            text(label).style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                text::Style {
-                    color: Some(palette.primary.base.color),
-                }
-            }),
-            widget::space::horizontal(),
-        ]
-        .align_y(alignment::Vertical::Center),
-    )
-    .width(Length::Fill)
-    .padding([4, 8])
-    .style(move |theme, _status| {
-        let palette = theme.extended_palette();
-        button::Style {
-            text_color: palette.primary.base.color,
-            background: None,
-            border: Border {
-                radius: Radius::default(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    })
-    .on_press(AppMessage::None)
-}
-
-fn menu_separator() -> Element<'static, AppMessage> {
-    container(widget::rule::horizontal(1))
-        .height(Length::Fixed(6.0))
-        .padding(0.0)
-        .into()
-}
-
-fn menu_button(
-    label: &str,
-    msg: AppMessage,
-    binding: Option<Keybind<BindableMessage>>,
-) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
-    let txt = format!(
-        " {}",
-        binding.map_or(String::new(), |b| format_key_sequence(&b.seq))
-    );
-    base_button(
-        row![
-            text(label),
-            widget::space::horizontal(),
-            text(txt).style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                text::Style {
-                    color: Some(palette.primary.base.color),
-                }
-            })
-        ],
-        msg,
-    )
-    .width(Length::Fill)
-    .style(move |theme, status| {
-        let palette = theme.extended_palette();
-        let pair = match status {
-            button::Status::Active => palette.background.weak,
-            button::Status::Hovered => palette.background.base,
-            button::Status::Pressed => palette.background.strong,
-            button::Status::Disabled => palette.secondary.weak,
-        };
-        button::Style {
-            text_color: pair.text,
-            background: Some(Background::Color(pair.color)),
-            border: Border {
-                radius: Radius::default(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    })
-}
-
-fn menu_button_last(
-    label: &str,
-    msg: AppMessage,
-    binding: Option<Keybind<BindableMessage>>,
-) -> button::Button<'_, AppMessage, iced::Theme, iced::Renderer> {
-    let txt = format!(
-        " {}",
-        binding.map_or(String::new(), |b| format_key_sequence(&b.seq))
-    );
-    base_button(
-        row![
-            text(label),
-            widget::space::horizontal(),
-            text(txt).style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                text::Style {
-                    color: Some(palette.primary.base.color),
-                }
-            })
-        ],
-        msg,
-    )
-    .width(Length::Fill)
-    .style(move |theme, status| {
-        let palette = theme.extended_palette();
-        let pair = match status {
-            button::Status::Active => palette.background.weak,
-            button::Status::Hovered => palette.background.base,
-            button::Status::Pressed => palette.background.strong,
-            button::Status::Disabled => palette.secondary.weak,
-        };
-        button::Style {
-            text_color: pair.text,
-            background: Some(Background::Color(pair.color)),
-            border: Border {
-                radius: Radius::default().bottom(8.0),
-                color: theme.extended_palette().background.strong.color,
-                width: 0.0,
-            },
-            ..Default::default()
-        }
-    })
 }
 
 fn file_tab<'a>(

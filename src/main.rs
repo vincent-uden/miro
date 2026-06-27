@@ -22,11 +22,13 @@ use crate::app::AppMessage;
 
 mod app;
 mod bookmarks;
+mod common_menu;
 mod config;
 mod geometry;
 mod icons;
 mod jumplist;
 mod pdf;
+mod platform_specific;
 mod recent_files;
 mod rpc;
 mod watch;
@@ -155,7 +157,6 @@ fn main() -> anyhow::Result<()> {
         cfg_presentation = config.open_presentation_default;
         cfg_fullscreen = config.open_fullscreen_default;
     }
-
     Ok(iced::application(
         move || {
             let path = args.path.clone();
@@ -163,24 +164,29 @@ fn main() -> anyhow::Result<()> {
                 BookmarkStore::system_store().unwrap_or_default(),
                 RecentFiles::system_store().unwrap_or_default(),
             );
-            let file_task = match path {
+            let startup_tasks = match path {
                 Some(p) if tmp_file.is_some() => iced::Task::done(app::AppMessage::OpenTempFile(p)),
                 Some(p) => iced::Task::done(app::AppMessage::OpenFile(p)),
                 None => iced::Task::none(),
             };
-            let mut file_task =
-                file_task.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
+            let mut startup_tasks =
+                startup_tasks.chain(iced::window::latest().map(app::AppMessage::FoundWindowId));
+
+            for task in platform_specific::startup_tasks().into_iter() {
+                startup_tasks = startup_tasks.chain(task);
+            }
 
             // NOTE: The default state is in windowed, non presentation mode. Using the toggles is
             // thus deterministic.
             if args.fullscreen || cfg_fullscreen {
-                file_task = file_task.chain(iced::Task::done(AppMessage::ToggleFullscreen));
+                startup_tasks = startup_tasks.chain(iced::Task::done(AppMessage::ToggleFullscreen));
             }
             if args.presentation || cfg_presentation {
-                file_task = file_task.chain(iced::Task::done(AppMessage::TogglePresentationMode));
+                startup_tasks =
+                    startup_tasks.chain(iced::Task::done(AppMessage::TogglePresentationMode));
             }
 
-            (state, file_task)
+            (state, startup_tasks)
         },
         App::update,
         App::view,
@@ -198,6 +204,7 @@ fn main() -> anyhow::Result<()> {
 pub fn theme(app: &App) -> Theme {
     use iced::theme::palette::{*};
 
+    // TODO: Custom themes for UI, and maybe custom pdf background color (perhaps in json files?).
     let miro_light = Theme::custom_with_fn(
         "Miro Light".to_string(),
         iced::theme::Palette {
