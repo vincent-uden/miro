@@ -10,6 +10,10 @@
   fontconfig,
   pkg-config,
   vulkan-loader,
+  glib,
+  gtk3,
+  pango,
+  xdotool,
   ...
 }: let
   unfilteredRoot = ../.;
@@ -43,11 +47,15 @@
     nativeBuildInputs = [
       pkg-config
       rustPlatform.bindgenHook
+      pango
     ];
 
     buildInputs = [
       fontconfig
       vulkan-loader
+      gtk3
+      glib
+      xdotool
     ];
 
     # prevent bindgen from rebuilding unnecessarily
