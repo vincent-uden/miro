@@ -25,7 +25,7 @@ jobs:
           submodules: "recursive"
           fetch-depth: 500
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get -y install libfontconfig1-dev
+      - run: sudo apt-get update && sudo apt-get -y install libfontconfig1-dev libglib2.0-dev
         if: matrix.os == 'ubuntu-latest'
       - name: Install LLVM
         if: matrix.os == 'windows-2022'
