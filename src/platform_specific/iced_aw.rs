@@ -199,7 +199,7 @@ fn create_recent_file_button(
         .unwrap_or_else(|| path.to_string_lossy().to_string());
     app::base_button(
         row![
-            text(file_name),
+            text(file_name).shaping(text::Shaping::Advanced),
             widget::space::horizontal(),
             text("").style(|theme: &Theme| {
                 let palette = theme.extended_palette();
