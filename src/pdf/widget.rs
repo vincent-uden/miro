@@ -105,6 +105,90 @@ enum RenderKey {
     Partial(usize, u32, i32, i32),
 }
 
+/// How a single page should be rasterized for the current frame: which cache key
+/// to use, where to draw the resulting image, the pixmap dimensions and the
+/// MuPDF matrix/scissor used to render into it.
+#[derive(Debug, Clone)]
+struct TilePlan {
+    key: RenderKey,
+    draw_rect: Rect<f32>,
+    width: i32,
+    height: i32,
+    matrix: Matrix,
+    scissor: mupdf::Rect,
+}
+
+/// Decide whether a page can be rendered once in full or must be scissored to
+/// the visible intersection, and compute the corresponding render parameters.
+///
+/// `rect_ss` is the page bounding box in screen coordinates (relative to the
+/// widget origin) and `page_bounds` is the page size in PDF coordinates.
+fn plan_tile(
+    page_idx: usize,
+    page_bounds: Rect<f32>,
+    rect_ss: Rect<f32>,
+    effective_scale: f32,
+    viewport_rect: Rect<f32>,
+) -> TilePlan {
+    let fully_visible = rect_ss.x0.x >= 0.0
+        && rect_ss.x1.x <= viewport_rect.x1.x
+        && rect_ss.x0.y >= 0.0
+        && rect_ss.x1.y <= viewport_rect.x1.y;
+
+    if fully_visible {
+        let key = RenderKey::Full(page_idx, effective_scale.to_bits());
+        let width = rect_ss.width().ceil().max(1.0) as i32;
+        let height = rect_ss.height().ceil().max(1.0) as i32;
+        let matrix = Matrix::new(effective_scale, 0.0, 0.0, effective_scale, 0.0, 0.0);
+        // Scissor must be in device coordinates, i.e. the pixmap size. The
+        // unscaled page bounds would cull the bottom/right once the page is
+        // scaled up to fit the viewport (e.g. after ZoomFit).
+        let scissor = mupdf::Rect::new(0.0, 0.0, width as f32, height as f32);
+        TilePlan {
+            key,
+            draw_rect: rect_ss,
+            width,
+            height,
+            matrix,
+            scissor,
+        }
+    } else {
+        let vis = rect_ss.intersect(&viewport_rect);
+        let width = vis.width().ceil().max(1.0) as i32;
+        let height = vis.height().ceil().max(1.0) as i32;
+
+        let render_offset_x = rect_ss.x0.x - vis.x0.x;
+        let render_offset_y = rect_ss.x0.y - vis.x0.y;
+
+        let key = RenderKey::Partial(page_idx, effective_scale.to_bits(), width, height);
+
+        let raster_tx = render_offset_x - page_bounds.x0.x * effective_scale;
+        let raster_ty = render_offset_y - page_bounds.x0.y * effective_scale;
+
+        let matrix = Matrix::new(
+            effective_scale,
+            0.0,
+            0.0,
+            effective_scale,
+            raster_tx.round(),
+            raster_ty.round(),
+        );
+
+        // Scissor is in pixmap coordinates and covers the whole pixmap. It only
+        // culls objects entirely outside the visible region.
+        let scissor = mupdf::Rect::new(0.0, 0.0, width as f32, height as f32);
+
+        TilePlan {
+            key,
+            draw_rect: vis,
+            width,
+            height,
+            matrix,
+            scissor,
+        }
+    }
+}
+
 struct Document<'a> {
     cache: Cache,
     pages: Vec<(image::Handle, Rect<f32>)>,
@@ -1056,59 +1140,14 @@ impl PdfViewer {
                     let page = page.unwrap();
                     let page_bounds: Rect<f32> = page.bounds().unwrap().into();
 
-                    let fully_visible = rect_ss.x0.x >= 0.0
-                        && rect_ss.x1.x <= viewport_rect.x1.x
-                        && rect_ss.x0.y >= 0.0
-                        && rect_ss.x1.y <= viewport_rect.x1.y;
-
-                    let (key, draw_rect, w, h, matrix, scissor) = if fully_visible {
-                        let key = RenderKey::Full(i, effective_scale.to_bits());
-                        let w = rect_ss.width().ceil().max(1.0) as i32;
-                        let h = rect_ss.height().ceil().max(1.0) as i32;
-                        let matrix =
-                            Matrix::new(effective_scale, 0.0, 0.0, effective_scale, 0.0, 0.0);
-                        let scissor =
-                            mupdf::Rect::new(0.0, 0.0, page_bounds.width(), page_bounds.height());
-                        (key, rect_ss, w, h, matrix, scissor)
-                    } else {
-                        let vis = rect_ss.intersect(&viewport_rect);
-                        let vw = vis.width().ceil().max(1.0) as i32;
-                        let vh = vis.height().ceil().max(1.0) as i32;
-
-                        let render_offset_x = rect_ss.x0.x - vis.x0.x;
-                        let render_offset_y = rect_ss.x0.y - vis.x0.y;
-
-                        let key = RenderKey::Partial(i, effective_scale.to_bits(), vw, vh);
-
-                        let raster_tx = render_offset_x - page_bounds.x0.x * effective_scale;
-                        let raster_ty = render_offset_y - page_bounds.x0.y * effective_scale;
-
-                        let matrix = Matrix::new(
-                            effective_scale,
-                            0.0,
-                            0.0,
-                            effective_scale,
-                            raster_tx.round(),
-                            raster_ty.round(),
-                        );
-
-                        // NOTE: Controls what part of the pdf page is rendered, in what
-                        // coordinates? It "moves" along when I pan, thus it is NOT anchored to the
-                        // document but rather to the pixmap itself. The units are pixels, even
-                        // though they are floating point numbers. Thus the scissor area is
-                        // expressed entirely in pixmap coordinates.
-                        //
-                        // NOTE: What makes this more confusing is that a scissored render can still
-                        // draw outside of the scissored region. Any object in the pdf that is
-                        // within the scissored region will be rendered in its entirety. Its like a
-                        // crude frustrum cull
-                        //
-                        // NOTE: We want to draw the entire pixmap everytime, thus this is just the
-                        // pixmaps size.
-                        let scissor = mupdf::Rect::new(0.0, 0.0, vw as f32, vh as f32);
-
-                        (key, vis, vw, vh, matrix, scissor)
-                    };
+                    let TilePlan {
+                        key,
+                        draw_rect,
+                        width: w,
+                        height: h,
+                        matrix,
+                        scissor,
+                    } = plan_tile(i, page_bounds, rect_ss, effective_scale, viewport_rect);
 
                     // Try to reuse a pixmap allocation for this page.
                     let mut pix = {
@@ -1891,6 +1930,49 @@ mod tests {
     use std::path::PathBuf;
     use crate::pdf::find_search_matches;
     use super::*;
+
+    #[test]
+    fn test_plan_tile_full_page_scissor_is_in_device_space() {
+        // A page scaled up to exactly fit the viewport (as happens after
+        // ZoomFit). The scissor must cover the whole pixmap, otherwise the
+        // bottom/right of the page is culled away.
+        let page_bounds = Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(300.0, 200.0));
+        let effective_scale = 2.0;
+        let rect_ss = Rect::from_pos_size(Vector::new(100.0, 100.0), Vector::new(600.0, 400.0));
+        let viewport_rect = Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(800.0, 600.0));
+
+        let plan = plan_tile(0, page_bounds, rect_ss, effective_scale, viewport_rect);
+
+        assert_eq!(plan.key, RenderKey::Full(0, effective_scale.to_bits()));
+        assert_eq!(plan.draw_rect, rect_ss);
+        assert_eq!(plan.width, 600);
+        assert_eq!(plan.height, 400);
+        assert_eq!(
+            plan.scissor,
+            mupdf::Rect::new(0.0, 0.0, 600.0, 400.0),
+            "full-page scissor must be in device/pixmap coordinates, not page coordinates"
+        );
+    }
+
+    #[test]
+    fn test_plan_tile_partial_page_scissor_covers_visible_region() {
+        let page_bounds = Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(300.0, 200.0));
+        let effective_scale = 2.0;
+        let rect_ss = Rect::from_pos_size(Vector::new(-100.0, -50.0), Vector::new(600.0, 400.0));
+        let viewport_rect = Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(800.0, 600.0));
+
+        let plan = plan_tile(0, page_bounds, rect_ss, effective_scale, viewport_rect);
+
+        assert_eq!(
+            plan.key,
+            RenderKey::Partial(0, effective_scale.to_bits(), 500, 350)
+        );
+        assert_eq!(
+            plan.draw_rect,
+            Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(500.0, 350.0))
+        );
+        assert_eq!(plan.scissor, mupdf::Rect::new(0.0, 0.0, 500.0, 350.0));
+    }
 
     #[test]
     fn test_zoom_fit_scales_current_page_to_viewport() -> Result<()> {
