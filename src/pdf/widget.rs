@@ -790,27 +790,15 @@ impl PdfViewer {
             }
             PdfMessage::ZoomFit => {
                 let page_idx = self.current_page();
-                if let Some(display_list) = self.display_lists.get(page_idx) {
-                    let page_bounds = display_list.bounds();
-                    let page_width = page_bounds.x1 - page_bounds.x0;
-                    let page_height = page_bounds.y1 - page_bounds.y0;
-                    if page_width > 0.0 && page_height > 0.0 {
-                        let viewport = *self.viewport.borrow();
-                        if viewport.width > 0.0 && viewport.height > 0.0 {
-                            let scale_x = viewport.width / page_width;
-                            let scale_y = viewport.height / page_height;
-                            self.scale = scale_x.min(scale_y) / self.fractional_scaling;
-                            if let Ok(translation) = self.layout.translation_for_page(
-                                &self.doc,
-                                self.scale,
-                                self.fractional_scaling,
-                                page_idx,
-                                viewport,
-                            ) {
-                                self.translation = translation;
-                            }
-                        }
-                    }
+                let viewport = *self.viewport.borrow();
+                if let Ok((scale, translation)) = self.layout.zoom_fit(
+                    &self.doc,
+                    page_idx,
+                    self.fractional_scaling,
+                    viewport,
+                ) {
+                    self.scale = scale;
+                    self.translation = translation;
                 }
             }
             PdfMessage::Move(vector) => {
@@ -2054,6 +2042,85 @@ mod tests {
             "Page bottom edge {} should be inside viewport",
             page_rect.x1.y
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_zoom_fit_centers_page_spread() -> Result<()> {
+        let viewport = iced::Size::new(800.0, 600.0);
+
+        // Reference scale when fitting a single page.
+        let mut single = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        single.set_viewport_for_test(viewport);
+        single.layout = PageLayout::SinglePage;
+        let _ = single.update(PdfMessage::ZoomFit);
+
+        // (layout, current page, first/last page of the spread that should be fit).
+        // The non-zero current pages cover spreads that sit far below the viewport at
+        // zero translation, where an incorrect translation sign loses the document.
+        let cases = [
+            (PageLayout::DoublePage, 0usize, (0usize, 1usize)),
+            (PageLayout::DoublePage, 2, (2, 2)),
+            (PageLayout::DoublePageTitlePage, 2, (1, 2)),
+        ];
+
+        for (layout, page, (first, last)) in cases {
+            let mut viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+            viewer.set_viewport_for_test(viewport);
+            viewer.layout = layout;
+            let _ = viewer.update(PdfMessage::SetPage(page));
+            assert_eq!(viewer.current_page(), page);
+
+            let _ = viewer.update(PdfMessage::ZoomFit);
+            let current = viewer.current_page();
+            assert!(
+                (first..=last).contains(&current),
+                "ZoomFit should stay on the fitted spread {first}..={last}, got page {current}"
+            );
+
+            // The whole spread must fit within the viewport and be centered, rather than
+            // centering only the page nearest the middle of the screen.
+            let rects = viewer.layout.pages_rects(
+                viewer.doc.pages()?,
+                -viewer.translation,
+                viewer.scale,
+                viewer.fractional_scaling,
+                viewport,
+            )?;
+            let spread = (first..=last).fold(rects[first], |acc, i| acc.union(&rects[i]));
+            assert!(
+                spread.x0.x >= -1e-3 && spread.x1.x <= viewport.width + 1e-3,
+                "spread x-range {:?}-{:?} should fit in viewport width {}",
+                spread.x0.x,
+                spread.x1.x,
+                viewport.width
+            );
+            assert!(
+                spread.x0.y >= -1e-3 && spread.x1.y <= viewport.height + 1e-3,
+                "spread y-range {:?}-{:?} should fit in viewport height {}",
+                spread.x0.y,
+                spread.x1.y,
+                viewport.height
+            );
+            let center = spread.center();
+            assert!(
+                (center.x - viewport.width / 2.0).abs() < 1e-3
+                    && (center.y - viewport.height / 2.0).abs() < 1e-3,
+                "spread center {:?} should be at the viewport center",
+                center
+            );
+
+            // Fitting a two-page spread must zoom out compared to fitting one page.
+            if first != last {
+                assert!(
+                    viewer.scale < single.scale,
+                    "double page fit scale {} should be smaller than single page scale {}",
+                    viewer.scale,
+                    single.scale
+                );
+            }
+        }
 
         Ok(())
     }

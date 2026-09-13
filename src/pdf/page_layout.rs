@@ -174,6 +174,93 @@ impl PageLayout {
         Ok(out)
     }
 
+    /// Returns the inclusive range of page indices that are laid out side by side in the same
+    /// row (a "spread") as `page_idx`. For single-page layouts this is just `page_idx` itself.
+    pub fn spread_page_range(
+        &self,
+        page_idx: usize,
+        page_count: usize,
+    ) -> std::ops::RangeInclusive<usize> {
+        if page_count == 0 {
+            return 0..=0;
+        }
+        let last = page_count - 1;
+        let page_idx = page_idx.min(last);
+        // Page 0 of the title-page layout sits on its own row.
+        let start = match self {
+            PageLayout::SinglePage | PageLayout::Presentation => page_idx,
+            PageLayout::DoublePage => page_idx - (page_idx % 2),
+            PageLayout::DoublePageTitlePage if page_idx == 0 => 0,
+            PageLayout::DoublePageTitlePage => page_idx - ((page_idx - 1) % 2),
+        };
+        let end = match self {
+            PageLayout::SinglePage | PageLayout::Presentation => start,
+            PageLayout::DoublePageTitlePage if page_idx == 0 => 0,
+            _ => (start + 1).min(last),
+        };
+        start..=end
+    }
+
+    /// Returns the bounding box of the spread containing `page_idx` as laid out at `scale`.
+    fn spread_rect(
+        &self,
+        doc: &Document,
+        page_idx: usize,
+        scale: f32,
+        fractional_scale: f32,
+        viewport: Size<f32>,
+    ) -> Result<Rect<f32>> {
+        let rects = self.pages_rects(
+            doc.pages()?,
+            Vector::zero(),
+            scale,
+            fractional_scale,
+            viewport,
+        )?;
+        if rects.is_empty() {
+            return Err(anyhow!("There are no pages"));
+        }
+        let range = self.spread_page_range(page_idx, rects.len());
+        Ok(rects[range]
+            .iter()
+            .fold(rects[page_idx.min(rects.len() - 1)], |acc, rect| {
+                acc.union(rect)
+            }))
+    }
+
+    /// Returns the scale and translation that fit and center the spread containing `page_idx` in
+    /// the viewport. Unlike fitting a single page, this keeps both pages of a two-page spread
+    /// fully visible and centered.
+    pub fn zoom_fit(
+        &self,
+        doc: &Document,
+        page_idx: usize,
+        fractional_scale: f32,
+        viewport: Size<f32>,
+    ) -> Result<(f32, Vector<f32>)> {
+        if viewport.width <= 0.0 || viewport.height <= 0.0 {
+            return Err(anyhow!("Cannot fit pages in a zero-sized viewport"));
+        }
+        // The spread's size is linear in the effective scale, so measure it at scale 1.
+        let reference = self.spread_rect(doc, page_idx, 1.0, 1.0, viewport)?;
+        let size = reference.size();
+        if size.x <= 0.0 || size.y <= 0.0 {
+            return Err(anyhow!("Cannot fit a spread with zero size"));
+        }
+        let effective_scale = (viewport.width / size.x).min(viewport.height / size.y);
+        let scale = effective_scale / fractional_scale;
+
+        // Recompute at the target scale since scaling around each page's center can shift the
+        // bounding box when the pages have different sizes.
+        let spread = self.spread_rect(doc, page_idx, scale, fractional_scale, viewport)?;
+        let viewport_center = Vector::new(viewport.width, viewport.height).scaled(0.5);
+        // `pages_rects` is called with `-translation` when rendering, so a spread below the
+        // viewport center needs a positive translation (same convention as
+        // `translation_for_page`).
+        let translation = (spread.center() - viewport_center).scaled(1.0 / effective_scale);
+        Ok((scale, translation))
+    }
+
     /// Returns the translation that would leave the page at [page_idx] visible on the screen. If
     /// `page_idx > doc.page_count()` this will move to the last page.
     pub fn translation_for_page(
