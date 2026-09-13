@@ -798,7 +798,7 @@ impl App {
                         if self.mac_menu.is_none() {
                             let menu_bar = platform_specific::iced_aw::create_menu_bar(
                                 self.pdf_idx,
-                                &self.recent_files.get_recent(),
+                                self.recent_files.get_recent(),
                             );
                             widget::column![menu_bar, stack(stack_children)].into()
                         } else {

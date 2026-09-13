@@ -119,21 +119,20 @@ pub fn new_recent_file_menu_item(path: &PathBuf) -> muda::MenuItem {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| path.to_string_lossy().to_string());
-    let menu_item = muda::MenuItem::with_id(path.to_str().unwrap(), file_name, true, None);
-    return menu_item;
+    
+    muda::MenuItem::with_id(path.to_str().unwrap(), file_name, true, None)
 }
 
 pub fn new_menu_item(label: &str, msg: BindableMessage) -> muda::MenuItem {
     let cfg = CONFIG.read().unwrap();
     let menu_id = msg.to_string();
     let menu_item = muda::MenuItem::with_id(menu_id, label, true, None);
-    if let Some(keybind) = cfg.get_binding_for_msg(msg) {
-        if let Ok(keyaccel) = keybind_to_keyaccelerator(keybind) {
+    if let Some(keybind) = cfg.get_binding_for_msg(msg)
+        && let Ok(keyaccel) = keybind_to_keyaccelerator(keybind) {
             menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
         }
-    }
 
-    return menu_item;
+    menu_item
 }
 
 // Converts a keybinds2::Keybind into a muda::KeyAccelerator.
@@ -143,7 +142,7 @@ pub fn keybind_to_keyaccelerator(
     keybind: Keybind<BindableMessage>,
 ) -> Result<KeyAccelerator, AcceleratorParseError> {
     let keybind_as_string = keybind.seq.as_slice()[0].to_string();
-    return KeyAccelerator::from_str(&keybind_as_string);
+    KeyAccelerator::from_str(&keybind_as_string)
 }
 
 // Dummy debug for now (muda doesn't implement debug for some reason?)
@@ -157,7 +156,7 @@ pub fn menu_listener() -> impl iced::futures::Stream<Item = AppMessage> {
     iced::stream::channel(100, async |mut sender| {
         loop {
             if let Ok(event) = muda::MenuEvent::receiver().try_recv() {
-                let id = (&event.id().0).as_str();
+                let id = event.id().0.as_str();
                 match id.parse::<BindableMessage>().ok() {
                     Some(msg) => {
                         let _ = sender.try_send(msg.into());

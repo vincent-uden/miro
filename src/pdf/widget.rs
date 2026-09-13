@@ -1864,7 +1864,7 @@ fn cpu_pdf_dark_mode_shader(pixmap: &mut mupdf::Pixmap, gradient_cache: &[[u8; 4
     // PERF: Slow in debug builds but more than fast enough in release builds.
     let _span = tracy_client::span!("Cpu dark mode shader");
     let samples = pixmap.samples_mut();
-    for pixel in samples.chunks_exact_mut(4) {
+    for pixel in samples.as_chunks_mut::<4>().0 {
         let r: u16 = pixel[0] as u16;
         let g: u16 = pixel[1] as u16;
         let b: u16 = pixel[2] as u16;
