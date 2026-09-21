@@ -3439,7 +3439,7 @@ dependencies = [
 
 [[package]]
 name = "miro-pdf"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3527,9 +3527,9 @@ dependencies = [
 
 [[package]]
 name = "mupdf"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9849d2d052e60be164dc812d1ec78cb79d80fcc25cd35ffee1e0fbee800afc3a"
+checksum = "185fb74927a40c569b7152c01c73f4c0206059b8b3d37c7eb007cc3f63453b64"
 dependencies = [
  "bitflags 2.11.1",
  "font-kit",
@@ -3541,9 +3541,9 @@ dependencies = [
 
 [[package]]
 name = "mupdf-sys"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7de3fc0a27678f61a07fd2d6415fbddf577c417fa5b287f7a7b708183ecba955"
+checksum = "1c20755e9694e43da4ce8ee2e0211d63883cccd68d314ea4d518c031efee7d8e"
 dependencies = [
  "bindgen",
  "cc",

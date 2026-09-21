@@ -624,8 +624,8 @@ impl PdfViewer {
         let mut links = vec![];
         let mut comments = vec![];
         for (page_idx, page) in doc.pages()?.flatten().enumerate() {
-            let dl = mupdf::DisplayList::new(page.bounds()?)?;
-            let dummy_device = Device::from_display_list(&dl)?;
+            let mut dl = mupdf::DisplayList::new(page.bounds()?)?;
+            let dummy_device = Device::from_display_list(&mut dl)?;
             let ctm = Matrix::IDENTITY;
             page.run(&dummy_device, &ctm)?;
             display_lists.push(dl);
