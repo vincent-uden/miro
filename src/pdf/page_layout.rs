@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use iced::Size;
 use mupdf::Document;
-use num::Integer;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
@@ -23,55 +22,55 @@ pub enum PageLayoutKind {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 pub enum PageRotation {
     #[default]
-    Upright,
-    Clockwise90,
-    HalfTurn,
-    CounterClockwise90,
+    Deg0,
+    Deg90,
+    Deg180,
+    Deg270,
 }
 
 impl PageRotation {
     pub fn clockwise(self) -> Self {
         match self {
-            Self::Upright => Self::Clockwise90,
-            Self::Clockwise90 => Self::HalfTurn,
-            Self::HalfTurn => Self::CounterClockwise90,
-            Self::CounterClockwise90 => Self::Upright,
+            Self::Deg0 => Self::Deg90,
+            Self::Deg90 => Self::Deg180,
+            Self::Deg180 => Self::Deg270,
+            Self::Deg270 => Self::Deg0,
         }
     }
 
     pub fn counter_clockwise(self) -> Self {
         match self {
-            Self::Upright => Self::CounterClockwise90,
-            Self::CounterClockwise90 => Self::HalfTurn,
-            Self::HalfTurn => Self::Clockwise90,
-            Self::Clockwise90 => Self::Upright,
+            Self::Deg0 => Self::Deg270,
+            Self::Deg270 => Self::Deg180,
+            Self::Deg180 => Self::Deg90,
+            Self::Deg90 => Self::Deg0,
         }
     }
 
     pub fn rotated_size(self, size: Vector<f32>) -> Vector<f32> {
         match self {
-            Self::Clockwise90 | Self::CounterClockwise90 => Vector::new(size.y, size.x),
-            Self::Upright | Self::HalfTurn => size,
+            Self::Deg90 | Self::Deg270 => Vector::new(size.y, size.x),
+            Self::Deg0 | Self::Deg180 => size,
         }
     }
 
     /// Map PDF coordinates to the page's normalized, rotated coordinate space.
     pub fn to_rotated(self, point: Vector<f32>, bounds: Rect<f32>) -> Vector<f32> {
         match self {
-            Self::Upright => Vector::new(point.x - bounds.x0.x, point.y - bounds.x0.y),
-            Self::Clockwise90 => Vector::new(bounds.x1.y - point.y, point.x - bounds.x0.x),
-            Self::HalfTurn => Vector::new(bounds.x1.x - point.x, bounds.x1.y - point.y),
-            Self::CounterClockwise90 => Vector::new(point.y - bounds.x0.y, bounds.x1.x - point.x),
+            Self::Deg0 => Vector::new(point.x - bounds.x0.x, point.y - bounds.x0.y),
+            Self::Deg90 => Vector::new(bounds.x1.y - point.y, point.x - bounds.x0.x),
+            Self::Deg180 => Vector::new(bounds.x1.x - point.x, bounds.x1.y - point.y),
+            Self::Deg270 => Vector::new(point.y - bounds.x0.y, bounds.x1.x - point.x),
         }
     }
 
     /// Map normalized, rotated page coordinates back to PDF coordinates.
     pub fn from_rotated(self, point: Vector<f32>, bounds: Rect<f32>) -> Vector<f32> {
         match self {
-            Self::Upright => Vector::new(point.x + bounds.x0.x, point.y + bounds.x0.y),
-            Self::Clockwise90 => Vector::new(point.y + bounds.x0.x, bounds.x1.y - point.x),
-            Self::HalfTurn => Vector::new(bounds.x1.x - point.x, bounds.x1.y - point.y),
-            Self::CounterClockwise90 => Vector::new(bounds.x1.x - point.y, point.x + bounds.x0.y),
+            Self::Deg0 => Vector::new(point.x + bounds.x0.x, point.y + bounds.x0.y),
+            Self::Deg90 => Vector::new(point.y + bounds.x0.x, bounds.x1.y - point.x),
+            Self::Deg180 => Vector::new(bounds.x1.x - point.x, bounds.x1.y - point.y),
+            Self::Deg270 => Vector::new(bounds.x1.x - point.y, point.x + bounds.x0.y),
         }
     }
 }
@@ -108,7 +107,7 @@ impl PageLayout {
     }
 
     fn set_page_rotation(&mut self, page_idx: usize, rotation: PageRotation) {
-        self.rotations.resize(page_idx + 1, PageRotation::Upright);
+        self.rotations.resize(page_idx + 1, PageRotation::Deg0);
         self.rotations[page_idx] = rotation;
     }
 
@@ -120,18 +119,55 @@ impl PageLayout {
         }
     }
 
+    fn append_spread_rows(
+        out: &mut Vec<Rect<f32>>,
+        page_sizes: &[Vector<f32>],
+        center: Vector<f32>,
+        effective_scale: f32,
+        previous_row_height: Option<f32>,
+    ) {
+        let mut row_center_y = center.y;
+        let mut previous_row_height = previous_row_height;
+        for row in page_sizes.chunks(2) {
+            let row_height = row.iter().map(|size| size.y).fold(0.0, f32::max);
+            if let Some(previous_height) = previous_row_height {
+                row_center_y +=
+                    (previous_height / 2.0 + Self::GAP + row_height / 2.0) * effective_scale;
+            }
+
+            let row_width = row.iter().map(|size| size.x).sum::<f32>()
+                + Self::GAP * row.len().saturating_sub(1) as f32;
+            let mut page_x = center.x - row_width * effective_scale / 2.0;
+            for size in row {
+                let screen_size = size.scaled(effective_scale);
+                let page_y = row_center_y - screen_size.y / 2.0;
+                out.push(Rect::from_pos_size(
+                    Vector::new(page_x, page_y),
+                    screen_size,
+                ));
+                page_x += screen_size.x + Self::GAP * effective_scale;
+            }
+            previous_row_height = Some(row_height);
+        }
+    }
+
     /// Returns visible pages and their bounding boxes relative to the widgets origin. A translation
     /// of (0,0) should result in the first page row being centered on the screen. Scale is applied
     /// after translation with respect to the center of the screen. Thus zooming doesn't move the
     /// doucment.
     pub fn pages_rects(
         &self,
-        mut pages: mupdf::document::PageIter<'_>,
+        pages: mupdf::document::PageIter<'_>,
         translation: Vector<f32>, // In document space
         scale: f32,
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<Vec<Rect<f32>>> {
+        let page_sizes = pages
+            .flatten()
+            .enumerate()
+            .map(|(page_idx, page)| Ok(self.page_rect(page_idx, page.bounds()?.into()).size()))
+            .collect::<Result<Vec<_>>>()?;
         let mut out: Vec<Rect<f32>> = vec![];
         let vsize: Vector<_> = viewport.into();
         let effective_scale = scale * fractional_scale;
@@ -139,8 +175,8 @@ impl PageLayout {
             PageLayoutKind::SinglePage => {
                 let mut pos: Vector<f32> = Vector::zero();
                 let mut prev_bounds = Rect::default();
-                for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds = self.page_rect(i, page.bounds()?.into());
+                for (i, size) in page_sizes.iter().copied().enumerate() {
+                    let mut bounds = Rect::from_pos_size(Vector::zero(), size);
                     bounds.translate((vsize - bounds.size()).scaled(0.5));
                     bounds.translate(translation.scaled(effective_scale));
                     bounds = bounds.scaled(effective_scale);
@@ -156,83 +192,34 @@ impl PageLayout {
                 }
             }
             PageLayoutKind::DoublePage => {
-                let mut pos: Vector<f32> = Vector::zero();
-                for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds = self.page_rect(i, page.bounds()?.into());
-                    bounds.translate(pos);
-                    bounds.translate((vsize - bounds.size()).scaled(0.5));
-                    bounds.translate(translation.scaled(effective_scale));
-                    bounds = bounds.scaled(effective_scale);
-
-                    if i.is_odd() {
-                        pos.y += bounds.size().y;
-                        pos.y += Self::GAP * effective_scale;
-                        pos.x = 0.0;
-                    } else {
-                        pos.x += bounds.size().x;
-                        pos.x += Self::GAP * effective_scale;
-                    }
-
-                    out.push(bounds);
-                }
-
-                if out.len() >= 2 {
-                    let total_row_width =
-                        out[0].width() + out[1].width() + Self::GAP * effective_scale * 2.0;
-                    for bound in &mut out {
-                        bound.translate(Vector::new(-total_row_width / 4.0, 0.0));
-                    }
-                }
+                let center =
+                    Vector::new(vsize.x * 0.5, vsize.y * 0.5) + translation.scaled(effective_scale);
+                Self::append_spread_rows(&mut out, &page_sizes, center, effective_scale, None);
             }
             PageLayoutKind::DoublePageTitlePage => {
-                let mut pos: Vector<f32> = Vector::zero();
-                let Some(Ok(first_page)) = pages.next() else {
+                let Some(first_size) = page_sizes.first().copied() else {
                     return Ok(out);
                 };
-                let mut bounds = self.page_rect(0, first_page.bounds()?.into());
-                bounds.translate((vsize - bounds.size()).scaled(0.5));
-                bounds.translate(translation.scaled(effective_scale));
-                bounds = bounds.scaled(effective_scale);
-                out.push(bounds);
-                pos.y += Self::GAP * effective_scale + bounds.size().y;
-
-                for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds = self.page_rect(i + 1, page.bounds()?.into());
-                    bounds.translate(pos);
-                    bounds.translate((vsize - bounds.size()).scaled(0.5));
-                    bounds.translate(translation.scaled(effective_scale));
-                    bounds = bounds.scaled(effective_scale);
-
-                    if i.is_odd() {
-                        pos.y += bounds.size().y;
-                        pos.y += Self::GAP * effective_scale;
-                        pos.x = 0.0;
-                    } else {
-                        pos.x += bounds.size().x;
-                        pos.x += Self::GAP * effective_scale;
-                    }
-
-                    out.push(bounds);
-                }
-
-                if out.len() >= 3 {
-                    let pages_below_width =
-                        out[1].width() + out[2].width() + Self::GAP * effective_scale * 2.0;
-                    out[0].translate(Vector::new(pages_below_width / 4.0, 0.0));
-
-                    for bound in &mut out {
-                        bound.translate(Vector::new(-pages_below_width / 4.0, 0.0));
-                    }
-                } else if out.len() == 2 {
-                    let half_width = self.page_rect(0, first_page.bounds()?.into()).width() / 2.0;
-                    out[1].translate(Vector::new(half_width, 0.0));
-                }
+                let center =
+                    Vector::new(vsize.x * 0.5, vsize.y * 0.5) + translation.scaled(effective_scale);
+                let first_size = first_size.scaled(effective_scale);
+                out.push(Rect::from_pos_size(
+                    center - first_size.scaled(0.5),
+                    first_size,
+                ));
+                Self::append_spread_rows(
+                    &mut out,
+                    &page_sizes[1..],
+                    center,
+                    effective_scale,
+                    Some(page_sizes[0].y),
+                );
             }
             PageLayoutKind::Presentation => {
                 let mut pos: Vector<f32> = Vector::zero();
                 let mut prev_bounds = Rect::default();
-                for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds = self.page_rect(i, page.bounds()?.into());
+                for (i, size) in page_sizes.iter().copied().enumerate() {
+                    let mut bounds = Rect::from_pos_size(Vector::zero(), size);
                     bounds.translate((vsize - bounds.size()).scaled(0.5));
                     bounds.translate(translation.scaled(effective_scale));
                     bounds = bounds.scaled(effective_scale);
@@ -462,6 +449,21 @@ impl PageLayout {
 mod tests {
     use super::*;
     use mupdf::Document;
+
+    #[test]
+    fn spread_rows_center_differently_sized_pages_without_overlap() {
+        let page_sizes = [Vector::new(100.0, 200.0), Vector::new(400.0, 150.0)];
+        let center = Vector::new(500.0, 300.0);
+        let mut rects = Vec::new();
+
+        PageLayout::append_spread_rows(&mut rects, &page_sizes, center, 1.0, None);
+
+        assert_eq!(rects.len(), 2);
+        assert!(rects[0].x1.x < rects[1].x0.x);
+        let spread = rects[0].union(&rects[1]);
+        assert!((spread.center().x - center.x).abs() < 1e-5);
+        assert!((rects[0].center().y - rects[1].center().y).abs() < 1e-5);
+    }
 
     #[test]
     fn test_translation_for_page() -> Result<()> {

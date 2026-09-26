@@ -198,10 +198,10 @@ fn page_matrix(
     offset_y: f32,
 ) -> Matrix {
     let (a, b, c, d, e, f) = match rotation {
-        PageRotation::Upright => (1.0, 0.0, 0.0, 1.0, -bounds.x0.x, -bounds.x0.y),
-        PageRotation::Clockwise90 => (0.0, 1.0, -1.0, 0.0, bounds.x1.y, -bounds.x0.x),
-        PageRotation::HalfTurn => (-1.0, 0.0, 0.0, -1.0, bounds.x1.x, bounds.x1.y),
-        PageRotation::CounterClockwise90 => (0.0, -1.0, 1.0, 0.0, -bounds.x0.y, bounds.x1.x),
+        PageRotation::Deg0 => (1.0, 0.0, 0.0, 1.0, -bounds.x0.x, -bounds.x0.y),
+        PageRotation::Deg90 => (0.0, 1.0, -1.0, 0.0, bounds.x1.y, -bounds.x0.x),
+        PageRotation::Deg180 => (-1.0, 0.0, 0.0, -1.0, bounds.x1.x, bounds.x1.y),
+        PageRotation::Deg270 => (0.0, -1.0, 1.0, 0.0, -bounds.x0.y, bounds.x1.x),
     };
     Matrix::new(
         a * scale,
@@ -1975,7 +1975,7 @@ mod tests {
         let plan = plan_tile(
             0,
             page_bounds,
-            PageRotation::Upright,
+            PageRotation::Deg0,
             rect_ss,
             effective_scale,
             viewport_rect,
@@ -1983,7 +1983,7 @@ mod tests {
 
         assert_eq!(
             plan.key,
-            RenderKey::Full(0, effective_scale.to_bits(), PageRotation::Upright)
+            RenderKey::Full(0, effective_scale.to_bits(), PageRotation::Deg0)
         );
         assert_eq!(plan.draw_rect, rect_ss);
         assert_eq!(plan.width, 600);
@@ -2005,7 +2005,7 @@ mod tests {
         let plan = plan_tile(
             0,
             page_bounds,
-            PageRotation::Upright,
+            PageRotation::Deg0,
             rect_ss,
             effective_scale,
             viewport_rect,
@@ -2013,13 +2013,7 @@ mod tests {
 
         assert_eq!(
             plan.key,
-            RenderKey::Partial(
-                0,
-                effective_scale.to_bits(),
-                500,
-                350,
-                PageRotation::Upright
-            )
+            RenderKey::Partial(0, effective_scale.to_bits(), 500, 350, PageRotation::Deg0)
         );
         assert_eq!(
             plan.draw_rect,
