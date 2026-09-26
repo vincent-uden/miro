@@ -20,7 +20,7 @@ use bytes::Bytes;
 
 use mupdf::{
     Colorspace, Device, Matrix, Pixmap, TextPageFlags,
-    pdf::{PdfAnnotationType, PdfPage},
+    pdf::{PdfAnnotationType, PdfObject, PdfPage},
 };
 use serde::{Deserialize, Serialize};
 use tracing::{error};
@@ -46,8 +46,124 @@ struct PageLink {
 struct Comment {
     page_idx: usize,
     bounds: mupdf::Rect,
+    content: Option<String>,
+    author: Option<String>,
+    replies: Vec<CommentReply>,
+}
+
+#[derive(Debug, Clone)]
+struct CommentReply {
     content: String,
     author: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AnnotationCommentData {
+    page_idx: usize,
+    bounds: Option<mupdf::Rect>,
+    content: Option<String>,
+    author: Option<String>,
+    annotation_type: PdfAnnotationType,
+    object_id: Option<i32>,
+    in_reply_to: Option<i32>,
+}
+
+fn root_annotation_index(
+    annotation_index: usize,
+    annotations: &[AnnotationCommentData],
+    annotations_by_id: &HashMap<i32, usize>,
+) -> Option<usize> {
+    let mut current = annotation_index;
+    let mut visited = HashSet::new();
+
+    loop {
+        if !visited.insert(current) {
+            return None;
+        }
+        let Some(parent_id) = annotations[current].in_reply_to else {
+            return Some(current);
+        };
+        current = *annotations_by_id.get(&parent_id)?;
+    }
+}
+
+/// Groups replies in the order returned by the PDF annotation iterator; xref IDs are only keys.
+fn build_comments(annotations: Vec<AnnotationCommentData>) -> Vec<Comment> {
+    let annotations_by_id: HashMap<i32, usize> = annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, annotation)| annotation.object_id.map(|id| (id, index)))
+        .collect();
+    let roots: Vec<Option<usize>> = (0..annotations.len())
+        .map(|index| root_annotation_index(index, &annotations, &annotations_by_id))
+        .collect();
+
+    let mut has_replies = vec![false; annotations.len()];
+    for (index, root) in roots.iter().enumerate() {
+        if let Some(root) = root
+            && *root != index
+            && annotations[index].content.is_some()
+        {
+            has_replies[*root] = true;
+        }
+    }
+
+    let mut comments = Vec::new();
+    let mut comment_indices = vec![None; annotations.len()];
+    for (index, annotation) in annotations.iter().enumerate() {
+        let is_root = roots[index] == Some(index);
+        let is_unresolved_text_comment =
+            roots[index].is_none() && annotation.annotation_type == PdfAnnotationType::Text;
+        let should_show = (is_root
+            && (annotation.annotation_type == PdfAnnotationType::Text || has_replies[index]))
+            || is_unresolved_text_comment;
+        let Some(bounds) = annotation.bounds else {
+            continue;
+        };
+        if !should_show || (annotation.content.is_none() && !has_replies[index]) {
+            continue;
+        }
+
+        comment_indices[index] = Some(comments.len());
+        comments.push(Comment {
+            page_idx: annotation.page_idx,
+            bounds,
+            content: annotation.content.clone(),
+            author: annotation.author.clone(),
+            replies: Vec::new(),
+        });
+    }
+
+    for (index, annotation) in annotations.iter().enumerate() {
+        let Some(root) = roots[index] else {
+            continue;
+        };
+        if root == index {
+            continue;
+        }
+        let Some(content) = annotation.content.clone() else {
+            continue;
+        };
+        let reply = CommentReply {
+            content,
+            author: annotation.author.clone(),
+        };
+        if let Some(comment_index) = comment_indices[root] {
+            comments[comment_index].replies.push(reply);
+        } else if annotation.annotation_type == PdfAnnotationType::Text
+            && let Some(bounds) = annotation.bounds
+        {
+            comments.push(Comment {
+                page_idx: annotation.page_idx,
+                bounds,
+                content: Some(reply.content),
+                author: reply.author,
+                replies: Vec::new(),
+            });
+        }
+    }
+
+    comments
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -681,7 +797,7 @@ impl PdfViewer {
     )> {
         let mut display_lists = vec![];
         let mut links = vec![];
-        let mut comments = vec![];
+        let mut annotation_comments = vec![];
         for (page_idx, page) in doc.pages()?.flatten().enumerate() {
             let mut dl = mupdf::DisplayList::new(page.bounds()?)?;
             let dummy_device = Device::from_display_list(&mut dl)?;
@@ -701,23 +817,48 @@ impl PdfViewer {
 
             if let Ok(pdf_page) = PdfPage::try_from(page) {
                 for ann in pdf_page.annotations() {
-                    let Ok(PdfAnnotationType::Text) = ann.r#type() else {
+                    let Ok(annotation_type) = ann.r#type() else {
                         continue;
                     };
-                    let Ok(Some(content)) = ann.contents() else {
+                    if annotation_type == PdfAnnotationType::Popup {
                         continue;
-                    };
-                    let Ok(bounds) = ann.rect() else { continue };
-                    let Ok(author) = ann.author() else { continue };
-                    comments.push(Comment {
+                    }
+
+                    let pdf_obj = PdfObject::try_from(&ann).ok();
+                    // Replacement annotation groups are not discussion replies.
+                    let is_group = pdf_obj
+                        .as_ref()
+                        .and_then(|object| object.get_dict("RT").ok().flatten())
+                        .and_then(|reply_type| reply_type.as_name().ok())
+                        .is_some_and(|reply_type| reply_type.as_slice() == b"Group");
+                    if is_group {
+                        continue;
+                    }
+
+                    let object_id = pdf_obj
+                        .as_ref()
+                        .and_then(|object| object.as_indirect().ok());
+                    let in_reply_to = pdf_obj
+                        .as_ref()
+                        .and_then(|object| object.get_dict("IRT").ok().flatten())
+                        .and_then(|reply_to| reply_to.as_indirect().ok());
+                    let content = ann.contents().ok().flatten().map(|value| value.to_string());
+                    let bounds = ann.rect().ok();
+                    let author = ann.author().ok().flatten().map(|value| value.to_string());
+
+                    annotation_comments.push(AnnotationCommentData {
                         page_idx,
                         bounds,
-                        content: content.to_string(),
-                        author: author.map(|s| s.to_string()),
+                        content,
+                        author,
+                        annotation_type,
+                        object_id,
+                        in_reply_to,
                     });
                 }
             }
         }
+        let comments = build_comments(annotation_comments);
         let outline = Self::extract_outline(doc).unwrap_or_default();
         Ok((display_lists, links, outline, comments))
     }
@@ -1400,10 +1541,69 @@ impl PdfViewer {
             ..Default::default()
         };
 
-        let popup = widget::container(
-            widget::column![
-                widget::row![
-                    widget::text(self.comments[active_idx].author.clone().unwrap_or_default())
+        let header = widget::row![
+            widget::text(self.comments[active_idx].author.clone().unwrap_or_default())
+                .font(author_font)
+                .style(|theme: &iced::Theme| {
+                    let palette = theme.extended_palette();
+                    iced::widget::text::Style {
+                        color: Some(palette.primary.base.color),
+                    }
+                }),
+            widget::space::horizontal().width(iced::Length::Fill),
+            widget::button(
+                widget::text("×")
+                    .align_y(iced::alignment::Vertical::Bottom)
+                    .size(24.0),
+            )
+            .padding(0.0)
+            .style(|theme: &iced::Theme, status: widget::button::Status| {
+                let palette = theme.extended_palette();
+                let base = widget::button::Style {
+                    background: Some(iced::Background::Color(palette.background.strong.color)),
+                    text_color: palette.background.strong.text,
+                    border: iced::border::rounded(2),
+                    ..widget::button::Style::default()
+                };
+                match status {
+                    widget::button::Status::Active
+                    | widget::button::Status::Pressed
+                    | widget::button::Status::Hovered => widget::button::Style {
+                        background: None,
+                        text_color: palette.background.base.text,
+                        ..base
+                    },
+                    widget::button::Status::Disabled => widget::button::Style {
+                        background: base.background.map(|bg| bg.scale_alpha(0.5)),
+                        text_color: base.text_color.scale_alpha(0.5),
+                        ..base
+                    },
+                }
+            })
+            .on_press(PdfMessage::CloseComment),
+        ]
+        .align_y(iced::alignment::Vertical::Center);
+
+        let mut thread = widget::column![];
+        if let Some(content) = self.comments[active_idx].content.as_deref() {
+            thread = thread.push(
+                widget::text(content)
+                    .size(14.0)
+                    .wrapping(widget::text::Wrapping::Word),
+            );
+        }
+        if !self.comments[active_idx].replies.is_empty() {
+            thread = thread.push(widget::text("Replies").font(author_font).size(13.0).style(
+                |theme: &iced::Theme| {
+                    let palette = theme.extended_palette();
+                    iced::widget::text::Style {
+                        color: Some(palette.primary.base.color),
+                    }
+                },
+            ));
+            for reply in &self.comments[active_idx].replies {
+                let reply_body = widget::column![
+                    widget::text(reply.author.as_deref().unwrap_or("Unknown author"))
                         .font(author_font)
                         .style(|theme: &iced::Theme| {
                             let palette = theme.extended_palette();
@@ -1411,63 +1611,34 @@ impl PdfViewer {
                                 color: Some(palette.primary.base.color),
                             }
                         }),
-                    widget::space::horizontal().width(iced::Length::Fill),
-                    widget::button(
-                        widget::text("×")
-                            .align_y(iced::alignment::Vertical::Bottom)
-                            .size(24.0),
-                    )
-                    .padding(0.0)
-                    .style(|theme: &iced::Theme, status: widget::button::Status| {
-                        let palette = theme.extended_palette();
-                        let base = widget::button::Style {
-                            background: Some(iced::Background::Color(
-                                palette.background.strong.color,
-                            )),
-                            text_color: palette.background.strong.text,
-                            border: iced::border::rounded(2),
-                            ..widget::button::Style::default()
-                        };
-                        match status {
-                            widget::button::Status::Active
-                            | widget::button::Status::Pressed
-                            | widget::button::Status::Hovered => widget::button::Style {
-                                background: None,
-                                text_color: palette.background.base.text,
-                                ..base
-                            },
-                            widget::button::Status::Disabled => widget::button::Style {
-                                background: base.background.map(|bg| bg.scale_alpha(0.5)),
-                                text_color: base.text_color.scale_alpha(0.5),
-                                ..base
-                            },
-                        }
-                    })
-                    .on_press(PdfMessage::CloseComment),
+                    widget::text(&reply.content)
+                        .size(14.0)
+                        .wrapping(widget::text::Wrapping::Word),
                 ]
-                .align_y(iced::alignment::Vertical::Center),
-                widget::text(&self.comments[active_idx].content)
-                    .size(14.0)
-                    .wrapping(widget::text::Wrapping::Word),
-            ]
-            .spacing(8.0),
-        )
-        .width(popup_width)
-        .padding(12.0)
-        .style(|theme: &iced::Theme| widget::container::Style {
-            background: Some(theme.extended_palette().background.weak.color.into()),
-            border: iced::Border {
-                color: theme.extended_palette().primary.base.color,
-                width: 2.0,
-                radius: iced::border::Radius::from(8.0),
-            },
-            shadow: iced::Shadow {
-                color: theme.extended_palette().primary.base.color,
-                offset: iced::Vector { x: 0.0, y: 2.0 },
-                blur_radius: 4.0,
-            },
-            ..Default::default()
-        });
+                .spacing(4.0);
+                thread = thread.push(
+                    widget::container(reply_body).padding(iced::Padding::new(0.0).left(10.0)),
+                );
+            }
+        }
+
+        let popup = widget::container(widget::column![header, thread].spacing(8.0))
+            .width(popup_width)
+            .padding(12.0)
+            .style(|theme: &iced::Theme| widget::container::Style {
+                background: Some(theme.extended_palette().background.weak.color.into()),
+                border: iced::Border {
+                    color: theme.extended_palette().primary.base.color,
+                    width: 2.0,
+                    radius: iced::border::Radius::from(8.0),
+                },
+                shadow: iced::Shadow {
+                    color: theme.extended_palette().primary.base.color,
+                    offset: iced::Vector { x: 0.0, y: 2.0 },
+                    blur_radius: 4.0,
+                },
+                ..Default::default()
+            });
 
         let positioned = widget::container(widget::mouse_area(popup).on_press(PdfMessage::None))
             .width(iced::Length::Fill)
@@ -2468,6 +2639,36 @@ mod tests {
     }
 
     #[test]
+    fn test_replies_group_with_non_text_root_in_annotation_order() {
+        let annotation =
+            |object_id, in_reply_to, annotation_type, content: &str| AnnotationCommentData {
+                page_idx: 0,
+                bounds: Some(mupdf::Rect::new(0.0, 0.0, 10.0, 10.0)),
+                content: Some(content.to_string()),
+                author: None,
+                annotation_type,
+                object_id: Some(object_id),
+                in_reply_to,
+            };
+        let comments = build_comments(vec![
+            annotation(20, None, PdfAnnotationType::Ink, "original ink note"),
+            annotation(21, Some(20), PdfAnnotationType::Text, "first reply"),
+            annotation(22, Some(21), PdfAnnotationType::Text, "reply to reply"),
+        ]);
+
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].content.as_deref(), Some("original ink note"));
+        assert_eq!(
+            comments[0]
+                .replies
+                .iter()
+                .map(|reply| reply.content.as_str())
+                .collect::<Vec<_>>(),
+            ["first reply", "reply to reply"]
+        );
+    }
+
+    #[test]
     fn test_comment_extraction_from_commented_pdf() -> Result<()> {
         let viewer = PdfViewer::from_path(PathBuf::from("assets/links_commented.pdf"))?;
         assert!(
@@ -2476,7 +2677,10 @@ mod tests {
         );
         for comment in &viewer.comments {
             assert!(
-                !comment.content.is_empty(),
+                comment
+                    .content
+                    .as_deref()
+                    .is_some_and(|content| !content.is_empty()),
                 "comment content should not be empty"
             );
             assert!(
