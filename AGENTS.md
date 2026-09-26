@@ -28,3 +28,4 @@
 - Don't run the graphical application unless absolutely necessary. Prefer writing tests to answer your questions instead if possible
 - Prefer `cargo check` as a first layer of validating your code
 - Run `cargo test` after you are done with each task to ensure that you haven't introduced any regressions
+- Dont write tautological tests
