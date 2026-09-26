@@ -213,6 +213,26 @@ fn page_matrix(
     )
 }
 
+fn transform_rect(
+    rect: Rect<f32>,
+    mut transform_point: impl FnMut(Vector<f32>) -> Vector<f32>,
+) -> Rect<f32> {
+    let mut min = transform_point(rect.x0);
+    let mut max = min;
+    for point in [
+        Vector::new(rect.x0.x, rect.x1.y),
+        Vector::new(rect.x1.x, rect.x0.y),
+        rect.x1,
+    ] {
+        let point = transform_point(point);
+        min.x = min.x.min(point.x);
+        min.y = min.y.min(point.y);
+        max.x = max.x.max(point.x);
+        max.y = max.y.max(point.y);
+    }
+    Rect::from_points(min, max)
+}
+
 fn pdf_rect_to_screen(
     pdf_rect: Rect<f32>,
     page_bounds: Rect<f32>,
@@ -222,11 +242,10 @@ fn pdf_rect_to_screen(
     let rotated_size = rotation.rotated_size(page_bounds.size());
     let scale_x = page_rect.width() / rotated_size.x;
     let scale_y = page_rect.height() / rotated_size.y;
-    let map_point = |point| {
+    transform_rect(pdf_rect, |point| {
         let rotated = rotation.to_rotated(point, page_bounds);
         page_rect.x0 + Vector::new(rotated.x * scale_x, rotated.y * scale_y)
-    };
-    Rect::from_points(map_point(pdf_rect.x0), map_point(pdf_rect.x1))
+    })
 }
 
 struct Document<'a> {
@@ -1085,10 +1104,9 @@ impl PdfViewer {
                         let rotation = self.layout.rotation(page_idx);
                         let page_center = rotation.rotated_size(page_bounds.size()).scaled(0.5);
                         let match_rect = m.rects[0].1;
-                        let rotated_match = Rect::from_points(
-                            rotation.to_rotated(match_rect.x0, page_bounds),
-                            rotation.to_rotated(match_rect.x1, page_bounds),
-                        );
+                        let rotated_match = transform_rect(match_rect, |point| {
+                            rotation.to_rotated(point, page_bounds)
+                        });
                         let match_center = rotated_match.center();
                         // Center vertically.
                         self.translation.y = base_translation.y + (match_center.y - page_center.y);
