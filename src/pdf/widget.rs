@@ -115,6 +115,24 @@ fn build_comment_subtree(
     })
 }
 
+fn popup_position(
+    anchor: iced::Point,
+    popup_size: iced::Size,
+    viewport: iced::Rectangle,
+) -> iced::Point {
+    const POPUP_MARGIN: f32 = 8.0;
+    iced::Point::new(
+        anchor
+            .x
+            .min(viewport.x + viewport.width - popup_size.width - POPUP_MARGIN)
+            .max(viewport.x + POPUP_MARGIN),
+        anchor
+            .y
+            .min(viewport.y + viewport.height - popup_size.height - POPUP_MARGIN)
+            .max(viewport.y + POPUP_MARGIN),
+    )
+}
+
 /// Builds reply trees in PDF annotation order; xref IDs are used only to resolve `/IRT` links.
 fn build_comments(annotations: Vec<AnnotationCommentData>) -> Vec<Comment> {
     let annotations_by_id: HashMap<i32, usize> = annotations
@@ -1828,13 +1846,11 @@ impl PdfViewer {
         let comment_visible = self.visible_comments(viewport_size);
         let (_, comment_rect) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
 
+        const POPUP_MARGIN: f32 = 8.0;
+        const POPUP_CHROME_HEIGHT: f32 = 60.0;
         let popup_width = 280.0_f32.min(viewport_size.width - 16.0).max(120.0);
         let popup_x = comment_rect.x1.x + 8.0;
         let popup_y = comment_rect.x0.y;
-        let clamped_x = popup_x
-            .min(viewport_size.width - popup_width - 8.0)
-            .max(8.0);
-        let clamped_y = popup_y.min(viewport_size.height - 100.0).max(8.0);
 
         let header = widget::row![
             widget::space::horizontal().width(iced::Length::Fill),
@@ -1871,7 +1887,10 @@ impl PdfViewer {
         ]
         .align_y(iced::alignment::Vertical::Center);
 
-        let max_thread_height = (viewport_size.height - clamped_y - 64.0).max(80.0);
+        // Keep the popup's full height available regardless of its anchor position. It is moved
+        // upward to fit first; scrolling is only needed when the thread exceeds the viewport.
+        let max_thread_height =
+            (viewport_size.height - 2.0 * POPUP_MARGIN - POPUP_CHROME_HEIGHT).max(0.0);
         let thread = widget::container(
             widget::scrollable(self.build_comment_node(&self.comments[active_idx]))
                 .width(iced::Length::Fill)
@@ -1898,17 +1917,17 @@ impl PdfViewer {
                 ..Default::default()
             });
 
-        let positioned = widget::container(
+        let positioned = widget::float(
             widget::mouse_area(popup)
                 .on_press(PdfMessage::None)
                 .on_enter(PdfMessage::CommentPopupHovered(true))
                 .on_exit(PdfMessage::CommentPopupHovered(false)),
         )
-        .width(iced::Length::Fill)
-        .height(iced::Length::Fill)
-        .padding(iced::Padding::new(0.0).top(clamped_y).left(clamped_x))
-        .align_x(iced::alignment::Horizontal::Left)
-        .align_y(iced::alignment::Vertical::Top);
+        .translate(move |bounds, viewport| {
+            let anchor = iced::Point::new(bounds.x + popup_x, bounds.y + popup_y);
+            let position = popup_position(anchor, bounds.size(), viewport);
+            iced::Vector::new(position.x - bounds.x, position.y - bounds.y)
+        });
 
         Some(positioned.into())
     }
