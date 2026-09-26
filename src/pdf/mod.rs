@@ -124,6 +124,8 @@ pub enum PdfMessage {
     SetLayout(PageLayoutKind),
     RotatePageClockwise,
     RotatePageCounterClockwise,
+    RotateAllPagesClockwise,
+    RotateAllPagesCounterClockwise,
     ZoomIn,
     ZoomOut,
     ZoomHome,

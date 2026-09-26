@@ -200,6 +200,8 @@ pub enum BindableMessage {
     PresentationLayout,
     RotatePageClockwise,
     RotatePageCounterClockwise,
+    RotateAllPagesClockwise,
+    RotateAllPagesCounterClockwise,
 }
 
 impl BindableMessage {
@@ -224,6 +226,10 @@ impl BindableMessage {
             BindableMessage::PresentationLayout => Some("Presentation"),
             BindableMessage::RotatePageClockwise => Some("Rotate Page Clockwise"),
             BindableMessage::RotatePageCounterClockwise => Some("Rotate Page Counterclockwise"),
+            BindableMessage::RotateAllPagesClockwise => Some("Rotate All Pages Clockwise"),
+            BindableMessage::RotateAllPagesCounterClockwise => {
+                Some("Rotate All Pages Counterclockwise")
+            }
             _ => None,
         }
     }
@@ -293,6 +299,12 @@ impl From<BindableMessage> for AppMessage {
             }
             BindableMessage::RotatePageCounterClockwise => {
                 AppMessage::PdfMessage(PdfMessage::RotatePageCounterClockwise)
+            }
+            BindableMessage::RotateAllPagesClockwise => {
+                AppMessage::PdfMessage(PdfMessage::RotateAllPagesClockwise)
+            }
+            BindableMessage::RotateAllPagesCounterClockwise => {
+                AppMessage::PdfMessage(PdfMessage::RotateAllPagesCounterClockwise)
             }
             BindableMessage::PageUp => AppMessage::PdfMessage(PdfMessage::PageUp),
             BindableMessage::PageDown => AppMessage::PdfMessage(PdfMessage::PageDown),
@@ -686,6 +698,14 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("]").unwrap(),
                     BindableMessage::RotatePageClockwise,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("{").unwrap(),
+                    BindableMessage::RotateAllPagesCounterClockwise,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("}").unwrap(),
+                    BindableMessage::RotateAllPagesClockwise,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Ctrl+o").unwrap(),

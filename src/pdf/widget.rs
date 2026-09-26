@@ -830,6 +830,12 @@ impl PdfViewer {
                         .rotate_page_counter_clockwise(self.current_page());
                 }
             }
+            PdfMessage::RotateAllPagesClockwise => {
+                self.layout.rotate_all_pages_clockwise(page_count);
+            }
+            PdfMessage::RotateAllPagesCounterClockwise => {
+                self.layout.rotate_all_pages_counter_clockwise(page_count);
+            }
             PdfMessage::ZoomIn => {
                 self.scale *= 1.2;
             }

@@ -106,6 +106,20 @@ impl PageLayout {
         self.set_page_rotation(page_idx, self.rotation(page_idx).counter_clockwise());
     }
 
+    pub fn rotate_all_pages_clockwise(&mut self, page_count: usize) {
+        self.rotations.resize(page_count, PageRotation::Deg0);
+        for rotation in &mut self.rotations {
+            *rotation = rotation.clockwise();
+        }
+    }
+
+    pub fn rotate_all_pages_counter_clockwise(&mut self, page_count: usize) {
+        self.rotations.resize(page_count, PageRotation::Deg0);
+        for rotation in &mut self.rotations {
+            *rotation = rotation.counter_clockwise();
+        }
+    }
+
     fn set_page_rotation(&mut self, page_idx: usize, rotation: PageRotation) {
         self.rotations.resize(page_idx + 1, PageRotation::Deg0);
         self.rotations[page_idx] = rotation;
