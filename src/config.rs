@@ -8,7 +8,7 @@ use strum::{Display, EnumString};
 use crate::{
     app::AppMessage,
     geometry::Vector,
-    pdf::{PdfMessage, SearchMethod, page_layout::PageLayout},
+    pdf::{PdfMessage, SearchMethod, page_layout::PageLayoutKind},
 };
 
 pub const MOVE_STEP: f32 = 40.0;
@@ -198,6 +198,8 @@ pub enum BindableMessage {
     DoublePageLayout,
     DoublePageTitlePageLayout,
     PresentationLayout,
+    RotatePageClockwise,
+    RotatePageCounterClockwise,
 }
 
 impl BindableMessage {
@@ -220,6 +222,8 @@ impl BindableMessage {
             BindableMessage::DoublePageLayout => Some("Double Page"),
             BindableMessage::DoublePageTitlePageLayout => Some("Double Page w/ Title"),
             BindableMessage::PresentationLayout => Some("Presentation"),
+            BindableMessage::RotatePageClockwise => Some("Rotate Page Clockwise"),
+            BindableMessage::RotatePageCounterClockwise => Some("Rotate Page Counterclockwise"),
             _ => None,
         }
     }
@@ -273,16 +277,22 @@ impl From<BindableMessage> for AppMessage {
                 AppMessage::PdfMessage(PdfMessage::PreviousSearchResult)
             }
             BindableMessage::SinglePageLayout => {
-                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::SinglePage))
+                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayoutKind::SinglePage))
             }
             BindableMessage::DoublePageLayout => {
-                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::DoublePage))
+                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayoutKind::DoublePage))
             }
             BindableMessage::DoublePageTitlePageLayout => {
-                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::DoublePageTitlePage))
+                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayoutKind::DoublePageTitlePage))
             }
             BindableMessage::PresentationLayout => {
-                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayout::Presentation))
+                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayoutKind::Presentation))
+            }
+            BindableMessage::RotatePageClockwise => {
+                AppMessage::PdfMessage(PdfMessage::RotatePageClockwise)
+            }
+            BindableMessage::RotatePageCounterClockwise => {
+                AppMessage::PdfMessage(PdfMessage::RotatePageCounterClockwise)
             }
             BindableMessage::PageUp => AppMessage::PdfMessage(PdfMessage::PageUp),
             BindableMessage::PageDown => AppMessage::PdfMessage(PdfMessage::PageDown),
@@ -670,6 +680,14 @@ impl Default for Config {
                     BindableMessage::PresentationLayout,
                 ),
                 Keybind::new(
+                    KeyInput::from_str("[").unwrap(),
+                    BindableMessage::RotatePageCounterClockwise,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("]").unwrap(),
+                    BindableMessage::RotatePageClockwise,
+                ),
+                Keybind::new(
                     KeyInput::from_str("Ctrl+o").unwrap(),
                     BindableMessage::OpenFileFinder,
                 ),
@@ -1005,11 +1023,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown command: UnknownCommand")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown command: UnknownCommand"));
     }
 
     #[test]
@@ -1020,11 +1036,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Bind command requires exactly 2 arguments")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Bind command requires exactly 2 arguments"));
     }
 
     #[test]
@@ -1035,11 +1049,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown action: InvalidAction")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown action: InvalidAction"));
     }
 
     #[test]
@@ -1050,11 +1062,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid mouse input 'InvalidMouse'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid mouse input 'InvalidMouse'"));
     }
 
     #[test]
@@ -1065,11 +1075,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid port number: 'invalid_port'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid port number: 'invalid_port'"));
     }
 
     #[test]
@@ -1098,11 +1106,9 @@ MouseBind InvalidMouse Panning
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unterminated quoted string")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unterminated quoted string"));
     }
 
     #[test]
@@ -1168,11 +1174,9 @@ Set RpcPort invalid_port
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid float value for TrackpadSensitivity")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid float value for TrackpadSensitivity"));
     }
 
     #[test]
@@ -1191,11 +1195,9 @@ Set RpcPort invalid_port
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown search method: 'InvalidMethod'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown search method: 'InvalidMethod'"));
     }
 
     #[test]

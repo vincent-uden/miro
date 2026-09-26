@@ -2,7 +2,7 @@ use crate::{
     app::AppMessage,
     config::MouseAction,
     geometry::{Rect, Vector},
-    pdf::page_layout::PageLayout,
+    pdf::page_layout::PageLayoutKind,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -121,7 +121,9 @@ pub enum PdfMessage {
     SetTranslation(Vector<f32>),
     /// Translation and scale
     SetLocation(Vector<f32>, f32),
-    SetLayout(PageLayout),
+    SetLayout(PageLayoutKind),
+    RotatePageClockwise,
+    RotatePageCounterClockwise,
     ZoomIn,
     ZoomOut,
     ZoomHome,

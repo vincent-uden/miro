@@ -7,8 +7,8 @@ use strum::EnumString;
 
 use crate::geometry::{Rect, Vector};
 
-#[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
-pub enum PageLayout {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default, PartialEq, Eq)]
+pub enum PageLayoutKind {
     #[default]
     /// One page per row, many rows
     SinglePage,
@@ -20,8 +20,105 @@ pub enum PageLayout {
     Presentation,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
+pub enum PageRotation {
+    #[default]
+    Upright,
+    Clockwise90,
+    HalfTurn,
+    CounterClockwise90,
+}
+
+impl PageRotation {
+    pub fn clockwise(self) -> Self {
+        match self {
+            Self::Upright => Self::Clockwise90,
+            Self::Clockwise90 => Self::HalfTurn,
+            Self::HalfTurn => Self::CounterClockwise90,
+            Self::CounterClockwise90 => Self::Upright,
+        }
+    }
+
+    pub fn counter_clockwise(self) -> Self {
+        match self {
+            Self::Upright => Self::CounterClockwise90,
+            Self::CounterClockwise90 => Self::HalfTurn,
+            Self::HalfTurn => Self::Clockwise90,
+            Self::Clockwise90 => Self::Upright,
+        }
+    }
+
+    pub fn rotated_size(self, size: Vector<f32>) -> Vector<f32> {
+        match self {
+            Self::Clockwise90 | Self::CounterClockwise90 => Vector::new(size.y, size.x),
+            Self::Upright | Self::HalfTurn => size,
+        }
+    }
+
+    /// Map PDF coordinates to the page's normalized, rotated coordinate space.
+    pub fn to_rotated(self, point: Vector<f32>, bounds: Rect<f32>) -> Vector<f32> {
+        match self {
+            Self::Upright => Vector::new(point.x - bounds.x0.x, point.y - bounds.x0.y),
+            Self::Clockwise90 => Vector::new(bounds.x1.y - point.y, point.x - bounds.x0.x),
+            Self::HalfTurn => Vector::new(bounds.x1.x - point.x, bounds.x1.y - point.y),
+            Self::CounterClockwise90 => Vector::new(point.y - bounds.x0.y, bounds.x1.x - point.x),
+        }
+    }
+
+    /// Map normalized, rotated page coordinates back to PDF coordinates.
+    pub fn from_rotated(self, point: Vector<f32>, bounds: Rect<f32>) -> Vector<f32> {
+        match self {
+            Self::Upright => Vector::new(point.x + bounds.x0.x, point.y + bounds.x0.y),
+            Self::Clockwise90 => Vector::new(point.y + bounds.x0.x, bounds.x1.y - point.x),
+            Self::HalfTurn => Vector::new(bounds.x1.x - point.x, bounds.x1.y - point.y),
+            Self::CounterClockwise90 => Vector::new(bounds.x1.x - point.y, point.x + bounds.x0.y),
+        }
+    }
+}
+
+/// The page arrangement and per-page reading rotations for a PDF.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PageLayout {
+    #[serde(default)]
+    pub layout: PageLayoutKind,
+    #[serde(default)]
+    rotations: Vec<PageRotation>,
+}
+
 impl PageLayout {
     const GAP: f32 = 10.0;
+
+    pub fn new(layout: PageLayoutKind) -> Self {
+        Self {
+            layout,
+            rotations: Vec::new(),
+        }
+    }
+
+    pub fn rotation(&self, page_idx: usize) -> PageRotation {
+        self.rotations.get(page_idx).copied().unwrap_or_default()
+    }
+
+    pub fn rotate_page_clockwise(&mut self, page_idx: usize) {
+        self.set_page_rotation(page_idx, self.rotation(page_idx).clockwise());
+    }
+
+    pub fn rotate_page_counter_clockwise(&mut self, page_idx: usize) {
+        self.set_page_rotation(page_idx, self.rotation(page_idx).counter_clockwise());
+    }
+
+    fn set_page_rotation(&mut self, page_idx: usize, rotation: PageRotation) {
+        self.rotations.resize(page_idx + 1, PageRotation::Upright);
+        self.rotations[page_idx] = rotation;
+    }
+
+    fn page_rect(&self, page_idx: usize, bounds: Rect<f32>) -> Rect<f32> {
+        let size = self.rotation(page_idx).rotated_size(bounds.size());
+        Rect {
+            x0: Vector::zero(),
+            x1: size,
+        }
+    }
 
     /// Returns visible pages and their bounding boxes relative to the widgets origin. A translation
     /// of (0,0) should result in the first page row being centered on the screen. Scale is applied
@@ -38,12 +135,12 @@ impl PageLayout {
         let mut out: Vec<Rect<f32>> = vec![];
         let vsize: Vector<_> = viewport.into();
         let effective_scale = scale * fractional_scale;
-        match self {
-            PageLayout::SinglePage => {
+        match self.layout {
+            PageLayoutKind::SinglePage => {
                 let mut pos: Vector<f32> = Vector::zero();
                 let mut prev_bounds = Rect::default();
                 for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds: Rect<f32> = page.bounds()?.into();
+                    let mut bounds = self.page_rect(i, page.bounds()?.into());
                     bounds.translate((vsize - bounds.size()).scaled(0.5));
                     bounds.translate(translation.scaled(effective_scale));
                     bounds = bounds.scaled(effective_scale);
@@ -58,10 +155,10 @@ impl PageLayout {
                     out.push(bounds);
                 }
             }
-            PageLayout::DoublePage => {
+            PageLayoutKind::DoublePage => {
                 let mut pos: Vector<f32> = Vector::zero();
                 for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds: Rect<f32> = page.bounds()?.into();
+                    let mut bounds = self.page_rect(i, page.bounds()?.into());
                     bounds.translate(pos);
                     bounds.translate((vsize - bounds.size()).scaled(0.5));
                     bounds.translate(translation.scaled(effective_scale));
@@ -87,12 +184,12 @@ impl PageLayout {
                     }
                 }
             }
-            PageLayout::DoublePageTitlePage => {
+            PageLayoutKind::DoublePageTitlePage => {
                 let mut pos: Vector<f32> = Vector::zero();
                 let Some(Ok(first_page)) = pages.next() else {
                     return Ok(out);
                 };
-                let mut bounds: Rect<f32> = first_page.bounds()?.into();
+                let mut bounds = self.page_rect(0, first_page.bounds()?.into());
                 bounds.translate((vsize - bounds.size()).scaled(0.5));
                 bounds.translate(translation.scaled(effective_scale));
                 bounds = bounds.scaled(effective_scale);
@@ -100,7 +197,7 @@ impl PageLayout {
                 pos.y += Self::GAP * effective_scale + bounds.size().y;
 
                 for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds: Rect<f32> = page.bounds()?.into();
+                    let mut bounds = self.page_rect(i + 1, page.bounds()?.into());
                     bounds.translate(pos);
                     bounds.translate((vsize - bounds.size()).scaled(0.5));
                     bounds.translate(translation.scaled(effective_scale));
@@ -127,15 +224,15 @@ impl PageLayout {
                         bound.translate(Vector::new(-pages_below_width / 4.0, 0.0));
                     }
                 } else if out.len() == 2 {
-                    let half_width = first_page.bounds()?.width() / 2.0;
+                    let half_width = self.page_rect(0, first_page.bounds()?.into()).width() / 2.0;
                     out[1].translate(Vector::new(half_width, 0.0));
                 }
             }
-            PageLayout::Presentation => {
+            PageLayoutKind::Presentation => {
                 let mut pos: Vector<f32> = Vector::zero();
                 let mut prev_bounds = Rect::default();
                 for (i, page) in pages.flatten().enumerate() {
-                    let mut bounds: Rect<f32> = page.bounds()?.into();
+                    let mut bounds = self.page_rect(i, page.bounds()?.into());
                     bounds.translate((vsize - bounds.size()).scaled(0.5));
                     bounds.translate(translation.scaled(effective_scale));
                     bounds = bounds.scaled(effective_scale);
@@ -187,15 +284,15 @@ impl PageLayout {
         let last = page_count - 1;
         let page_idx = page_idx.min(last);
         // Page 0 of the title-page layout sits on its own row.
-        let start = match self {
-            PageLayout::SinglePage | PageLayout::Presentation => page_idx,
-            PageLayout::DoublePage => page_idx - (page_idx % 2),
-            PageLayout::DoublePageTitlePage if page_idx == 0 => 0,
-            PageLayout::DoublePageTitlePage => page_idx - ((page_idx - 1) % 2),
+        let start = match self.layout {
+            PageLayoutKind::SinglePage | PageLayoutKind::Presentation => page_idx,
+            PageLayoutKind::DoublePage => page_idx - (page_idx % 2),
+            PageLayoutKind::DoublePageTitlePage if page_idx == 0 => 0,
+            PageLayoutKind::DoublePageTitlePage => page_idx - ((page_idx - 1) % 2),
         };
-        let end = match self {
-            PageLayout::SinglePage | PageLayout::Presentation => start,
-            PageLayout::DoublePageTitlePage if page_idx == 0 => 0,
+        let end = match self.layout {
+            PageLayoutKind::SinglePage | PageLayoutKind::Presentation => start,
+            PageLayoutKind::DoublePageTitlePage if page_idx == 0 => 0,
             _ => (start + 1).min(last),
         };
         start..=end
@@ -326,11 +423,11 @@ impl PageLayout {
     ) -> Result<Rect<f32>> {
         let rects = self.pages_rects(doc.pages()?, translation, 1.0, 1.0, viewport)?;
         let mut idx = self.current_page_index(doc, translation, viewport)?;
-        idx = (match self {
-            PageLayout::SinglePage => idx.saturating_sub(1),
-            PageLayout::DoublePage => idx.saturating_sub(2),
-            PageLayout::DoublePageTitlePage => idx.saturating_sub(2),
-            PageLayout::Presentation => idx.saturating_sub(1),
+        idx = (match self.layout {
+            PageLayoutKind::SinglePage => idx.saturating_sub(1),
+            PageLayoutKind::DoublePage => idx.saturating_sub(2),
+            PageLayoutKind::DoublePageTitlePage => idx.saturating_sub(2),
+            PageLayoutKind::Presentation => idx.saturating_sub(1),
         })
         .clamp(0, rects.len() - 1);
         Ok(rects[idx])
@@ -344,17 +441,17 @@ impl PageLayout {
     ) -> Result<Rect<f32>> {
         let rects = self.pages_rects(doc.pages()?, translation, 1.0, 1.0, viewport)?;
         let mut idx = self.current_page_index(doc, translation, viewport)?;
-        idx = (match self {
-            PageLayout::SinglePage => idx + 1,
-            PageLayout::DoublePage => idx + 2,
-            PageLayout::DoublePageTitlePage => {
+        idx = (match self.layout {
+            PageLayoutKind::SinglePage => idx + 1,
+            PageLayoutKind::DoublePage => idx + 2,
+            PageLayoutKind::DoublePageTitlePage => {
                 if idx == 0 {
                     idx + 1
                 } else {
                     idx + 2
                 }
             }
-            PageLayout::Presentation => idx + 1,
+            PageLayoutKind::Presentation => idx + 1,
         })
         .clamp(0, rects.len() - 1);
         Ok(rects[idx])
@@ -369,7 +466,7 @@ mod tests {
     #[test]
     fn test_translation_for_page() -> Result<()> {
         let doc = Document::open("assets/links.pdf")?;
-        let layout = PageLayout::SinglePage;
+        let layout = PageLayout::new(PageLayoutKind::SinglePage);
         let viewport = Size::new(800.0, 600.0);
         let scale = 1.0;
         let fractional_scale = 1.0;

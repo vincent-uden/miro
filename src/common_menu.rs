@@ -33,6 +33,9 @@ pub fn items() -> Vec<(String, Vec<CommonMenuItem>)> {
                 CommonMenuItem::Separator,
                 CommonMenuItem::Button(BindableMessage::TogglePresentationMode),
                 CommonMenuItem::Button(BindableMessage::ToggleFullscreen),
+                CommonMenuItem::Separator,
+                CommonMenuItem::Button(BindableMessage::RotatePageCounterClockwise),
+                CommonMenuItem::Button(BindableMessage::RotatePageClockwise),
             ],
         ),
         (

@@ -29,7 +29,10 @@ use crate::{
     CONFIG, DARK_THEME,
     config::{MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
-    pdf::{PdfMessage, SearchMatch, SearchMethod, find_search_matches, page_layout::PageLayout},
+    pdf::{
+        PdfMessage, SearchMatch, SearchMethod, find_search_matches,
+        page_layout::{PageLayout, PageLayoutKind, PageRotation},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -101,8 +104,8 @@ type BufferPool = Arc<Mutex<HashMap<usize, Vec<Vec<u8>>>>>;
 ///   zoom invalidates the cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum RenderKey {
-    Full(usize, u32),
-    Partial(usize, u32, i32, i32),
+    Full(usize, u32, PageRotation),
+    Partial(usize, u32, i32, i32, PageRotation),
 }
 
 /// How a single page should be rasterized for the current frame: which cache key
@@ -126,6 +129,7 @@ struct TilePlan {
 fn plan_tile(
     page_idx: usize,
     page_bounds: Rect<f32>,
+    rotation: PageRotation,
     rect_ss: Rect<f32>,
     effective_scale: f32,
     viewport_rect: Rect<f32>,
@@ -136,10 +140,10 @@ fn plan_tile(
         && rect_ss.x1.y <= viewport_rect.x1.y;
 
     if fully_visible {
-        let key = RenderKey::Full(page_idx, effective_scale.to_bits());
+        let key = RenderKey::Full(page_idx, effective_scale.to_bits(), rotation);
         let width = rect_ss.width().ceil().max(1.0) as i32;
         let height = rect_ss.height().ceil().max(1.0) as i32;
-        let matrix = Matrix::new(effective_scale, 0.0, 0.0, effective_scale, 0.0, 0.0);
+        let matrix = page_matrix(page_bounds, rotation, effective_scale, 0.0, 0.0);
         // Scissor must be in device coordinates, i.e. the pixmap size. The
         // unscaled page bounds would cull the bottom/right once the page is
         // scaled up to fit the viewport (e.g. after ZoomFit).
@@ -160,18 +164,14 @@ fn plan_tile(
         let render_offset_x = rect_ss.x0.x - vis.x0.x;
         let render_offset_y = rect_ss.x0.y - vis.x0.y;
 
-        let key = RenderKey::Partial(page_idx, effective_scale.to_bits(), width, height);
+        let key = RenderKey::Partial(page_idx, effective_scale.to_bits(), width, height, rotation);
 
-        let raster_tx = render_offset_x - page_bounds.x0.x * effective_scale;
-        let raster_ty = render_offset_y - page_bounds.x0.y * effective_scale;
-
-        let matrix = Matrix::new(
+        let matrix = page_matrix(
+            page_bounds,
+            rotation,
             effective_scale,
-            0.0,
-            0.0,
-            effective_scale,
-            raster_tx.round(),
-            raster_ty.round(),
+            render_offset_x,
+            render_offset_y,
         );
 
         // Scissor is in pixmap coordinates and covers the whole pixmap. It only
@@ -187,6 +187,46 @@ fn plan_tile(
             scissor,
         }
     }
+}
+
+/// Create the MuPDF transform from PDF coordinates to the normalized, rotated page raster.
+fn page_matrix(
+    bounds: Rect<f32>,
+    rotation: PageRotation,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+) -> Matrix {
+    let (a, b, c, d, e, f) = match rotation {
+        PageRotation::Upright => (1.0, 0.0, 0.0, 1.0, -bounds.x0.x, -bounds.x0.y),
+        PageRotation::Clockwise90 => (0.0, 1.0, -1.0, 0.0, bounds.x1.y, -bounds.x0.x),
+        PageRotation::HalfTurn => (-1.0, 0.0, 0.0, -1.0, bounds.x1.x, bounds.x1.y),
+        PageRotation::CounterClockwise90 => (0.0, -1.0, 1.0, 0.0, -bounds.x0.y, bounds.x1.x),
+    };
+    Matrix::new(
+        a * scale,
+        b * scale,
+        c * scale,
+        d * scale,
+        (offset_x + e * scale).round(),
+        (offset_y + f * scale).round(),
+    )
+}
+
+fn pdf_rect_to_screen(
+    pdf_rect: Rect<f32>,
+    page_bounds: Rect<f32>,
+    page_rect: Rect<f32>,
+    rotation: PageRotation,
+) -> Rect<f32> {
+    let rotated_size = rotation.rotated_size(page_bounds.size());
+    let scale_x = page_rect.width() / rotated_size.x;
+    let scale_y = page_rect.height() / rotated_size.y;
+    let map_point = |point| {
+        let rotated = rotation.to_rotated(point, page_bounds);
+        page_rect.x0 + Vector::new(rotated.x * scale_x, rotated.y * scale_y)
+    };
+    Rect::from_points(map_point(pdf_rect.x0), map_point(pdf_rect.x1))
 }
 
 struct Document<'a> {
@@ -698,7 +738,7 @@ impl PdfViewer {
             scale: 1.0,
             fractional_scaling: 1.0,
             viewport: RefCell::default(),
-            layout: PageLayout::SinglePage,
+            layout: PageLayout::new(PageLayoutKind::SinglePage),
             gradient_cache,
             mouse_pos: Vector::zero(),
             mouse_pressed_at: Vector::zero(),
@@ -777,7 +817,18 @@ impl PdfViewer {
                 self.scale = scale;
             }
             PdfMessage::SetLayout(page_layout) => {
-                self.layout = page_layout;
+                self.layout.layout = page_layout;
+            }
+            PdfMessage::RotatePageClockwise => {
+                if page_count > 0 {
+                    self.layout.rotate_page_clockwise(self.current_page());
+                }
+            }
+            PdfMessage::RotatePageCounterClockwise => {
+                if page_count > 0 {
+                    self.layout
+                        .rotate_page_counter_clockwise(self.current_page());
+                }
             }
             PdfMessage::ZoomIn => {
                 self.scale *= 1.2;
@@ -791,12 +842,10 @@ impl PdfViewer {
             PdfMessage::ZoomFit => {
                 let page_idx = self.current_page();
                 let viewport = *self.viewport.borrow();
-                if let Ok((scale, translation)) = self.layout.zoom_fit(
-                    &self.doc,
-                    page_idx,
-                    self.fractional_scaling,
-                    viewport,
-                ) {
+                if let Ok((scale, translation)) =
+                    self.layout
+                        .zoom_fit(&self.doc, page_idx, self.fractional_scaling, viewport)
+                {
                     self.scale = scale;
                     self.translation = translation;
                 }
@@ -1012,17 +1061,22 @@ impl PdfViewer {
                         *self.viewport.borrow(),
                     ) {
                         let page_bounds: Rect<f32> = self.display_lists[page_idx].bounds().into();
-                        let page_center = page_bounds.center();
+                        let rotation = self.layout.rotation(page_idx);
+                        let page_center = rotation.rotated_size(page_bounds.size()).scaled(0.5);
                         let match_rect = m.rects[0].1;
-                        let match_center = match_rect.center();
+                        let rotated_match = Rect::from_points(
+                            rotation.to_rotated(match_rect.x0, page_bounds),
+                            rotation.to_rotated(match_rect.x1, page_bounds),
+                        );
+                        let match_center = rotated_match.center();
                         // Center vertically.
                         self.translation.y = base_translation.y + (match_center.y - page_center.y);
                         // Horizontal: adjust minimally from current pan to keep match visible.
                         let viewport = *self.viewport.borrow();
                         let effective_scale = self.scale * self.fractional_scaling;
                         let half_viewport = viewport.width / (2.0 * effective_scale);
-                        let lower_bound = match_rect.x1.x - page_center.x - half_viewport;
-                        let upper_bound = match_rect.x0.x - page_center.x + half_viewport;
+                        let lower_bound = rotated_match.x1.x - page_center.x - half_viewport;
+                        let upper_bound = rotated_match.x0.x - page_center.x + half_viewport;
                         if lower_bound > upper_bound {
                             // Wider than viewport: center horizontally.
                             self.translation.x = match_center.x - page_center.x;
@@ -1135,7 +1189,14 @@ impl PdfViewer {
                         height: h,
                         matrix,
                         scissor,
-                    } = plan_tile(i, page_bounds, rect_ss, effective_scale, viewport_rect);
+                    } = plan_tile(
+                        i,
+                        page_bounds,
+                        self.layout.rotation(i),
+                        rect_ss,
+                        effective_scale,
+                        viewport_rect,
+                    );
 
                     // Try to reuse a pixmap allocation for this page.
                     let mut pix = {
@@ -1159,11 +1220,11 @@ impl PdfViewer {
                         let _span = tracy_client::span!("Pixmap bounds mismatch");
                         pix = Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true).unwrap();
 
-                        if matches!(key, RenderKey::Full(_, _)) {
+                        if matches!(key, RenderKey::Full(_, _, _)) {
                             self.run(&mut pix, i, &matrix, scissor, key);
                         }
                     }
-                    if matches!(key, RenderKey::Partial(_, _, _, _)) {
+                    if matches!(key, RenderKey::Partial(_, _, _, _, _)) {
                         self.run(&mut pix, i, &matrix, scissor, key);
                     }
                     // NOTE: I am not 100% sure how the key can be missing at this point, but it can
@@ -1436,7 +1497,6 @@ impl PdfViewer {
     pub fn extract_text_from_rect(&self, screen_rect: Rect<f32>) -> String {
         use mupdf::TextPageFlags;
 
-        let effective_scale = self.scale * self.fractional_scaling;
         let viewport = *self.viewport.borrow();
 
         let Ok(pages) = self.doc.pages() else {
@@ -1460,13 +1520,27 @@ impl PdfViewer {
                 continue;
             }
 
-            let page_bounds = self.display_lists[i].bounds();
-
+            let page_bounds: Rect<f32> = self.display_lists[i].bounds().into();
+            let rotation = self.layout.rotation(i);
+            let rotated_size = rotation.rotated_size(page_bounds.size());
+            let scale_x = page_rect.width() / rotated_size.x;
+            let scale_y = page_rect.height() / rotated_size.y;
+            let screen_to_pdf = |point: Vector<f32>| {
+                rotation.from_rotated(
+                    Vector::new(
+                        (point.x - page_rect.x0.x) / scale_x,
+                        (point.y - page_rect.x0.y) / scale_y,
+                    ),
+                    page_bounds,
+                )
+            };
+            let pdf_start = screen_to_pdf(intersect.x0);
+            let pdf_end = screen_to_pdf(intersect.x1);
             let pdf_rect = mupdf::Rect::new(
-                (intersect.x0.x - page_rect.x0.x) / effective_scale + page_bounds.x0,
-                (intersect.x0.y - page_rect.x0.y) / effective_scale + page_bounds.y0,
-                (intersect.x1.x - page_rect.x0.x) / effective_scale + page_bounds.x0,
-                (intersect.x1.y - page_rect.x0.y) / effective_scale + page_bounds.y0,
+                pdf_start.x.min(pdf_end.x),
+                pdf_start.y.min(pdf_end.y),
+                pdf_start.x.max(pdf_end.x),
+                pdf_start.y.max(pdf_end.y),
             );
 
             let Ok(text_page) = self.display_lists[i].to_text_page(TextPageFlags::empty()) else {
@@ -1530,25 +1604,15 @@ impl PdfViewer {
             if !viewport_rect.intersects(page_rect) {
                 continue;
             }
-            let page_bounds = self.display_lists[page_idx].bounds();
-            let page_width = page_bounds.x1 - page_bounds.x0;
-            let page_height = page_bounds.y1 - page_bounds.y0;
-            if page_width <= 0.0 || page_height <= 0.0 {
-                continue;
-            }
-            let scale_x = page_rect.width() / page_width;
-            let scale_y = page_rect.height() / page_height;
+            let page_bounds: Rect<f32> = self.display_lists[page_idx].bounds().into();
 
             for (link_idx, link) in self.links[page_idx].iter().enumerate() {
-                let screen_rect = Rect::from_points(
-                    Vector::new(
-                        page_rect.x0.x + (link.bounds.x0 - page_bounds.x0) * scale_x,
-                        page_rect.x0.y + (link.bounds.y0 - page_bounds.y0) * scale_y,
-                    ),
-                    Vector::new(
-                        page_rect.x0.x + (link.bounds.x1 - page_bounds.x0) * scale_x,
-                        page_rect.x0.y + (link.bounds.y1 - page_bounds.y0) * scale_y,
-                    ),
+                let link_bounds: Rect<f32> = link.bounds.into();
+                let screen_rect = pdf_rect_to_screen(
+                    link_bounds,
+                    page_bounds,
+                    *page_rect,
+                    self.layout.rotation(page_idx),
                 );
                 if viewport_rect.intersects(&screen_rect) {
                     result.push(((page_idx, link_idx), screen_rect));
@@ -1582,29 +1646,18 @@ impl PdfViewer {
             if !viewport_rect.intersects(page_rect) {
                 continue;
             }
-            let page_bounds = self.display_lists[page_idx].bounds();
-            let page_width = page_bounds.x1 - page_bounds.x0;
-            let page_height = page_bounds.y1 - page_bounds.y0;
-            if page_width <= 0.0 || page_height <= 0.0 {
-                continue;
-            }
-            let scale_x = page_rect.width() / page_width;
-            let scale_y = page_rect.height() / page_height;
+            let page_bounds: Rect<f32> = self.display_lists[page_idx].bounds().into();
 
             for (match_idx, m) in self.search_matches.iter().enumerate() {
                 for &(rect_page_idx, rect) in &m.rects {
                     if rect_page_idx != page_idx {
                         continue;
                     }
-                    let screen_rect = Rect::from_points(
-                        Vector::new(
-                            page_rect.x0.x + (rect.x0.x - page_bounds.x0) * scale_x,
-                            page_rect.x0.y + (rect.x0.y - page_bounds.y0) * scale_y,
-                        ),
-                        Vector::new(
-                            page_rect.x0.x + (rect.x1.x - page_bounds.x0) * scale_x,
-                            page_rect.x0.y + (rect.x1.y - page_bounds.y0) * scale_y,
-                        ),
+                    let screen_rect = pdf_rect_to_screen(
+                        rect,
+                        page_bounds,
+                        *page_rect,
+                        self.layout.rotation(page_idx),
                     );
                     if viewport_rect.intersects(&screen_rect) {
                         result.push((match_idx, screen_rect));
@@ -1636,28 +1689,18 @@ impl PdfViewer {
             if !viewport_rect.intersects(page_rect) {
                 continue;
             }
-            let page_bounds = self.display_lists[page_idx].bounds();
-            let page_width = page_bounds.x1 - page_bounds.x0;
-            let page_height = page_bounds.y1 - page_bounds.y0;
-            if page_width <= 0.0 || page_height <= 0.0 {
-                continue;
-            }
-            let scale_x = page_rect.width() / page_width;
-            let scale_y = page_rect.height() / page_height;
+            let page_bounds: Rect<f32> = self.display_lists[page_idx].bounds().into();
 
             for (comment_idx, comment) in self.comments.iter().enumerate() {
                 if comment.page_idx != page_idx {
                     continue;
                 }
-                let screen_rect = Rect::from_points(
-                    Vector::new(
-                        page_rect.x0.x + (comment.bounds.x0 - page_bounds.x0) * scale_x,
-                        page_rect.x0.y + (comment.bounds.y0 - page_bounds.y0) * scale_y,
-                    ),
-                    Vector::new(
-                        page_rect.x0.x + (comment.bounds.x1 - page_bounds.x0) * scale_x,
-                        page_rect.x0.y + (comment.bounds.y1 - page_bounds.y0) * scale_y,
-                    ),
+                let comment_bounds: Rect<f32> = comment.bounds.into();
+                let screen_rect = pdf_rect_to_screen(
+                    comment_bounds,
+                    page_bounds,
+                    *page_rect,
+                    self.layout.rotation(page_idx),
                 );
                 if viewport_rect.intersects(&screen_rect) {
                     result.push((comment_idx, screen_rect));
@@ -1929,9 +1972,19 @@ mod tests {
         let rect_ss = Rect::from_pos_size(Vector::new(100.0, 100.0), Vector::new(600.0, 400.0));
         let viewport_rect = Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(800.0, 600.0));
 
-        let plan = plan_tile(0, page_bounds, rect_ss, effective_scale, viewport_rect);
+        let plan = plan_tile(
+            0,
+            page_bounds,
+            PageRotation::Upright,
+            rect_ss,
+            effective_scale,
+            viewport_rect,
+        );
 
-        assert_eq!(plan.key, RenderKey::Full(0, effective_scale.to_bits()));
+        assert_eq!(
+            plan.key,
+            RenderKey::Full(0, effective_scale.to_bits(), PageRotation::Upright)
+        );
         assert_eq!(plan.draw_rect, rect_ss);
         assert_eq!(plan.width, 600);
         assert_eq!(plan.height, 400);
@@ -1949,11 +2002,24 @@ mod tests {
         let rect_ss = Rect::from_pos_size(Vector::new(-100.0, -50.0), Vector::new(600.0, 400.0));
         let viewport_rect = Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(800.0, 600.0));
 
-        let plan = plan_tile(0, page_bounds, rect_ss, effective_scale, viewport_rect);
+        let plan = plan_tile(
+            0,
+            page_bounds,
+            PageRotation::Upright,
+            rect_ss,
+            effective_scale,
+            viewport_rect,
+        );
 
         assert_eq!(
             plan.key,
-            RenderKey::Partial(0, effective_scale.to_bits(), 500, 350)
+            RenderKey::Partial(
+                0,
+                effective_scale.to_bits(),
+                500,
+                350,
+                PageRotation::Upright
+            )
         );
         assert_eq!(
             plan.draw_rect,
@@ -1967,7 +2033,7 @@ mod tests {
         let mut viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
         let viewport = iced::Size::new(800.0, 600.0);
         viewer.set_viewport_for_test(viewport);
-        viewer.layout = PageLayout::SinglePage;
+        viewer.layout = PageLayout::new(PageLayoutKind::SinglePage);
 
         // Start on page 0
         let start_page = viewer.current_page();
@@ -2053,16 +2119,24 @@ mod tests {
         // Reference scale when fitting a single page.
         let mut single = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
         single.set_viewport_for_test(viewport);
-        single.layout = PageLayout::SinglePage;
+        single.layout = PageLayout::new(PageLayoutKind::SinglePage);
         let _ = single.update(PdfMessage::ZoomFit);
 
         // (layout, current page, first/last page of the spread that should be fit).
         // The non-zero current pages cover spreads that sit far below the viewport at
         // zero translation, where an incorrect translation sign loses the document.
         let cases = [
-            (PageLayout::DoublePage, 0usize, (0usize, 1usize)),
-            (PageLayout::DoublePage, 2, (2, 2)),
-            (PageLayout::DoublePageTitlePage, 2, (1, 2)),
+            (
+                PageLayout::new(PageLayoutKind::DoublePage),
+                0usize,
+                (0usize, 1usize),
+            ),
+            (PageLayout::new(PageLayoutKind::DoublePage), 2, (2, 2)),
+            (
+                PageLayout::new(PageLayoutKind::DoublePageTitlePage),
+                2,
+                (1, 2),
+            ),
         ];
 
         for (layout, page, (first, last)) in cases {
