@@ -8,7 +8,7 @@ use std::{
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
-    Renderer, Size,
+    Renderer, Size, Theme,
     advanced::{graphics::geometry, image},
     widget::{
         self,
@@ -1582,7 +1582,7 @@ impl PdfViewer {
                 .into()
         } else {
             widget::space::horizontal()
-                .width(iced::Length::Fixed(18.0))
+                .width(iced::Length::Fixed(0.0))
                 .into()
         };
         let author = comment.author.as_deref().unwrap_or("Unknown author");
@@ -1595,14 +1595,23 @@ impl PdfViewer {
         };
         let header = widget::row![
             collapse_control,
-            widget::text(author).font(iced::Font {
-                style: iced::font::Style::Italic,
-                ..Default::default()
-            }),
+            widget::text(author)
+                .font(iced::Font {
+                    style: iced::font::Style::Italic,
+                    ..Default::default()
+                })
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    widget::text::Style {
+                        color: Some(palette.primary.base.color),
+                        ..Default::default()
+                    }
+                }),
             widget::space::horizontal().width(iced::Length::Fill),
             reply_count,
         ]
-        .align_y(iced::alignment::Vertical::Center);
+        .align_y(iced::alignment::Vertical::Center)
+        .spacing(8);
 
         let mut body = widget::column![header].spacing(6.0);
         if let Some(content) = comment.content.as_deref() {
@@ -1646,50 +1655,15 @@ impl PdfViewer {
         let (_, comment_rect) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
 
         const POPUP_MARGIN: f32 = 8.0;
-        const POPUP_CHROME_HEIGHT: f32 = 60.0;
+        const POPUP_HEIGHT_WITHOUT_THREAD: f32 = 60.0;
         let popup_width = 280.0_f32.min(viewport_size.width - 16.0).max(120.0);
         let popup_x = comment_rect.x1.x + 8.0;
         let popup_y = comment_rect.x0.y;
 
-        let header = widget::row![
-            widget::space::horizontal().width(iced::Length::Fill),
-            widget::button(
-                widget::text("×")
-                    .align_y(iced::alignment::Vertical::Bottom)
-                    .size(24.0),
-            )
-            .padding(0.0)
-            .style(|theme: &iced::Theme, status: widget::button::Status| {
-                let palette = theme.extended_palette();
-                let base = widget::button::Style {
-                    background: Some(iced::Background::Color(palette.background.strong.color)),
-                    text_color: palette.background.strong.text,
-                    border: iced::border::rounded(2),
-                    ..widget::button::Style::default()
-                };
-                match status {
-                    widget::button::Status::Active
-                    | widget::button::Status::Pressed
-                    | widget::button::Status::Hovered => widget::button::Style {
-                        background: None,
-                        text_color: palette.background.base.text,
-                        ..base
-                    },
-                    widget::button::Status::Disabled => widget::button::Style {
-                        background: base.background.map(|bg| bg.scale_alpha(0.5)),
-                        text_color: base.text_color.scale_alpha(0.5),
-                        ..base
-                    },
-                }
-            })
-            .on_press(PdfMessage::CloseComment),
-        ]
-        .align_y(iced::alignment::Vertical::Center);
-
         // Keep the popup's full height available regardless of its anchor position. It is moved
         // upward to fit first; scrolling is only needed when the thread exceeds the viewport.
         let max_thread_height =
-            (viewport_size.height - 2.0 * POPUP_MARGIN - POPUP_CHROME_HEIGHT).max(0.0);
+            (viewport_size.height - 2.0 * POPUP_MARGIN - POPUP_HEIGHT_WITHOUT_THREAD).max(0.0);
         let thread = widget::container(
             widget::scrollable(self.build_comment_node(&self.comments[active_idx]))
                 .width(iced::Length::Fill)
@@ -1698,20 +1672,15 @@ impl PdfViewer {
         .width(iced::Length::Fill)
         .max_height(max_thread_height);
 
-        let popup = widget::container(widget::column![header, thread].spacing(8.0))
+        let popup = widget::container(widget::column![thread].spacing(8.0))
             .width(popup_width)
-            .padding(12.0)
+            .padding(16.0)
             .style(|theme: &iced::Theme| widget::container::Style {
                 background: Some(theme.extended_palette().background.weak.color.into()),
                 border: iced::Border {
                     color: theme.extended_palette().primary.base.color,
                     width: 2.0,
                     radius: iced::border::Radius::from(8.0),
-                },
-                shadow: iced::Shadow {
-                    color: theme.extended_palette().primary.base.color,
-                    offset: iced::Vector { x: 0.0, y: 2.0 },
-                    blur_radius: 4.0,
                 },
                 ..Default::default()
             });
