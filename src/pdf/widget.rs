@@ -821,20 +821,35 @@ impl PdfViewer {
             }
             PdfMessage::RotatePageClockwise => {
                 if page_count > 0 {
-                    self.layout.rotate_page_clockwise(self.current_page());
+                    let page_idx = self.current_page();
+                    self.rotate_preserving_page_center(page_idx, |layout| {
+                        layout.rotate_page_clockwise(page_idx);
+                    });
                 }
             }
             PdfMessage::RotatePageCounterClockwise => {
                 if page_count > 0 {
-                    self.layout
-                        .rotate_page_counter_clockwise(self.current_page());
+                    let page_idx = self.current_page();
+                    self.rotate_preserving_page_center(page_idx, |layout| {
+                        layout.rotate_page_counter_clockwise(page_idx);
+                    });
                 }
             }
             PdfMessage::RotateAllPagesClockwise => {
-                self.layout.rotate_all_pages_clockwise(page_count);
+                if page_count > 0 {
+                    let page_idx = self.current_page();
+                    self.rotate_preserving_page_center(page_idx, |layout| {
+                        layout.rotate_all_pages_clockwise(page_count);
+                    });
+                }
             }
             PdfMessage::RotateAllPagesCounterClockwise => {
-                self.layout.rotate_all_pages_counter_clockwise(page_count);
+                if page_count > 0 {
+                    let page_idx = self.current_page();
+                    self.rotate_preserving_page_center(page_idx, |layout| {
+                        layout.rotate_all_pages_counter_clockwise(page_count);
+                    });
+                }
             }
             PdfMessage::ZoomIn => {
                 self.scale *= 1.2;
@@ -1873,6 +1888,39 @@ impl PdfViewer {
             .unwrap()
     }
 
+    fn page_screen_center(&self, page_idx: usize, viewport: Size<f32>) -> Option<Vector<f32>> {
+        let rects = self
+            .layout
+            .pages_rects(
+                self.doc.pages().ok()?,
+                -self.translation,
+                self.scale,
+                self.fractional_scaling,
+                viewport,
+            )
+            .ok()?;
+        rects.get(page_idx).map(Rect::center)
+    }
+
+    fn rotate_preserving_page_center(
+        &mut self,
+        page_idx: usize,
+        rotate: impl FnOnce(&mut PageLayout),
+    ) {
+        let viewport = *self.viewport.borrow();
+        let center_before = self.page_screen_center(page_idx, viewport);
+        rotate(&mut self.layout);
+        let center_after = self.page_screen_center(page_idx, viewport);
+        let effective_scale = self.scale * self.fractional_scaling;
+
+        if let (Some(before), Some(after)) = (center_before, center_after)
+            && effective_scale.is_finite()
+            && effective_scale.abs() > f32::EPSILON
+        {
+            self.translation += (after - before).scaled(1.0 / effective_scale);
+        }
+    }
+
     pub fn search_progress(&self) -> String {
         if self.needle.is_empty() {
             String::new()
@@ -2026,6 +2074,36 @@ mod tests {
             Rect::from_pos_size(Vector::new(0.0, 0.0), Vector::new(500.0, 350.0))
         );
         assert_eq!(plan.scissor, mupdf::Rect::new(0.0, 0.0, 500.0, 350.0));
+    }
+
+    #[test]
+    fn rotating_all_pages_keeps_the_current_page_center_fixed() -> Result<()> {
+        let mut viewer = PdfViewer::from_path(PathBuf::from("assets/links.pdf"))?;
+        let viewport = iced::Size::new(800.0, 600.0);
+        viewer.set_viewport_for_test(viewport);
+        viewer.layout = PageLayout::new(PageLayoutKind::DoublePage);
+        let page_idx = viewer.current_page();
+
+        let center = |viewer: &PdfViewer| -> Result<Vector<f32>> {
+            let rects = viewer.layout.pages_rects(
+                viewer.doc.pages()?,
+                -viewer.translation,
+                viewer.scale,
+                viewer.fractional_scaling,
+                viewport,
+            )?;
+            Ok(rects[page_idx].center())
+        };
+        let before = center(&viewer)?;
+
+        let _ = viewer.update(PdfMessage::RotateAllPagesClockwise);
+
+        let after = center(&viewer)?;
+        assert!(
+            (after - before).norm_squared() < 1e-3,
+            "rotation should keep page {page_idx} centered at {before:?}, got {after:?}"
+        );
+        Ok(())
     }
 
     #[test]
