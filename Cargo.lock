@@ -2992,9 +2992,9 @@ dependencies = [
 
 [[package]]
 name = "keybinds2"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd56fb00caa12183371a1f83ba53547c178c8dd4c0620b910a27bd29dd9db1d9"
+checksum = "d1b5974458d141258b36cf75fc1dee29f59d4781f3eefda175ff795988d02437"
 dependencies = [
  "bitflags 2.11.1",
  "iced",

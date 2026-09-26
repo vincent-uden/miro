@@ -20,11 +20,25 @@ code-timing-macros = { version = "0.0.6", features = ["release", "tracing"] }
 colored = "2.1.0"
 colorgrad = "0.7.1"
 home = "0.5.11"
-iced = { version = "0.14.0", features = ["advanced", "image", "tokio", "web-colors", "lazy", "svg", "canvas"] }
+iced = { version = "0.14.0", default-features = false, features = [
+  "advanced",
+  "image",
+  "tokio",
+  "lazy",
+  "svg",
+  "canvas",
+  "wgpu",
+  "tiny-skia",
+  "crisp",
+  "thread-pool",
+  "linux-theme-detection",
+  "x11",
+  "wayland",
+] }
 iced_aw = { version = "0.14.1", default-features = false, features = ["menu"] }
 muda = "0.19.2"
 iced_fonts = { version = "0.3.0", features = ["nerd"] }
-keybinds2 = { version = "0.2.0", features = ["iced", "serde"] }
+keybinds2 = { version = "0.3.0", features = ["iced", "serde"] }
 logos = "0.15.0"
 mupdf = { version = "0.8.0" }
 num = "0.4.3"
@@ -40,7 +54,9 @@ toml = "0.8.20"
 tracing = "0.1.41"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-tracy-client = { version = "0.18.4", default-features = false, features = ["enable"] }
+tracy-client = { version = "0.18.4", default-features = false, features = [
+  "enable",
+] }
 twox-hash = { version = "2.1.1", features = ["serialize"] }
 smol_str = "0.2.2"
 regex = "1.12.3"
