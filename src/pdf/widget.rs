@@ -2,7 +2,11 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex, Weak},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, Weak,
+    },
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -60,6 +64,9 @@ pub struct OutlineItem {
 
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
+/// How long a needle update waits before actually spawning a search scan. Typing spawns one
+/// task per keystroke; with this, intermediate ones are cancelled before doing any work.
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
 
 /// A pixel buffer that returns itself to a shared pool when dropped.
 ///
@@ -605,6 +612,11 @@ pub struct PdfViewer {
 
     doc: mupdf::Document,
     display_lists: Vec<mupdf::DisplayList>,
+    /// PDF-space bounding box of every page, snapshotted once at open. Layout math must use
+    /// this instead of iterating `doc.pages()`, which performs a full MuPDF page load per
+    /// page per call — several full-document iterations per frame made large documents stall
+    /// for seconds on every input event.
+    page_bounds: Vec<Rect<f32>>,
     /// Final iced image handles cached by render key. Kept separately so iced can reuse the
     /// GPU texture without re-uploading when the widget redraws for non-visual reasons.
     render_cache: RefCell<HashMap<RenderKey, image::Handle>>,
@@ -647,18 +659,20 @@ pub struct PdfViewer {
 
     outline: Vec<OutlineItem>,
 
-    /// The entire textual contents of the document. Used to search through text
-    text_contents: String,
-    /// Bounding boxes of every character in the document. Used to highlight searched text
-    /// Each entry is (page_index, byte_offset_in_text_contents, bounding_box)
-    char_bboxes: Vec<(usize, usize, Rect<f32>)>,
+    text_contents: Arc<String>,
+    char_bboxes: Arc<Vec<(usize, usize, Rect<f32>)>>,
     /// The search matches found in the document
     search_matches: Vec<SearchMatch>,
     pub(crate) search_method: SearchMethod,
     /// The thing to search for
     pub(crate) needle: String,
-    /// Monotonically incremented to cancel stale async search tasks.
-    search_generation: u64,
+    /// Monotonically incremented to invalidate stale async search tasks. Shared with the
+    /// spawned debounce futures so superseded tasks can drop out before spawning a scan.
+    search_generation: Arc<AtomicU64>,
+    /// Set to cancel all in-flight search scans. Replaced with a fresh flag per search;
+    /// dropping the viewer also sets it so pending scans exit quickly instead of blocking
+    /// iced's tokio runtime shutdown (which waits for blocking tasks).
+    search_cancel: Arc<AtomicBool>,
 
     /// All text annotations (sticky notes / comments) extracted from the document.
     comments: Vec<Comment>,
@@ -667,6 +681,15 @@ pub struct PdfViewer {
 
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
+}
+
+impl Drop for PdfViewer {
+    fn drop(&mut self) {
+        // Cancel any in-flight search scans. Iced owns a tokio runtime and dropping it waits
+        // for spawned blocking tasks, so without this, quitting mid-search would hang the
+        // whole program until every stale full-document scan finished.
+        self.search_cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -678,12 +701,16 @@ impl PdfViewer {
         Vec<Vec<PageLink>>,
         Vec<OutlineItem>,
         Vec<Comment>,
+        Vec<Rect<f32>>,
     )> {
         let mut display_lists = vec![];
         let mut links = vec![];
         let mut comments = vec![];
+        let mut page_bounds = vec![];
         for (page_idx, page) in doc.pages()?.flatten().enumerate() {
-            let mut dl = mupdf::DisplayList::new(page.bounds()?)?;
+            let page_bound: mupdf::Rect = page.bounds()?;
+            page_bounds.push(page_bound.into());
+            let mut dl = mupdf::DisplayList::new(page_bound)?;
             let dummy_device = Device::from_display_list(&mut dl)?;
             let ctm = Matrix::IDENTITY;
             page.run(&dummy_device, &ctm)?;
@@ -719,7 +746,7 @@ impl PdfViewer {
             }
         }
         let outline = Self::extract_outline(doc).unwrap_or_default();
-        Ok((display_lists, links, outline, comments))
+        Ok((display_lists, links, outline, comments, page_bounds))
     }
 
     pub fn from_path(path: PathBuf) -> Result<Self> {
@@ -729,7 +756,8 @@ impl PdfViewer {
             .to_string_lossy()
             .to_string();
         let doc = mupdf::Document::open(&path.to_str().unwrap())?;
-        let (display_lists, links, outline, comments) = Self::build_document_data(&doc)?;
+        let (display_lists, links, outline, comments, page_bounds) =
+            Self::build_document_data(&doc)?;
         let (all_text, bboxes) = Self::extract_search_data(&display_lists)?;
 
         let bg_color = DARK_THEME
@@ -749,6 +777,7 @@ impl PdfViewer {
             draw_page_borders: true,
             doc,
             display_lists,
+            page_bounds,
             render_cache: RefCell::default(),
             allocation_cache: RefCell::default(),
             pixmap_pool: RefCell::default(),
@@ -773,12 +802,13 @@ impl PdfViewer {
             current_search_result: None,
             outline,
             widget_position: RefCell::new(iced::Point::new(0.0, 0.0)),
-            text_contents: all_text,
-            char_bboxes: bboxes,
+            text_contents: Arc::new(all_text),
+            char_bboxes: Arc::new(bboxes),
             search_matches: vec![],
             search_method: CONFIG.read().unwrap().default_search_method,
             needle: String::new(),
-            search_generation: 0,
+            search_generation: Arc::new(AtomicU64::new(0)),
+            search_cancel: Arc::new(AtomicBool::new(false)),
             comments,
             hovered_comment: None,
             active_comment: None,
@@ -794,11 +824,15 @@ impl PdfViewer {
             PdfMessage::NextPage => {
                 let current = self
                     .layout
-                    .center_of_page(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page(&self.page_bounds, self.translation, *self.viewport.borrow())
                     .unwrap();
                 let next = self
                     .layout
-                    .center_of_page_below(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page_below(
+                        &self.page_bounds,
+                        self.translation,
+                        *self.viewport.borrow(),
+                    )
                     .unwrap();
 
                 self.translation.y += next.center().y - current.center().y;
@@ -806,11 +840,15 @@ impl PdfViewer {
             PdfMessage::PreviousPage => {
                 let current = self
                     .layout
-                    .center_of_page(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page(&self.page_bounds, self.translation, *self.viewport.borrow())
                     .unwrap();
                 let prev = self
                     .layout
-                    .center_of_page_above(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page_above(
+                        &self.page_bounds,
+                        self.translation,
+                        *self.viewport.borrow(),
+                    )
                     .unwrap();
 
                 self.translation.y += prev.center().y - current.center().y;
@@ -818,7 +856,7 @@ impl PdfViewer {
             PdfMessage::SetPage(idx) => {
                 if idx < page_count
                     && let Ok(translation) = self.layout.translation_for_page(
-                        &self.doc,
+                        &self.page_bounds,
                         self.scale,
                         self.fractional_scaling,
                         idx,
@@ -882,10 +920,12 @@ impl PdfViewer {
             PdfMessage::ZoomFit => {
                 let page_idx = self.current_page();
                 let viewport = *self.viewport.borrow();
-                if let Ok((scale, translation)) =
-                    self.layout
-                        .zoom_fit(&self.doc, page_idx, self.fractional_scaling, viewport)
-                {
+                if let Ok((scale, translation)) = self.layout.zoom_fit(
+                    &self.page_bounds,
+                    page_idx,
+                    self.fractional_scaling,
+                    viewport,
+                ) {
                     self.scale = scale;
                     self.translation = translation;
                 }
@@ -1031,11 +1071,12 @@ impl PdfViewer {
 
                 if let Some(path_str) = self.path.to_str()
                     && let Ok(new_doc) = mupdf::Document::open(path_str)
-                    && let Ok((display_lists, links, outline, comments)) =
+                    && let Ok((display_lists, links, outline, comments, page_bounds)) =
                         Self::build_document_data(&new_doc)
                 {
                     self.doc = new_doc;
                     self.display_lists = display_lists;
+                    self.page_bounds = page_bounds;
                     self.links = links;
                     self.outline = outline;
                     self.comments = comments;
@@ -1094,7 +1135,7 @@ impl PdfViewer {
                     self.current_search_result = Some(idx);
                     let page_idx = m.pages.start;
                     if let Ok(base_translation) = self.layout.translation_for_page(
-                        &self.doc,
+                        &self.page_bounds,
                         self.scale,
                         self.fractional_scaling,
                         page_idx,
@@ -1148,7 +1189,7 @@ impl PdfViewer {
             }
             PdfMessage::UpdateSearchNeedle(needle) => {
                 self.needle = needle;
-                self.search_generation = self.search_generation.wrapping_add(1);
+                self.invalidate_search();
                 out = self.spawn_search_task();
             }
             PdfMessage::SetSearchMethod(search_method) => {
@@ -1160,11 +1201,11 @@ impl PdfViewer {
                     SearchMethod::PlainText => SearchMethod::Regex,
                     SearchMethod::Regex => SearchMethod::PlainText,
                 };
-                self.search_generation = self.search_generation.wrapping_add(1);
+                self.invalidate_search();
                 out = self.spawn_search_task();
             }
             PdfMessage::SearchResultsReady(matches, generation) => {
-                if generation == self.search_generation {
+                if generation == self.search_generation.load(Ordering::Relaxed) {
                     self.search_matches = matches;
                     self.current_search_result = None;
                 }
@@ -1183,7 +1224,7 @@ impl PdfViewer {
             let rects = self
                 .layout
                 .pages_rects(
-                    self.doc.pages().unwrap(),
+                    &self.page_bounds,
                     self.translation.scaled(-1.0),
                     self.scale,
                     self.fractional_scaling,
@@ -1213,13 +1254,11 @@ impl PdfViewer {
             let mut used_keys = vec![];
             let with_handles: Vec<_> = rects
                 .into_iter()
-                .zip(self.doc.pages().unwrap())
                 .enumerate()
-                .filter(|(_, (r, _page))| viewport_rect.intersects(r))
-                .map(|(i, (rect_ss, page))| {
+                .filter(|(_, r)| viewport_rect.intersects(r))
+                .map(|(i, rect_ss)| {
                     // rect_ss = A pages bounding box in screen coordinates (relative to the widgets origin)
-                    let page = page.unwrap();
-                    let page_bounds: Rect<f32> = page.bounds().unwrap().into();
+                    let page_bounds = self.page_bounds[i];
 
                     let TilePlan {
                         key,
@@ -1512,17 +1551,32 @@ impl PdfViewer {
         Ok((all_text, bounding_boxes))
     }
 
+    /// Cancel any in-flight search scans and start a fresh generation for the next one.
+    fn invalidate_search(&mut self) {
+        self.search_cancel.store(true, Ordering::Relaxed);
+        self.search_cancel = Arc::new(AtomicBool::new(false));
+        self.search_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn spawn_search_task(&self) -> iced::Task<PdfMessage> {
         let text_contents = self.text_contents.clone();
         let needle = self.needle.clone();
         let method = self.search_method;
         let char_bboxes = self.char_bboxes.clone();
-        let generation = self.search_generation;
+        let cancel = self.search_cancel.clone();
+        let generation_counter = self.search_generation.clone();
+        let generation = generation_counter.load(Ordering::Relaxed);
 
         iced::Task::perform(
             async move {
+                // Debounce: typing spawns one task per keystroke, but only the newest
+                // generation gets past this sleep and starts an actual scan.
+                tokio::time::sleep(SEARCH_DEBOUNCE).await;
+                if generation_counter.load(Ordering::Relaxed) != generation {
+                    return Ok(Vec::new());
+                }
                 tokio::task::spawn_blocking(move || {
-                    find_search_matches(&text_contents, &needle, method, &char_bboxes)
+                    find_search_matches(&text_contents, &needle, method, &char_bboxes, &cancel)
                 })
                 .await
             },
@@ -1538,11 +1592,8 @@ impl PdfViewer {
 
         let viewport = *self.viewport.borrow();
 
-        let Ok(pages) = self.doc.pages() else {
-            return String::new();
-        };
         let Ok(rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1624,11 +1675,8 @@ impl PdfViewer {
 
     fn visible_links(&self, viewport: iced::Size<f32>) -> Vec<((usize, usize), Rect<f32>)> {
         let mut result = Vec::new();
-        let Ok(pages) = self.doc.pages() else {
-            return result;
-        };
         let Ok(page_rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1666,11 +1714,8 @@ impl PdfViewer {
         if !self.show_search_results {
             return result;
         }
-        let Ok(pages) = self.doc.pages() else {
-            return result;
-        };
         let Ok(page_rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1709,11 +1754,8 @@ impl PdfViewer {
 
     fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
         let mut result = Vec::new();
-        let Ok(pages) = self.doc.pages() else {
-            return result;
-        };
         let Ok(page_rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1902,7 +1944,7 @@ impl PdfViewer {
 
     pub fn current_page(&self) -> usize {
         self.layout
-            .current_page_index(&self.doc, self.translation, *self.viewport.borrow())
+            .current_page_index(&self.page_bounds, self.translation, *self.viewport.borrow())
             .unwrap()
     }
 
@@ -1910,7 +1952,7 @@ impl PdfViewer {
         let rects = self
             .layout
             .pages_rects(
-                self.doc.pages().ok()?,
+                &self.page_bounds,
                 -self.translation,
                 self.scale,
                 self.fractional_scaling,
@@ -2104,7 +2146,7 @@ mod tests {
 
         let center = |viewer: &PdfViewer| -> Result<Vector<f32>> {
             let rects = viewer.layout.pages_rects(
-                viewer.doc.pages()?,
+                &viewer.page_bounds,
                 -viewer.translation,
                 viewer.scale,
                 viewer.fractional_scaling,
@@ -2177,7 +2219,7 @@ mod tests {
 
         // Verify the page is fully visible by checking its rect.
         let rects = viewer.layout.pages_rects(
-            viewer.doc.pages()?,
+            &viewer.page_bounds,
             -viewer.translation,
             viewer.scale,
             viewer.fractional_scaling,
@@ -2252,7 +2294,7 @@ mod tests {
             // The whole spread must fit within the viewport and be centered, rather than
             // centering only the page nearest the middle of the screen.
             let rects = viewer.layout.pages_rects(
-                viewer.doc.pages()?,
+                &viewer.page_bounds,
                 -viewer.translation,
                 viewer.scale,
                 viewer.fractional_scaling,
@@ -2303,6 +2345,7 @@ mod tests {
             "Link Extraction",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(result.len(), 1, "should find exactly one 'Link Extraction'");
         assert_eq!(
@@ -2328,6 +2371,7 @@ mod tests {
             "Code Blocks",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(result.len(), 1, "should find exactly one 'Code Blocks'");
         assert_eq!(result[0].pages, 1..2, "'Code Blocks' should be on page 1");
@@ -2347,6 +2391,7 @@ mod tests {
             "•",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert!(!result.is_empty(), "should find bullet characters");
         // Every bullet match should be a valid char boundary
@@ -2368,6 +2413,7 @@ mod tests {
             "Link Extraction",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             result.len(),
@@ -2392,6 +2438,7 @@ mod tests {
             "Code Blocks",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             result.len(),
@@ -2411,12 +2458,14 @@ mod tests {
             "Link Extraction",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         let regex = find_search_matches(
             &viewer.text_contents,
             "Link Extraction",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             plain.len(),
@@ -2440,12 +2489,14 @@ mod tests {
             "Code Blocks",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         let regex = find_search_matches(
             &viewer.text_contents,
             "Code Blocks",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             plain, regex,
@@ -2462,6 +2513,7 @@ mod tests {
             "XYZ_NONEXISTENT",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert!(result.is_empty(), "should not find nonexistent text");
         Ok(())

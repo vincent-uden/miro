@@ -763,6 +763,7 @@ impl App {
     }
 
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
+        let _span = tracy_client::span!("App view");
         let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
             pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
