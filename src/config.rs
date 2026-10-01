@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use std::{fs, path::PathBuf, str::FromStr, fmt};
+use std::{collections::HashMap, fmt, fs, path::PathBuf, str::FromStr};
 
 use colored::Colorize;
 use keybinds2::{KeyInput, KeySeq, Keybind, Keybinds};
@@ -314,10 +314,18 @@ impl From<BindableMessage> for AppMessage {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumString, Display)]
+pub enum BindingMode {
+    #[default]
+    Normal,
+    Presentation,
+}
+
 #[derive(Debug)]
 pub struct Config {
-    pub keyboard: Keybinds<BindableMessage>,
-    pub mouse: Vec<MouseBinding>,
+    pub binding_mode: BindingMode,
+    pub keyboard: HashMap<BindingMode, Keybinds<BindableMessage>>,
+    pub mouse: HashMap<BindingMode, Vec<MouseBinding>>,
     pub rpc_enabled: bool,
     pub rpc_allow_lan: bool,
     pub rpc_port: u32,
@@ -333,20 +341,25 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
+        let mut keyboard = HashMap::new();
+        keyboard.insert(BindingMode::Normal, Keybinds::new(vec![]));
+
+        let mut mouse = HashMap::new();
+        mouse.insert(BindingMode::Normal, vec![]);
         Config {
-            keyboard: Keybinds::new(vec![]),
-            mouse: Vec::new(),
+            keyboard,
+            mouse,
             trackpad_sensitivity: 1.0,
             ..Default::default()
         }
     }
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
-        let binds = self.keyboard.as_slice();
+        let binds = self.keyboard[&self.binding_mode].as_slice();
         binds.iter().find(|b| b.action == msg).cloned()
     }
 
     pub fn get_mouse_action(&self, input: MouseInput) -> Option<MouseAction> {
-        self.mouse
+        self.mouse[&self.binding_mode]
             .iter()
             .find(|(mouse_input, _)| *mouse_input == input)
             .map(|(_, action)| *action)
@@ -397,33 +410,57 @@ impl Config {
 
         match command {
             Command::Bind => {
-                if parts.len() != 3 {
+                if parts.len() != 3 || parts.len() != 4 {
                     return Err(
-                        "Bind command requires exactly 2 arguments: <key> <action>".to_string()
+                        "Bind command requires 3 arguments: <key> <mode> <action>".to_string()
                     );
                 }
 
+                let (mode, action_str) = if parts.len() == 4 {
+                    (
+                        BindingMode::from_str(&parts[2])
+                            .map_err(|_| format!("Unknown mode: {}", &parts[2]))?,
+                        &parts[3],
+                    )
+                } else {
+                    // FIX: Emit warning
+                    // NOTE: len == 3
+                    (BindingMode::Normal, &parts[2])
+                };
+
                 let key_str = &parts[1];
-                let action_str = &parts[2];
 
                 let action = BindableMessage::from_str(action_str)
                     .map_err(|_| format!("Unknown action: {action_str}"))?;
 
                 config
                     .keyboard
+                    .entry(mode)
+                    .or_insert(Keybinds::default())
                     .bind(key_str, action)
                     .map_err(|e| format!("Failed to bind key '{key_str}': {e}"))?;
             }
             Command::MouseBind => {
-                if parts.len() != 3 {
+                if parts.len() != 3 || parts.len() != 4 {
                     return Err(
-                        "MouseBind command requires exactly 2 arguments: <mouse_input> <action>"
+                        "MouseBind command requires 3 arguments: <mouse_input> <mode> <action>"
                             .to_string(),
                     );
                 }
 
+                let (mode, action_str) = if parts.len() == 4 {
+                    (
+                        BindingMode::from_str(&parts[2])
+                            .map_err(|_| format!("Unknown mode: {}", &parts[2]))?,
+                        &parts[3],
+                    )
+                } else {
+                    // FIX: Emit warning
+                    // NOTE: len == 3
+                    (BindingMode::Normal, &parts[2])
+                };
+
                 let mouse_input_str = &parts[1];
-                let action_str = &parts[2];
 
                 let mouse_input = MouseInput::from_str(mouse_input_str)
                     .map_err(|e| format!("Invalid mouse input '{mouse_input_str}': {e}"))?;
@@ -431,7 +468,11 @@ impl Config {
                 let mouse_action = MouseAction::from_str(action_str)
                     .map_err(|_| format!("Unknown mouse action: {action_str}"))?;
 
-                config.mouse.push((mouse_input, mouse_action));
+                config
+                    .mouse
+                    .entry(mode)
+                    .or_insert(vec![])
+                    .push((mouse_input, mouse_action));
             }
             Command::Set => {
                 if parts.len() != 3 {
@@ -562,6 +603,13 @@ impl Config {
         base.open_sidebar = overrider.open_sidebar;
         base.default_search_method = overrider.default_search_method;
         base
+    }
+
+    pub fn dispatch(&mut self, e: iced::keyboard::Event) -> Option<&BindableMessage> {
+        self.keyboard
+            .get_mut(&self.binding_mode)
+            .unwrap()
+            .dispatch(e)
     }
 }
 
@@ -1043,9 +1091,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unknown command: UnknownCommand"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown command: UnknownCommand")
+        );
     }
 
     #[test]
@@ -1056,9 +1106,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Bind command requires exactly 2 arguments"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Bind command requires exactly 2 arguments")
+        );
     }
 
     #[test]
@@ -1069,9 +1121,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unknown action: InvalidAction"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown action: InvalidAction")
+        );
     }
 
     #[test]
@@ -1082,9 +1136,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Invalid mouse input 'InvalidMouse'"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid mouse input 'InvalidMouse'")
+        );
     }
 
     #[test]
@@ -1095,9 +1151,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Invalid port number: 'invalid_port'"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid port number: 'invalid_port'")
+        );
     }
 
     #[test]
@@ -1126,9 +1184,11 @@ MouseBind InvalidMouse Panning
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unterminated quoted string"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unterminated quoted string")
+        );
     }
 
     #[test]
@@ -1194,9 +1254,11 @@ Set RpcPort invalid_port
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Invalid float value for TrackpadSensitivity"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid float value for TrackpadSensitivity")
+        );
     }
 
     #[test]
@@ -1215,9 +1277,11 @@ Set RpcPort invalid_port
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unknown search method: 'InvalidMethod'"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown search method: 'InvalidMethod'")
+        );
     }
 
     #[test]

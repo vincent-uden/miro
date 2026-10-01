@@ -29,7 +29,7 @@ use tracing::error;
 use crate::{
     CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
-    config::{MouseAction, MouseButton, MouseInput, MouseModifiers},
+    config::{BindingMode, MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
     jumplist::{JumpLocation, Jumplist},
@@ -81,6 +81,7 @@ pub struct App {
     ctrl_pressed: bool,
     scale_factor: f64,
     jumplist: Jumplist,
+    binding_mode: BindingMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -190,6 +191,7 @@ impl App {
             ctrl_pressed: false,
             scale_factor: 1.0,
             jumplist: Jumplist::new(),
+            binding_mode: BindingMode::default(),
         }
     }
 
@@ -1047,9 +1049,7 @@ impl App {
                     };
                     let mut config = CONFIG.write().unwrap();
                     match status {
-                        iced::event::Status::Ignored => {
-                            config.keyboard.dispatch(e).map(|x| (*x).into())
-                        }
+                        iced::event::Status::Ignored => config.dispatch(e).map(|x| (*x).into()),
                         iced::event::Status::Captured => None,
                     }
                 }
@@ -1057,10 +1057,9 @@ impl App {
                     // Handle other keyboard events for keybinds
                     let mut config = CONFIG.write().unwrap();
                     match status {
-                        iced::event::Status::Ignored => config
-                            .keyboard
-                            .dispatch(keyboard_event)
-                            .map(|x| (*x).into()),
+                        iced::event::Status::Ignored => {
+                            config.dispatch(keyboard_event).map(|x| (*x).into())
+                        }
                         iced::event::Status::Captured => None,
                     }
                 }
