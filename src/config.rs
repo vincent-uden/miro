@@ -17,6 +17,7 @@ pub const MOVE_STEP: f32 = 40.0;
 pub struct ConfigError {
     pub line_number: usize,
     pub message: String,
+    pub is_warning: bool,
 }
 
 impl ConfigError {
@@ -24,18 +25,32 @@ impl ConfigError {
         Self {
             line_number,
             message,
+            is_warning: false,
+        }
+    }
+
+    pub fn warning(line_number: usize, message: String) -> Self {
+        Self {
+            line_number,
+            message,
+            is_warning: true,
         }
     }
 }
 
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = if self.is_warning {
+            self.message.bright_yellow()
+        } else {
+            self.message.bright_red()
+        };
         write!(
             f,
             "{} {}: {}",
             "Line".bright_blue(),
             self.line_number.to_string().bright_yellow(),
-            self.message.bright_red()
+            message
         )
     }
 }
@@ -43,14 +58,31 @@ impl fmt::Display for ConfigError {
 #[derive(Debug)]
 pub struct ConfigParseResult {
     pub config: Config,
+    /// File the config was loaded from, if known. Used to give the error
+    /// and warning output a provenance header.
+    pub source: Option<PathBuf>,
     pub errors: Vec<ConfigError>,
+    pub warnings: Vec<ConfigError>,
 }
 
 impl ConfigParseResult {
     pub fn new() -> Self {
         Self {
             config: Config::new(),
+            source: None,
             errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn set_source(&mut self, source: PathBuf) {
+        self.source = Some(source);
+    }
+
+    fn source_suffix(&self) -> String {
+        match &self.source {
+            Some(path) => format!(" in {}", path.display()),
+            None => String::new(),
         }
     }
 
@@ -67,9 +99,40 @@ impl ConfigParseResult {
             return String::new();
         }
 
-        let mut output = format!("{}\n", "Configuration parsing errors:".bright_red().bold());
+        let mut output = format!(
+            "{}\n",
+            format!("Configuration parsing errors{}:", self.source_suffix())
+                .bright_red()
+                .bold()
+        );
         for error in &self.errors {
             output.push_str(&format!("  {error}\n"));
+        }
+        output
+    }
+
+    pub fn add_warning(&mut self, line_number: usize, message: String) {
+        self.warnings
+            .push(ConfigError::warning(line_number, message));
+    }
+
+    pub fn has_warnings(&self) -> bool {
+        !self.warnings.is_empty()
+    }
+
+    pub fn format_warnings(&self) -> String {
+        if self.warnings.is_empty() {
+            return String::new();
+        }
+
+        let mut output = format!(
+            "{}\n",
+            format!("Configuration parsing warnings{}:", self.source_suffix())
+                .bright_yellow()
+                .bold()
+        );
+        for warning in &self.warnings {
+            output.push_str(&format!("  {warning}\n"));
         }
         output
     }
@@ -371,11 +434,16 @@ impl Config {
 
     pub fn system_config() -> Result<Self> {
         let config_path = Self::system_config_path()?;
-        let content = fs::read_to_string(config_path)?;
-        let parse_result = Self::parse_with_errors(&content);
+        let content = fs::read_to_string(&config_path)?;
+        let mut parse_result = Self::parse_with_errors(&content);
+        parse_result.set_source(config_path);
 
         if parse_result.has_errors() {
             eprintln!("{}", parse_result.format_errors());
+        }
+
+        if parse_result.has_warnings() {
+            eprintln!("{}", parse_result.format_warnings());
         }
 
         Ok(Self::merge_configs(Self::default(), &parse_result.config))
@@ -393,7 +461,7 @@ impl Config {
                 continue;
             }
 
-            if let Err(error) = Self::parse_line(trimmed, &mut result.config) {
+            if let Err(error) = Self::parse_line(trimmed, line_num, &mut result) {
                 result.add_error(line_num, error);
             }
         }
@@ -401,7 +469,11 @@ impl Config {
         result
     }
 
-    fn parse_line(line: &str, config: &mut Config) -> Result<(), String> {
+    fn parse_line(
+        line: &str,
+        line_number: usize,
+        result: &mut ConfigParseResult,
+    ) -> Result<(), String> {
         let parts = Self::parse_line_parts(line)?;
         if parts.is_empty() {
             return Ok(());
@@ -427,8 +499,12 @@ impl Config {
                         &parts[3],
                     )
                 } else {
-                    // FIX: Emit warning
-                    // NOTE: len == 3
+                    result.add_warning(
+                        line_number,
+                        "Deprecated: Bind command without a mode defaults to Normal. \
+                         Add the mode explicitly: Bind <key> Normal <action>"
+                            .to_string(),
+                    );
                     (BindingMode::Normal, &parts[2])
                 };
 
@@ -437,7 +513,8 @@ impl Config {
                 let action = BindableMessage::from_str(action_str)
                     .map_err(|_| format!("Unknown action: {action_str}"))?;
 
-                config
+                result
+                    .config
                     .keyboard
                     .entry(mode)
                     .or_default()
@@ -459,8 +536,12 @@ impl Config {
                         &parts[3],
                     )
                 } else {
-                    // FIX: Emit warning
-                    // NOTE: len == 3
+                    result.add_warning(
+                        line_number,
+                        "Deprecated: MouseBind command without a mode defaults to Normal. \
+                         Add the mode explicitly: MouseBind <mouse_input> Normal <action>"
+                            .to_string(),
+                    );
                     (BindingMode::Normal, &parts[2])
                 };
 
@@ -472,13 +553,15 @@ impl Config {
                 let mouse_action = MouseAction::from_str(action_str)
                     .map_err(|_| format!("Unknown mouse action: {action_str}"))?;
 
-                config
+                result
+                    .config
                     .mouse
                     .entry(mode)
-                    .or_insert(vec![])
+                    .or_default()
                     .push((mouse_input, mouse_action));
             }
             Command::Set => {
+                let config = &mut result.config;
                 if parts.len() != 3 {
                     return Err(
                         "Set command requires exactly 2 arguments: <setting> <value>".to_string(),
@@ -1229,6 +1312,75 @@ MouseBind InvalidMouse Panning
         assert!(result.errors[0]
             .message
             .contains("Unterminated quoted string"));
+    }
+
+    #[test]
+    pub fn warn_on_implicit_normal_mode() {
+        // The old config format omits the mode; each offending line should
+        // emit one warning while still binding to Normal mode.
+        let config_str = r#"
+Bind j MoveDown
+Bind k Normal MoveUp
+MouseBind MouseLeft Panning
+MouseBind MouseRight Normal Selection
+"#;
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(!result.has_errors());
+        assert_eq!(result.warnings.len(), 2);
+
+        // One warning per offending line, with correct line numbers
+        assert_eq!(result.warnings[0].line_number, 2);
+        assert!(result.warnings[0].is_warning);
+        assert!(result.warnings[0].message.contains("Deprecated"));
+        assert_eq!(result.warnings[1].line_number, 4);
+        assert!(result.warnings[1].is_warning);
+        assert!(result.warnings[1].message.contains("MouseBind"));
+
+        // All bindings are still applied to Normal mode
+        let binds = result.config.keyboard[&BindingMode::Normal].as_slice();
+        assert_eq!(binds.len(), 2);
+        assert_eq!(binds[0].action, BindableMessage::MoveDown);
+        assert_eq!(binds[1].action, BindableMessage::MoveUp);
+        let mouse_binds = &result.config.mouse[&BindingMode::Normal];
+        assert_eq!(mouse_binds.len(), 2);
+        assert_eq!(mouse_binds[0].1, MouseAction::Panning);
+        assert_eq!(mouse_binds[1].1, MouseAction::Selection);
+
+        // The formatted output lists each warning on its own line
+        let formatted = result.format_warnings();
+        assert!(formatted.contains("Configuration parsing warnings:"));
+        assert!(formatted.contains("Line 2:"));
+        assert!(formatted.contains("Line 4:"));
+
+        // With a known source file, the header names it
+        let mut result = Config::parse_with_errors(config_str);
+        result.set_source(PathBuf::from("/home/user/.config/miro-pdf/miro.conf"));
+        assert!(result
+            .format_warnings()
+            .contains("Configuration parsing warnings in /home/user/.config/miro-pdf/miro.conf:"));
+    }
+
+    #[test]
+    pub fn errors_and_warnings_name_source_file() {
+        let config_str = "UnknownCommand arg1";
+        let mut result = Config::parse_with_errors(config_str);
+        result.set_source(PathBuf::from("/home/user/miro.conf"));
+
+        let formatted = result.format_errors();
+        assert!(
+            formatted.contains("Configuration parsing errors in /home/user/miro.conf:"),
+            "got: {formatted}"
+        );
+        assert!(formatted.contains("Line 1:"));
+    }
+
+    #[test]
+    pub fn no_warnings_for_explicit_modes() {
+        let result = Config::parse_with_errors(include_str!("../assets/default.conf"));
+
+        assert!(!result.has_errors());
+        assert!(!result.has_warnings());
     }
 
     #[test]
