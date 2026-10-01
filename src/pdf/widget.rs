@@ -652,11 +652,8 @@ pub struct PdfViewer {
 
     outline: Vec<OutlineItem>,
 
-    /// The entire textual contents of the document. Used to search through text
-    text_contents: String,
-    /// Bounding boxes of every character in the document. Used to highlight searched text
-    /// Each entry is (page_index, byte_offset_in_text_contents, bounding_box)
-    char_bboxes: Vec<(usize, usize, Rect<f32>)>,
+    text_contents: Arc<String>,
+    char_bboxes: Arc<Vec<(usize, usize, Rect<f32>)>>,
     /// The search matches found in the document
     search_matches: Vec<SearchMatch>,
     pub(crate) search_method: SearchMethod,
@@ -784,8 +781,8 @@ impl PdfViewer {
             current_search_result: None,
             outline,
             widget_position: RefCell::new(iced::Point::new(0.0, 0.0)),
-            text_contents: all_text,
-            char_bboxes: bboxes,
+            text_contents: Arc::new(all_text),
+            char_bboxes: Arc::new(bboxes),
             search_matches: vec![],
             search_method: CONFIG.read().unwrap().default_search_method,
             needle: String::new(),
@@ -809,7 +806,11 @@ impl PdfViewer {
                     .unwrap();
                 let next = self
                     .layout
-                    .center_of_page_below(&self.page_bounds, self.translation, *self.viewport.borrow())
+                    .center_of_page_below(
+                        &self.page_bounds,
+                        self.translation,
+                        *self.viewport.borrow(),
+                    )
                     .unwrap();
 
                 self.translation.y += next.center().y - current.center().y;
@@ -821,7 +822,11 @@ impl PdfViewer {
                     .unwrap();
                 let prev = self
                     .layout
-                    .center_of_page_above(&self.page_bounds, self.translation, *self.viewport.borrow())
+                    .center_of_page_above(
+                        &self.page_bounds,
+                        self.translation,
+                        *self.viewport.borrow(),
+                    )
                     .unwrap();
 
                 self.translation.y += prev.center().y - current.center().y;
@@ -893,10 +898,12 @@ impl PdfViewer {
             PdfMessage::ZoomFit => {
                 let page_idx = self.current_page();
                 let viewport = *self.viewport.borrow();
-                if let Ok((scale, translation)) =
-                    self.layout
-                        .zoom_fit(&self.page_bounds, page_idx, self.fractional_scaling, viewport)
-                {
+                if let Ok((scale, translation)) = self.layout.zoom_fit(
+                    &self.page_bounds,
+                    page_idx,
+                    self.fractional_scaling,
+                    viewport,
+                ) {
                     self.scale = scale;
                     self.translation = translation;
                 }
