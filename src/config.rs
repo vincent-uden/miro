@@ -343,9 +343,11 @@ impl Config {
     pub fn new() -> Self {
         let mut keyboard = HashMap::new();
         keyboard.insert(BindingMode::Normal, Keybinds::new(vec![]));
+        keyboard.insert(BindingMode::Presentation, Keybinds::new(vec![]));
 
         let mut mouse = HashMap::new();
         mouse.insert(BindingMode::Normal, vec![]);
+        mouse.insert(BindingMode::Presentation, vec![]);
         Config {
             keyboard,
             mouse,
@@ -410,7 +412,7 @@ impl Config {
 
         match command {
             Command::Bind => {
-                if parts.len() != 3 || parts.len() != 4 {
+                if parts.len() != 3 && parts.len() != 4 {
                     return Err(
                         "Bind command requires 3 arguments: <key> <mode> <action>".to_string()
                     );
@@ -419,7 +421,7 @@ impl Config {
                 let (mode, action_str) = if parts.len() == 4 {
                     (
                         BindingMode::from_str(&parts[2])
-                            .map_err(|_| format!("Unknown mode: {}", &parts[2]))?,
+                            .map_err(|_| format!("Unknown mode: {}", parts[2]))?,
                         &parts[3],
                     )
                 } else {
@@ -436,12 +438,12 @@ impl Config {
                 config
                     .keyboard
                     .entry(mode)
-                    .or_insert(Keybinds::default())
+                    .or_default()
                     .bind(key_str, action)
                     .map_err(|e| format!("Failed to bind key '{key_str}': {e}"))?;
             }
             Command::MouseBind => {
-                if parts.len() != 3 || parts.len() != 4 {
+                if parts.len() != 3 && parts.len() != 4 {
                     return Err(
                         "MouseBind command requires 3 arguments: <mouse_input> <mode> <action>"
                             .to_string(),
@@ -451,7 +453,7 @@ impl Config {
                 let (mode, action_str) = if parts.len() == 4 {
                     (
                         BindingMode::from_str(&parts[2])
-                            .map_err(|_| format!("Unknown mode: {}", &parts[2]))?,
+                            .map_err(|_| format!("Unknown mode: {}", parts[2]))?,
                         &parts[3],
                     )
                 } else {
@@ -586,13 +588,19 @@ impl Config {
     }
 
     fn merge_configs(mut base: Config, overrider: &Config) -> Config {
-        for binding in overrider.keyboard.as_slice() {
-            base.keyboard.push(binding.clone());
+        for (mode, binds) in &overrider.keyboard {
+            let base_binds = base.keyboard.entry(*mode).or_default();
+            for binding in binds.as_slice() {
+                base_binds.push(binding.clone());
+            }
         }
-        for binding in &overrider.mouse {
-            println!("{binding:?}");
-            base.mouse.push(*binding);
+        for (mode, bindings) in &overrider.mouse {
+            let base_bindings = base.mouse.entry(*mode).or_default();
+            for binding in bindings {
+                base_bindings.push(*binding);
+            }
         }
+        base.binding_mode = overrider.binding_mode;
         base.rpc_enabled = overrider.rpc_enabled;
         base.rpc_port = overrider.rpc_port;
         base.rpc_allow_lan = overrider.rpc_allow_lan;
@@ -615,8 +623,12 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config {
-            keyboard: Keybinds::new(vec![
+        // All default bindings apply to the Normal binding mode. The
+        // Presentation mode starts out with no bindings at all.
+        let mut keyboard = HashMap::new();
+        keyboard.insert(
+            BindingMode::Normal,
+            Keybinds::new(vec![
                 Keybind::new(KeyInput::from_str("j").unwrap(), BindableMessage::MoveDown),
                 Keybind::new(KeyInput::from_str("k").unwrap(), BindableMessage::MoveUp),
                 Keybind::new(KeyInput::from_str("h").unwrap(), BindableMessage::MoveLeft),
@@ -792,7 +804,13 @@ impl Default for Config {
                     BindableMessage::PreviousTab,
                 ),
             ]),
-            mouse: vec![
+        );
+        keyboard.insert(BindingMode::Presentation, Keybinds::new(vec![]));
+
+        let mut mouse = HashMap::new();
+        mouse.insert(
+            BindingMode::Normal,
+            vec![
                 (
                     MouseInput {
                         button: MouseButton::Left,
@@ -908,6 +926,13 @@ impl Default for Config {
                     MouseAction::MoveRight,
                 ),
             ],
+        );
+        mouse.insert(BindingMode::Presentation, vec![]);
+
+        Config {
+            binding_mode: BindingMode::Normal,
+            keyboard,
+            mouse,
             rpc_enabled: false,
             rpc_port: 7890,
             rpc_allow_lan: false,
@@ -953,19 +978,22 @@ mod tests {
     #[test]
     pub fn can_parse_vim_bindings() {
         let _config = Config {
-            keyboard: Keybinds::new(vec![
-                Keybind::new('K', BindableMessage::PreviousPage),
-                Keybind::new('L', BindableMessage::NextTab),
-                Keybind::new(
-                    [
-                        KeyInput::from_str("Ctrl+n").unwrap(),
-                        KeyInput::from_str("Ctrl+w").unwrap(),
-                        KeyInput::from_str("Ctrl+Plus").unwrap(),
-                    ],
-                    BindableMessage::NextTab,
-                ),
-            ]),
-            mouse: Vec::new(),
+            keyboard: HashMap::from([(
+                BindingMode::Normal,
+                Keybinds::new(vec![
+                    Keybind::new('K', BindableMessage::PreviousPage),
+                    Keybind::new('L', BindableMessage::NextTab),
+                    Keybind::new(
+                        [
+                            KeyInput::from_str("Ctrl+n").unwrap(),
+                            KeyInput::from_str("Ctrl+w").unwrap(),
+                            KeyInput::from_str("Ctrl+Plus").unwrap(),
+                        ],
+                        BindableMessage::NextTab,
+                    ),
+                ]),
+            )]),
+            mouse: HashMap::from([(BindingMode::Normal, Vec::new())]),
             rpc_enabled: false,
             rpc_port: 7890,
             rpc_allow_lan: false,
@@ -983,20 +1011,37 @@ mod tests {
     pub fn can_parse_config_file() {
         let contents = include_str!("../assets/default.conf");
         let config = Config::from_str(contents).unwrap();
-        let binds = config.keyboard.into_vec();
         let default_cfg = Config::default();
-        let default_binds = default_cfg.keyboard.into_vec();
-        assert_eq!(binds.len(), default_binds.len());
-        for (b1, b2) in binds.iter().zip(default_binds) {
-            assert_eq!(b1.seq, b2.seq);
-            assert_eq!(b1.action, b2.action);
+
+        // Check that parsed and default configs have the exact same modes
+        assert_eq!(
+            config.keyboard.keys().collect::<Vec<_>>(),
+            default_cfg.keyboard.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            config.mouse.keys().collect::<Vec<_>>(),
+            default_cfg.mouse.keys().collect::<Vec<_>>()
+        );
+
+        // Check keyboard bindings for each mode
+        for (mode, default_binds) in &default_cfg.keyboard {
+            let binds = config.keyboard[mode].as_slice();
+            let default_binds = default_binds.as_slice();
+            assert_eq!(binds.len(), default_binds.len());
+            for (b1, b2) in binds.iter().zip(default_binds) {
+                assert_eq!(b1.seq, b2.seq, "in mode {mode:?}");
+                assert_eq!(b1.action, b2.action, "in mode {mode:?}");
+            }
         }
 
-        // Check mouse bindings
-        assert_eq!(config.mouse.len(), default_cfg.mouse.len());
-        for (b1, b2) in config.mouse.iter().zip(default_cfg.mouse.iter()) {
-            assert_eq!(b1.0, b2.0); // MouseInput
-            assert_eq!(b1.1, b2.1); // MouseAction
+        // Check mouse bindings for each mode
+        for (mode, default_binds) in &default_cfg.mouse {
+            let binds = &config.mouse[mode];
+            assert_eq!(binds.len(), default_binds.len());
+            for (b1, b2) in binds.iter().zip(default_binds.iter()) {
+                assert_eq!(b1.0, b2.0, "in mode {mode:?}"); // MouseInput
+                assert_eq!(b1.1, b2.1, "in mode {mode:?}"); // MouseAction
+            }
         }
 
         // Check other settings
@@ -1091,11 +1136,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown command: UnknownCommand")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown command: UnknownCommand"));
     }
 
     #[test]
@@ -1106,11 +1149,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Bind command requires exactly 2 arguments")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Bind command requires 3 arguments"));
     }
 
     #[test]
@@ -1121,11 +1162,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown action: InvalidAction")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown action: InvalidAction"));
     }
 
     #[test]
@@ -1136,11 +1175,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid mouse input 'InvalidMouse'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid mouse input 'InvalidMouse'"));
     }
 
     #[test]
@@ -1151,11 +1188,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid port number: 'invalid_port'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid port number: 'invalid_port'"));
     }
 
     #[test]
@@ -1173,7 +1208,9 @@ MouseBind InvalidMouse Panning
         assert_eq!(result.errors.len(), 4);
 
         // Check that valid lines are still processed
-        assert!(!result.config.keyboard.as_slice().is_empty());
+        assert!(!result.config.keyboard[&BindingMode::Normal]
+            .as_slice()
+            .is_empty());
     }
 
     #[test]
@@ -1184,11 +1221,9 @@ MouseBind InvalidMouse Panning
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unterminated quoted string")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unterminated quoted string"));
     }
 
     #[test]
@@ -1203,7 +1238,12 @@ Bind k MoveUp
         let result = Config::parse_with_errors(config_str);
 
         assert!(!result.has_errors());
-        assert_eq!(result.config.keyboard.as_slice().len(), 2);
+        assert_eq!(
+            result.config.keyboard[&BindingMode::Normal]
+                .as_slice()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -1254,11 +1294,9 @@ Set RpcPort invalid_port
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid float value for TrackpadSensitivity")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid float value for TrackpadSensitivity"));
     }
 
     #[test]
@@ -1277,11 +1315,9 @@ Set RpcPort invalid_port
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown search method: 'InvalidMethod'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown search method: 'InvalidMethod'"));
     }
 
     #[test]
@@ -1298,7 +1334,9 @@ Set RpcPort invalid_port
             }
 
             // Should still parse valid lines
-            assert!(!result.config.keyboard.as_slice().is_empty());
+            assert!(!result.config.keyboard[&BindingMode::Normal]
+                .as_slice()
+                .is_empty());
         }
     }
 }
