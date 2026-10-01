@@ -435,6 +435,7 @@ impl Config {
     pub fn system_config() -> Result<Self> {
         let config_path = Self::system_config_path()?;
         let content = fs::read_to_string(&config_path)?;
+        let config_path = canonize_path(config_path);
         let mut parse_result = Self::parse_with_errors(&content);
         parse_result.set_source(config_path);
 
@@ -704,6 +705,13 @@ impl Config {
             .unwrap()
             .dispatch(e)
     }
+}
+
+/// Canonize a path so the printed source is absolute and free of `.`
+/// components and symlinks. Falls back to the original path if it
+/// cannot be resolved.
+fn canonize_path(path: PathBuf) -> PathBuf {
+    path.canonicalize().unwrap_or(path)
 }
 
 impl Default for Config {
