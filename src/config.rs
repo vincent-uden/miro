@@ -314,7 +314,9 @@ impl From<BindableMessage> for AppMessage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumString, Display)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, EnumString, Display,
+)]
 pub enum BindingMode {
     #[default]
     Normal,
@@ -1014,14 +1016,17 @@ mod tests {
         let default_cfg = Config::default();
 
         // Check that parsed and default configs have the exact same modes
-        assert_eq!(
-            config.keyboard.keys().collect::<Vec<_>>(),
-            default_cfg.keyboard.keys().collect::<Vec<_>>()
-        );
-        assert_eq!(
-            config.mouse.keys().collect::<Vec<_>>(),
-            default_cfg.mouse.keys().collect::<Vec<_>>()
-        );
+        let mut modes = config.keyboard.keys().collect::<Vec<_>>();
+        let mut default_modes = default_cfg.keyboard.keys().collect::<Vec<_>>();
+        modes.sort();
+        default_modes.sort();
+        assert_eq!(modes, default_modes);
+
+        let mut modes = config.mouse.keys().collect::<Vec<_>>();
+        let mut default_modes = default_cfg.mouse.keys().collect::<Vec<_>>();
+        modes.sort();
+        default_modes.sort();
+        assert_eq!(modes, default_modes);
 
         // Check keyboard bindings for each mode
         for (mode, default_binds) in &default_cfg.keyboard {
