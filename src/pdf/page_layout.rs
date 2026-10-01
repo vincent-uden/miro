@@ -176,7 +176,6 @@ impl PageLayout {
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<Vec<Rect<f32>>> {
-        let _span = tracy_client::span!("Pages rects");
         let page_sizes: Vec<_> = page_bounds
             .iter()
             .enumerate()
@@ -308,7 +307,6 @@ impl PageLayout {
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
-        let _span = tracy_client::span!("Spread rect");
         let rects = self.pages_rects(
             page_bounds,
             Vector::zero(),
@@ -337,7 +335,6 @@ impl PageLayout {
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<(f32, Vector<f32>)> {
-        let _span = tracy_client::span!("Zoom fit");
         if viewport.width <= 0.0 || viewport.height <= 0.0 {
             return Err(anyhow!("Cannot fit pages in a zero-sized viewport"));
         }
@@ -371,7 +368,6 @@ impl PageLayout {
         page_idx: usize,
         viewport: Size<f32>,
     ) -> Result<Vector<f32>> {
-        let _span = tracy_client::span!("Translation for page");
         let rects = self.pages_rects(
             page_bounds,
             Vector::zero(),
@@ -392,7 +388,6 @@ impl PageLayout {
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<usize> {
-        let _span = tracy_client::span!("Current page index");
         let rects = self.pages_rects(page_bounds, -translation, 1.0, 1.0, viewport)?;
         let mut closest = 0;
         let viewport: Vector<_> = viewport.into();
@@ -415,7 +410,6 @@ impl PageLayout {
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
-        let _span = tracy_client::span!("Center of page");
         let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
         let idx = self.current_page_index(page_bounds, translation, viewport)?;
         Ok(rects[idx])
@@ -427,7 +421,6 @@ impl PageLayout {
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
-        let _span = tracy_client::span!("Center of page above");
         let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
         let mut idx = self.current_page_index(page_bounds, translation, viewport)?;
         idx = (match self.layout {
@@ -446,7 +439,6 @@ impl PageLayout {
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
-        let _span = tracy_client::span!("Center of page below");
         let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
         let mut idx = self.current_page_index(page_bounds, translation, viewport)?;
         idx = (match self.layout {

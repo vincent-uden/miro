@@ -1016,7 +1016,6 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
-        let _span = tracy_client::span!("App subscription");
         let keys = listen_with(|event, status, _| match event {
             Event::Keyboard(keyboard_event) => match keyboard_event {
                 iced::keyboard::Event::ModifiersChanged(modifiers) => {
