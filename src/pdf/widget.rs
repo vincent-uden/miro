@@ -2,7 +2,11 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex, Weak},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, Weak,
+    },
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -60,6 +64,9 @@ pub struct OutlineItem {
 
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
+/// How long a needle update waits before actually spawning a search scan. Typing spawns one
+/// task per keystroke; with this, intermediate ones are cancelled before doing any work.
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
 
 /// A pixel buffer that returns itself to a shared pool when dropped.
 ///
@@ -659,8 +666,13 @@ pub struct PdfViewer {
     pub(crate) search_method: SearchMethod,
     /// The thing to search for
     pub(crate) needle: String,
-    /// Monotonically incremented to cancel stale async search tasks.
-    search_generation: u64,
+    /// Monotonically incremented to invalidate stale async search tasks. Shared with the
+    /// spawned debounce futures so superseded tasks can drop out before spawning a scan.
+    search_generation: Arc<AtomicU64>,
+    /// Set to cancel all in-flight search scans. Replaced with a fresh flag per search;
+    /// dropping the viewer also sets it so pending scans exit quickly instead of blocking
+    /// iced's tokio runtime shutdown (which waits for blocking tasks).
+    search_cancel: Arc<AtomicBool>,
 
     /// All text annotations (sticky notes / comments) extracted from the document.
     comments: Vec<Comment>,
@@ -669,6 +681,15 @@ pub struct PdfViewer {
 
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
+}
+
+impl Drop for PdfViewer {
+    fn drop(&mut self) {
+        // Cancel any in-flight search scans. Iced owns a tokio runtime and dropping it waits
+        // for spawned blocking tasks, so without this, quitting mid-search would hang the
+        // whole program until every stale full-document scan finished.
+        self.search_cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -786,7 +807,8 @@ impl PdfViewer {
             search_matches: vec![],
             search_method: CONFIG.read().unwrap().default_search_method,
             needle: String::new(),
-            search_generation: 0,
+            search_generation: Arc::new(AtomicU64::new(0)),
+            search_cancel: Arc::new(AtomicBool::new(false)),
             comments,
             hovered_comment: None,
             active_comment: None,
@@ -1167,7 +1189,7 @@ impl PdfViewer {
             }
             PdfMessage::UpdateSearchNeedle(needle) => {
                 self.needle = needle;
-                self.search_generation = self.search_generation.wrapping_add(1);
+                self.invalidate_search();
                 out = self.spawn_search_task();
             }
             PdfMessage::SetSearchMethod(search_method) => {
@@ -1179,11 +1201,11 @@ impl PdfViewer {
                     SearchMethod::PlainText => SearchMethod::Regex,
                     SearchMethod::Regex => SearchMethod::PlainText,
                 };
-                self.search_generation = self.search_generation.wrapping_add(1);
+                self.invalidate_search();
                 out = self.spawn_search_task();
             }
             PdfMessage::SearchResultsReady(matches, generation) => {
-                if generation == self.search_generation {
+                if generation == self.search_generation.load(Ordering::Relaxed) {
                     self.search_matches = matches;
                     self.current_search_result = None;
                 }
@@ -1529,17 +1551,32 @@ impl PdfViewer {
         Ok((all_text, bounding_boxes))
     }
 
+    /// Cancel any in-flight search scans and start a fresh generation for the next one.
+    fn invalidate_search(&mut self) {
+        self.search_cancel.store(true, Ordering::Relaxed);
+        self.search_cancel = Arc::new(AtomicBool::new(false));
+        self.search_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn spawn_search_task(&self) -> iced::Task<PdfMessage> {
         let text_contents = self.text_contents.clone();
         let needle = self.needle.clone();
         let method = self.search_method;
         let char_bboxes = self.char_bboxes.clone();
-        let generation = self.search_generation;
+        let cancel = self.search_cancel.clone();
+        let generation_counter = self.search_generation.clone();
+        let generation = generation_counter.load(Ordering::Relaxed);
 
         iced::Task::perform(
             async move {
+                // Debounce: typing spawns one task per keystroke, but only the newest
+                // generation gets past this sleep and starts an actual scan.
+                tokio::time::sleep(SEARCH_DEBOUNCE).await;
+                if generation_counter.load(Ordering::Relaxed) != generation {
+                    return Ok(Vec::new());
+                }
                 tokio::task::spawn_blocking(move || {
-                    find_search_matches(&text_contents, &needle, method, &char_bboxes)
+                    find_search_matches(&text_contents, &needle, method, &char_bboxes, &cancel)
                 })
                 .await
             },
@@ -2308,6 +2345,7 @@ mod tests {
             "Link Extraction",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(result.len(), 1, "should find exactly one 'Link Extraction'");
         assert_eq!(
@@ -2333,6 +2371,7 @@ mod tests {
             "Code Blocks",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(result.len(), 1, "should find exactly one 'Code Blocks'");
         assert_eq!(result[0].pages, 1..2, "'Code Blocks' should be on page 1");
@@ -2352,6 +2391,7 @@ mod tests {
             "•",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert!(!result.is_empty(), "should find bullet characters");
         // Every bullet match should be a valid char boundary
@@ -2373,6 +2413,7 @@ mod tests {
             "Link Extraction",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             result.len(),
@@ -2397,6 +2438,7 @@ mod tests {
             "Code Blocks",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             result.len(),
@@ -2416,12 +2458,14 @@ mod tests {
             "Link Extraction",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         let regex = find_search_matches(
             &viewer.text_contents,
             "Link Extraction",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             plain.len(),
@@ -2445,12 +2489,14 @@ mod tests {
             "Code Blocks",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         let regex = find_search_matches(
             &viewer.text_contents,
             "Code Blocks",
             SearchMethod::Regex,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert_eq!(
             plain, regex,
@@ -2467,6 +2513,7 @@ mod tests {
             "XYZ_NONEXISTENT",
             SearchMethod::PlainText,
             &viewer.char_bboxes,
+            &AtomicBool::new(false),
         );
         assert!(result.is_empty(), "should not find nonexistent text");
         Ok(())
