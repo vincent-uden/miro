@@ -1279,6 +1279,53 @@ Set RpcPort invalid_port
     }
 
     #[test]
+    pub fn implicit_normal_mode_backwards_compatibility() {
+        // Bindings without an explicit mode should be treated as Normal mode
+        // bindings, for backwards compatibility with the old config format.
+        let config_str = r#"
+Bind j MoveDown
+Bind Tab NextTab
+MouseBind MouseLeft Panning
+MouseBind Ctrl+ScrollUp ZoomIn
+"#;
+        let result = Config::parse_with_errors(config_str);
+
+        assert!(!result.has_errors());
+
+        // Both modes must exist, only Normal should have bindings
+        assert_eq!(result.config.keyboard.len(), 2);
+        assert_eq!(result.config.mouse.len(), 2);
+        assert_eq!(
+            result.config.keyboard[&BindingMode::Presentation]
+                .as_slice()
+                .len(),
+            0
+        );
+        assert_eq!(result.config.mouse[&BindingMode::Presentation].len(), 0);
+
+        // The binds ended up in Normal mode
+        let binds = result.config.keyboard[&BindingMode::Normal].as_slice();
+        assert_eq!(binds.len(), 2);
+        assert_eq!(binds[0].action, BindableMessage::MoveDown);
+        assert_eq!(binds[1].action, BindableMessage::NextTab);
+
+        let mouse_binds = &result.config.mouse[&BindingMode::Normal];
+        assert_eq!(mouse_binds.len(), 2);
+        assert_eq!(mouse_binds[0].1, MouseAction::Panning);
+        assert_eq!(mouse_binds[1].1, MouseAction::ZoomIn);
+
+        // The binds are active in the default (Normal) binding mode
+        let mut config = result.config;
+        assert_eq!(
+            config.get_mouse_action(MouseInput {
+                button: MouseButton::Left,
+                modifiers: MouseModifiers::default()
+            }),
+            Some(MouseAction::Panning)
+        );
+    }
+
+    #[test]
     pub fn can_parse_trackpad_sensitivity() {
         let config_str = "Set TrackpadSensitivity 0.5";
         let result = Config::parse_with_errors(config_str);
