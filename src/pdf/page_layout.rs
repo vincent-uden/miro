@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use iced::Size;
-use mupdf::Document;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
@@ -171,17 +170,18 @@ impl PageLayout {
     /// doucment.
     pub fn pages_rects(
         &self,
-        pages: mupdf::document::PageIter<'_>,
+        page_bounds: &[Rect<f32>],
         translation: Vector<f32>, // In document space
         scale: f32,
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<Vec<Rect<f32>>> {
-        let page_sizes = pages
-            .flatten()
+        let _span = tracy_client::span!("Pages rects");
+        let page_sizes: Vec<_> = page_bounds
+            .iter()
             .enumerate()
-            .map(|(page_idx, page)| Ok(self.page_rect(page_idx, page.bounds()?.into()).size()))
-            .collect::<Result<Vec<_>>>()?;
+            .map(|(i, bounds)| self.page_rect(i, *bounds).size())
+            .collect();
         let mut out: Vec<Rect<f32>> = vec![];
         let vsize: Vector<_> = viewport.into();
         let effective_scale = scale * fractional_scale;
@@ -302,14 +302,15 @@ impl PageLayout {
     /// Returns the bounding box of the spread containing `page_idx` as laid out at `scale`.
     fn spread_rect(
         &self,
-        doc: &Document,
+        page_bounds: &[Rect<f32>],
         page_idx: usize,
         scale: f32,
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
+        let _span = tracy_client::span!("Spread rect");
         let rects = self.pages_rects(
-            doc.pages()?,
+            page_bounds,
             Vector::zero(),
             scale,
             fractional_scale,
@@ -331,16 +332,17 @@ impl PageLayout {
     /// fully visible and centered.
     pub fn zoom_fit(
         &self,
-        doc: &Document,
+        page_bounds: &[Rect<f32>],
         page_idx: usize,
         fractional_scale: f32,
         viewport: Size<f32>,
     ) -> Result<(f32, Vector<f32>)> {
+        let _span = tracy_client::span!("Zoom fit");
         if viewport.width <= 0.0 || viewport.height <= 0.0 {
             return Err(anyhow!("Cannot fit pages in a zero-sized viewport"));
         }
         // The spread's size is linear in the effective scale, so measure it at scale 1.
-        let reference = self.spread_rect(doc, page_idx, 1.0, 1.0, viewport)?;
+        let reference = self.spread_rect(page_bounds, page_idx, 1.0, 1.0, viewport)?;
         let size = reference.size();
         if size.x <= 0.0 || size.y <= 0.0 {
             return Err(anyhow!("Cannot fit a spread with zero size"));
@@ -350,7 +352,7 @@ impl PageLayout {
 
         // Recompute at the target scale since scaling around each page's center can shift the
         // bounding box when the pages have different sizes.
-        let spread = self.spread_rect(doc, page_idx, scale, fractional_scale, viewport)?;
+        let spread = self.spread_rect(page_bounds, page_idx, scale, fractional_scale, viewport)?;
         let viewport_center = Vector::new(viewport.width, viewport.height).scaled(0.5);
         // `pages_rects` is called with `-translation` when rendering, so a spread below the
         // viewport center needs a positive translation (same convention as
@@ -363,14 +365,15 @@ impl PageLayout {
     /// `page_idx > doc.page_count()` this will move to the last page.
     pub fn translation_for_page(
         &self,
-        doc: &Document,
+        page_bounds: &[Rect<f32>],
         scale: f32,
         fractional_scale: f32,
         page_idx: usize,
         viewport: Size<f32>,
     ) -> Result<Vector<f32>> {
+        let _span = tracy_client::span!("Translation for page");
         let rects = self.pages_rects(
-            doc.pages()?,
+            page_bounds,
             Vector::zero(),
             scale,
             fractional_scale,
@@ -385,11 +388,12 @@ impl PageLayout {
 
     pub fn current_page_index(
         &self,
-        doc: &Document,
+        page_bounds: &[Rect<f32>],
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<usize> {
-        let rects = self.pages_rects(doc.pages()?, -translation, 1.0, 1.0, viewport)?;
+        let _span = tracy_client::span!("Current page index");
+        let rects = self.pages_rects(page_bounds, -translation, 1.0, 1.0, viewport)?;
         let mut closest = 0;
         let viewport: Vector<_> = viewport.into();
         if rects.is_empty() {
@@ -407,23 +411,25 @@ impl PageLayout {
 
     pub fn center_of_page(
         &self,
-        doc: &Document,
+        page_bounds: &[Rect<f32>],
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
-        let rects = self.pages_rects(doc.pages()?, translation, 1.0, 1.0, viewport)?;
-        let idx = self.current_page_index(doc, translation, viewport)?;
+        let _span = tracy_client::span!("Center of page");
+        let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
+        let idx = self.current_page_index(page_bounds, translation, viewport)?;
         Ok(rects[idx])
     }
 
     pub fn center_of_page_above(
         &self,
-        doc: &Document,
+        page_bounds: &[Rect<f32>],
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
-        let rects = self.pages_rects(doc.pages()?, translation, 1.0, 1.0, viewport)?;
-        let mut idx = self.current_page_index(doc, translation, viewport)?;
+        let _span = tracy_client::span!("Center of page above");
+        let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
+        let mut idx = self.current_page_index(page_bounds, translation, viewport)?;
         idx = (match self.layout {
             PageLayoutKind::SinglePage => idx.saturating_sub(1),
             PageLayoutKind::DoublePage => idx.saturating_sub(2),
@@ -436,12 +442,13 @@ impl PageLayout {
 
     pub fn center_of_page_below(
         &self,
-        doc: &Document,
+        page_bounds: &[Rect<f32>],
         translation: Vector<f32>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
-        let rects = self.pages_rects(doc.pages()?, translation, 1.0, 1.0, viewport)?;
-        let mut idx = self.current_page_index(doc, translation, viewport)?;
+        let _span = tracy_client::span!("Center of page below");
+        let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
+        let mut idx = self.current_page_index(page_bounds, translation, viewport)?;
         idx = (match self.layout {
             PageLayoutKind::SinglePage => idx + 1,
             PageLayoutKind::DoublePage => idx + 2,
@@ -482,14 +489,19 @@ mod tests {
     #[test]
     fn test_translation_for_page() -> Result<()> {
         let doc = Document::open("assets/links.pdf")?;
+        let page_bounds: Vec<Rect<f32>> = doc
+            .pages()?
+            .flatten()
+            .map(|page| Ok(Rect::from(page.bounds()?)))
+            .collect::<Result<_>>()?;
         let layout = PageLayout::new(PageLayoutKind::SinglePage);
         let viewport = Size::new(800.0, 600.0);
         let scale = 1.0;
         let fractional_scale = 1.0;
 
-        let t0 = layout.translation_for_page(&doc, scale, fractional_scale, 0, viewport)?;
-        let t1 = layout.translation_for_page(&doc, scale, fractional_scale, 1, viewport)?;
-        let t2 = layout.translation_for_page(&doc, scale, fractional_scale, 2, viewport)?;
+        let t0 = layout.translation_for_page(&page_bounds, scale, fractional_scale, 0, viewport)?;
+        let t1 = layout.translation_for_page(&page_bounds, scale, fractional_scale, 1, viewport)?;
+        let t2 = layout.translation_for_page(&page_bounds, scale, fractional_scale, 2, viewport)?;
 
         // Page 0 should need minimal/no translation to be centered
         // (it's already centered when translation=0)
@@ -516,7 +528,7 @@ mod tests {
 
         // Verify that applying the NEGATED translation to pages_rects centers the page
         // (view() passes -self.translation to pages_rects)
-        let rects = layout.pages_rects(doc.pages()?, -t1, scale, fractional_scale, viewport)?;
+        let rects = layout.pages_rects(&page_bounds, -t1, scale, fractional_scale, viewport)?;
         let viewport_center = Vector::new(viewport.width, viewport.height).scaled(0.5);
         let page1_center = rects[1].center();
         let diff = (page1_center - viewport_center).norm_squared();

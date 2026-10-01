@@ -347,6 +347,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for SelectionOverlay<'a> {
         bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
+        let _span = tracy_client::span!("Selection overlay draw");
         let Some(selection) = self.viewer.selection_rect() else {
             return Vec::new();
         };
@@ -463,6 +464,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
         bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
+        let _span = tracy_client::span!("Interactive overlay draw");
         *self.viewer.widget_position.borrow_mut() = bounds.position();
         let viewport = bounds.size();
         let link_visible = self.viewer.visible_links(viewport);
@@ -605,6 +607,11 @@ pub struct PdfViewer {
 
     doc: mupdf::Document,
     display_lists: Vec<mupdf::DisplayList>,
+    /// PDF-space bounding box of every page, snapshotted once at open. Layout math must use
+    /// this instead of iterating `doc.pages()`, which performs a full MuPDF page load per
+    /// page per call — several full-document iterations per frame made large documents stall
+    /// for seconds on every input event.
+    page_bounds: Vec<Rect<f32>>,
     /// Final iced image handles cached by render key. Kept separately so iced can reuse the
     /// GPU texture without re-uploading when the widget redraws for non-visual reasons.
     render_cache: RefCell<HashMap<RenderKey, image::Handle>>,
@@ -678,12 +685,17 @@ impl PdfViewer {
         Vec<Vec<PageLink>>,
         Vec<OutlineItem>,
         Vec<Comment>,
+        Vec<Rect<f32>>,
     )> {
+        let _span = tracy_client::span!("Build document data");
         let mut display_lists = vec![];
         let mut links = vec![];
         let mut comments = vec![];
+        let mut page_bounds = vec![];
         for (page_idx, page) in doc.pages()?.flatten().enumerate() {
-            let mut dl = mupdf::DisplayList::new(page.bounds()?)?;
+            let page_bound: mupdf::Rect = page.bounds()?;
+            page_bounds.push(page_bound.into());
+            let mut dl = mupdf::DisplayList::new(page_bound)?;
             let dummy_device = Device::from_display_list(&mut dl)?;
             let ctm = Matrix::IDENTITY;
             page.run(&dummy_device, &ctm)?;
@@ -719,17 +731,19 @@ impl PdfViewer {
             }
         }
         let outline = Self::extract_outline(doc).unwrap_or_default();
-        Ok((display_lists, links, outline, comments))
+        Ok((display_lists, links, outline, comments, page_bounds))
     }
 
     pub fn from_path(path: PathBuf) -> Result<Self> {
+        let _span = tracy_client::span!("Pdf from path");
         let name = path
             .file_name()
             .expect("The pdf must have a file name")
             .to_string_lossy()
             .to_string();
         let doc = mupdf::Document::open(&path.to_str().unwrap())?;
-        let (display_lists, links, outline, comments) = Self::build_document_data(&doc)?;
+        let (display_lists, links, outline, comments, page_bounds) =
+            Self::build_document_data(&doc)?;
         let (all_text, bboxes) = Self::extract_search_data(&display_lists)?;
 
         let bg_color = DARK_THEME
@@ -749,6 +763,7 @@ impl PdfViewer {
             draw_page_borders: true,
             doc,
             display_lists,
+            page_bounds,
             render_cache: RefCell::default(),
             allocation_cache: RefCell::default(),
             pixmap_pool: RefCell::default(),
@@ -788,17 +803,18 @@ impl PdfViewer {
 
 impl PdfViewer {
     pub fn update(&mut self, msg: PdfMessage) -> iced::Task<PdfMessage> {
+        let _span = tracy_client::span!("Pdf update");
         let mut out = iced::Task::none();
         let page_count = self.doc.page_count().unwrap() as usize;
         match msg {
             PdfMessage::NextPage => {
                 let current = self
                     .layout
-                    .center_of_page(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page(&self.page_bounds, self.translation, *self.viewport.borrow())
                     .unwrap();
                 let next = self
                     .layout
-                    .center_of_page_below(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page_below(&self.page_bounds, self.translation, *self.viewport.borrow())
                     .unwrap();
 
                 self.translation.y += next.center().y - current.center().y;
@@ -806,11 +822,11 @@ impl PdfViewer {
             PdfMessage::PreviousPage => {
                 let current = self
                     .layout
-                    .center_of_page(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page(&self.page_bounds, self.translation, *self.viewport.borrow())
                     .unwrap();
                 let prev = self
                     .layout
-                    .center_of_page_above(&self.doc, self.translation, *self.viewport.borrow())
+                    .center_of_page_above(&self.page_bounds, self.translation, *self.viewport.borrow())
                     .unwrap();
 
                 self.translation.y += prev.center().y - current.center().y;
@@ -818,7 +834,7 @@ impl PdfViewer {
             PdfMessage::SetPage(idx) => {
                 if idx < page_count
                     && let Ok(translation) = self.layout.translation_for_page(
-                        &self.doc,
+                        &self.page_bounds,
                         self.scale,
                         self.fractional_scaling,
                         idx,
@@ -884,7 +900,7 @@ impl PdfViewer {
                 let viewport = *self.viewport.borrow();
                 if let Ok((scale, translation)) =
                     self.layout
-                        .zoom_fit(&self.doc, page_idx, self.fractional_scaling, viewport)
+                        .zoom_fit(&self.page_bounds, page_idx, self.fractional_scaling, viewport)
                 {
                     self.scale = scale;
                     self.translation = translation;
@@ -1031,11 +1047,12 @@ impl PdfViewer {
 
                 if let Some(path_str) = self.path.to_str()
                     && let Ok(new_doc) = mupdf::Document::open(path_str)
-                    && let Ok((display_lists, links, outline, comments)) =
+                    && let Ok((display_lists, links, outline, comments, page_bounds)) =
                         Self::build_document_data(&new_doc)
                 {
                     self.doc = new_doc;
                     self.display_lists = display_lists;
+                    self.page_bounds = page_bounds;
                     self.links = links;
                     self.outline = outline;
                     self.comments = comments;
@@ -1094,7 +1111,7 @@ impl PdfViewer {
                     self.current_search_result = Some(idx);
                     let page_idx = m.pages.start;
                     if let Ok(base_translation) = self.layout.translation_for_page(
-                        &self.doc,
+                        &self.page_bounds,
                         self.scale,
                         self.fractional_scaling,
                         page_idx,
@@ -1175,7 +1192,9 @@ impl PdfViewer {
     }
 
     pub fn view(&self) -> iced::Element<'_, PdfMessage> {
+        let _span = tracy_client::span!("Pdf view");
         widget::responsive(|size| {
+            let _span = tracy_client::span!("Pdf view build");
             {
                 let mut viewport = self.viewport.borrow_mut();
                 *viewport = size;
@@ -1183,7 +1202,7 @@ impl PdfViewer {
             let rects = self
                 .layout
                 .pages_rects(
-                    self.doc.pages().unwrap(),
+                    &self.page_bounds,
                     self.translation.scaled(-1.0),
                     self.scale,
                     self.fractional_scaling,
@@ -1202,24 +1221,27 @@ impl PdfViewer {
                 .filter(|(_, r)| viewport_rect.intersects(r))
                 .map(|(i, _)| i)
                 .collect();
-            self.pixmap_pool
-                .borrow_mut()
-                .retain(|idx, _| visible_indices.contains(idx));
-            self.buffer_pool
-                .lock()
-                .unwrap()
-                .retain(|idx, _| visible_indices.contains(idx));
+            {
+                let _span = tracy_client::span!("Pdf prune pools");
+                self.pixmap_pool
+                    .borrow_mut()
+                    .retain(|idx, _| visible_indices.contains(idx));
+                self.buffer_pool
+                    .lock()
+                    .unwrap()
+                    .retain(|idx, _| visible_indices.contains(idx));
+            }
 
             let mut used_keys = vec![];
-            let with_handles: Vec<_> = rects
+            let with_handles: Vec<_> = {
+            let _span = tracy_client::span!("Pdf tile visible pages");
+            rects
                 .into_iter()
-                .zip(self.doc.pages().unwrap())
                 .enumerate()
-                .filter(|(_, (r, _page))| viewport_rect.intersects(r))
-                .map(|(i, (rect_ss, page))| {
+                .filter(|(_, r)| viewport_rect.intersects(r))
+                .map(|(i, rect_ss)| {
                     // rect_ss = A pages bounding box in screen coordinates (relative to the widgets origin)
-                    let page = page.unwrap();
-                    let page_bounds: Rect<f32> = page.bounds().unwrap().into();
+                    let page_bounds = self.page_bounds[i];
 
                     let TilePlan {
                         key,
@@ -1245,6 +1267,7 @@ impl PdfViewer {
                     match pix {
                         Some(_) => {}
                         None => {
+                            let _span = tracy_client::span!("Pixmap alloc");
                             let mut new_pix =
                                 Pixmap::new_with_w_h(&Colorspace::device_rgb(), w, h, true)
                                     .unwrap();
@@ -1282,14 +1305,17 @@ impl PdfViewer {
                     let cache = self.render_cache.borrow_mut();
                     (cache[&key].clone(), draw_rect)
                 })
-                .collect();
+                .collect()
+            };
 
             {
+                let _span = tracy_client::span!("Pdf prune render cache");
                 let mut cache = self.render_cache.borrow_mut();
                 cache.retain(|key, _| used_keys.contains(key));
             }
 
             {
+                let _span = tracy_client::span!("Pdf prune allocation cache");
                 let render_cache = self.render_cache.borrow();
                 let active_ids: HashSet<_> = render_cache.values().map(|h| h.id()).collect();
                 self.allocation_cache
@@ -1341,9 +1367,15 @@ impl PdfViewer {
         key: RenderKey,
     ) -> image::Handle {
         let _span = tracy_client::span!("run");
-        pix.samples_mut().fill(255);
+        {
+            let _span = tracy_client::span!("run fill");
+            pix.samples_mut().fill(255);
+        }
         let device = Device::from_pixmap(pix).unwrap();
-        self.display_lists[i].run(&device, matrix, scissor).unwrap();
+        {
+            let _span = tracy_client::span!("run display list");
+            self.display_lists[i].run(&device, matrix, scissor).unwrap();
+        }
         if self.pdf_dark_mode {
             cpu_pdf_dark_mode_shader(pix, &self.gradient_cache);
         }
@@ -1354,29 +1386,32 @@ impl PdfViewer {
         // NOTE: and their associated data aren't thread safe. Iced could render
         // NOTE: them on any thread without my control
 
-        // Try to reuse a CPU buffer from the shared pool.
-        let mut buf = self
-            .buffer_pool
-            .lock()
-            .unwrap()
-            .remove(&i)
-            .and_then(|mut v| v.pop())
-            .unwrap_or_else(|| Vec::with_capacity(samples.len()));
-        buf.clear();
-        buf.extend_from_slice(samples);
+        {
+            let _span = tracy_client::span!("run buffer copy");
+            // Try to reuse a CPU buffer from the shared pool.
+            let mut buf = self
+                .buffer_pool
+                .lock()
+                .unwrap()
+                .remove(&i)
+                .and_then(|mut v| v.pop())
+                .unwrap_or_else(|| Vec::with_capacity(samples.len()));
+            buf.clear();
+            buf.extend_from_slice(samples);
 
-        let handle = image::Handle::from_rgba(
-            pix.width(),
-            pix.height(),
-            Bytes::from_owner(PooledBuffer {
-                buf: Some(buf),
-                pool: Arc::downgrade(&self.buffer_pool),
-                page_idx: i,
-            }),
-        );
-        cache.insert(key, handle.clone());
+            let handle = image::Handle::from_rgba(
+                pix.width(),
+                pix.height(),
+                Bytes::from_owner(PooledBuffer {
+                    buf: Some(buf),
+                    pool: Arc::downgrade(&self.buffer_pool),
+                    page_idx: i,
+                }),
+            );
+            cache.insert(key, handle.clone());
 
-        handle
+            handle
+        }
     }
 
     fn build_comment_popup(
@@ -1534,15 +1569,13 @@ impl PdfViewer {
     }
 
     pub fn extract_text_from_rect(&self, screen_rect: Rect<f32>) -> String {
+        let _span = tracy_client::span!("Extract text from rect");
         use mupdf::TextPageFlags;
 
         let viewport = *self.viewport.borrow();
 
-        let Ok(pages) = self.doc.pages() else {
-            return String::new();
-        };
         let Ok(rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1623,12 +1656,10 @@ impl PdfViewer {
     }
 
     fn visible_links(&self, viewport: iced::Size<f32>) -> Vec<((usize, usize), Rect<f32>)> {
+        let _span = tracy_client::span!("Visible links");
         let mut result = Vec::new();
-        let Ok(pages) = self.doc.pages() else {
-            return result;
-        };
         let Ok(page_rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1662,15 +1693,13 @@ impl PdfViewer {
     }
 
     fn visible_search_results(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
+        let _span = tracy_client::span!("Visible search results");
         let mut result = Vec::new();
         if !self.show_search_results {
             return result;
         }
-        let Ok(pages) = self.doc.pages() else {
-            return result;
-        };
         let Ok(page_rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1708,12 +1737,10 @@ impl PdfViewer {
     }
 
     fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
+        let _span = tracy_client::span!("Visible comments");
         let mut result = Vec::new();
-        let Ok(pages) = self.doc.pages() else {
-            return result;
-        };
         let Ok(page_rects) = self.layout.pages_rects(
-            pages,
+            &self.page_bounds,
             self.translation.scaled(-1.0),
             self.scale,
             self.fractional_scaling,
@@ -1755,6 +1782,7 @@ impl PdfViewer {
     }
 
     fn update_hover_state(&mut self) {
+        let _span = tracy_client::span!("Update hover state");
         let local_mouse = self.local_mouse_pos();
         let viewport = *self.viewport.borrow();
 
@@ -1873,6 +1901,7 @@ impl PdfViewer {
     }
 
     fn extract_outline(doc: &mupdf::Document) -> Result<Vec<OutlineItem>> {
+        let _span = tracy_client::span!("Extract outline");
         let outlines = doc.outlines()?;
         let mut items = Vec::new();
         for outline in &outlines {
@@ -1902,15 +1931,16 @@ impl PdfViewer {
 
     pub fn current_page(&self) -> usize {
         self.layout
-            .current_page_index(&self.doc, self.translation, *self.viewport.borrow())
+            .current_page_index(&self.page_bounds, self.translation, *self.viewport.borrow())
             .unwrap()
     }
 
     fn page_screen_center(&self, page_idx: usize, viewport: Size<f32>) -> Option<Vector<f32>> {
+        let _span = tracy_client::span!("Page screen center");
         let rects = self
             .layout
             .pages_rects(
-                self.doc.pages().ok()?,
+                &self.page_bounds,
                 -self.translation,
                 self.scale,
                 self.fractional_scaling,
@@ -2104,7 +2134,7 @@ mod tests {
 
         let center = |viewer: &PdfViewer| -> Result<Vector<f32>> {
             let rects = viewer.layout.pages_rects(
-                viewer.doc.pages()?,
+                &viewer.page_bounds,
                 -viewer.translation,
                 viewer.scale,
                 viewer.fractional_scaling,
@@ -2177,7 +2207,7 @@ mod tests {
 
         // Verify the page is fully visible by checking its rect.
         let rects = viewer.layout.pages_rects(
-            viewer.doc.pages()?,
+            &viewer.page_bounds,
             -viewer.translation,
             viewer.scale,
             viewer.fractional_scaling,
@@ -2252,7 +2282,7 @@ mod tests {
             // The whole spread must fit within the viewport and be centered, rather than
             // centering only the page nearest the middle of the screen.
             let rects = viewer.layout.pages_rects(
-                viewer.doc.pages()?,
+                &viewer.page_bounds,
                 -viewer.translation,
                 viewer.scale,
                 viewer.fractional_scaling,

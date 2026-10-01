@@ -84,6 +84,7 @@ pub fn find_search_matches(
 /// Merge consecutive character bounding boxes that are on the same page and
 /// vertically overlap (i.e., belong to the same line).
 pub fn merge_search_rects(char_rects: &[(usize, Rect<f32>)]) -> Vec<(usize, Rect<f32>)> {
+    let _span = tracy_client::span!("Merge search rects");
     if char_rects.is_empty() {
         return vec![];
     }
