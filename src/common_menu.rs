@@ -46,7 +46,7 @@ pub fn items() -> Vec<(String, Vec<CommonMenuItem>)> {
                 CommonMenuItem::Button(BindableMessage::SinglePageLayout),
                 CommonMenuItem::Button(BindableMessage::DoublePageLayout),
                 CommonMenuItem::Button(BindableMessage::DoublePageTitlePageLayout),
-                CommonMenuItem::Button(BindableMessage::PresentationLayout),
+                CommonMenuItem::Button(BindableMessage::TogglePresentationMode),
             ],
         ),
     ]

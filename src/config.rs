@@ -260,7 +260,6 @@ pub enum BindableMessage {
     SinglePageLayout,
     DoublePageLayout,
     DoublePageTitlePageLayout,
-    PresentationLayout,
     RotatePageClockwise,
     RotatePageCounterClockwise,
     RotateAllPagesClockwise,
@@ -281,12 +280,11 @@ impl BindableMessage {
             BindableMessage::ZoomHome => Some("Zoom 100%"),
             BindableMessage::ZoomFit => Some("Fit To Screen"),
             BindableMessage::ToggleSidebar => Some("Toggle Sidebar"),
-            BindableMessage::TogglePresentationMode => Some("Presentation Mode"),
+            BindableMessage::TogglePresentationMode => Some("Toggle Presentation Mode"),
             BindableMessage::ToggleFullscreen => Some("Toggle Fullscreen"),
             BindableMessage::SinglePageLayout => Some("Single Page"),
             BindableMessage::DoublePageLayout => Some("Double Page"),
             BindableMessage::DoublePageTitlePageLayout => Some("Double Page w/ Title"),
-            BindableMessage::PresentationLayout => Some("Presentation"),
             BindableMessage::RotatePageClockwise => Some("Rotate Page Clockwise"),
             BindableMessage::RotatePageCounterClockwise => Some("Rotate Page Counterclockwise"),
             BindableMessage::RotateAllPagesClockwise => Some("Rotate All Pages Clockwise"),
@@ -354,9 +352,6 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::DoublePageTitlePageLayout => {
                 AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayoutKind::DoublePageTitlePage))
             }
-            BindableMessage::PresentationLayout => {
-                AppMessage::PdfMessage(PdfMessage::SetLayout(PageLayoutKind::Presentation))
-            }
             BindableMessage::RotatePageClockwise => {
                 AppMessage::PdfMessage(PdfMessage::RotatePageClockwise)
             }
@@ -384,6 +379,7 @@ pub enum BindingMode {
     #[default]
     Normal,
     Presentation,
+    Overview,
 }
 
 #[derive(Debug)]
@@ -839,10 +835,6 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("F3").unwrap(),
                     BindableMessage::DoublePageTitlePageLayout,
-                ),
-                Keybind::new(
-                    KeyInput::from_str("F4").unwrap(),
-                    BindableMessage::PresentationLayout,
                 ),
                 Keybind::new(
                     KeyInput::from_str("[").unwrap(),
@@ -1345,9 +1337,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unknown command: UnknownCommand"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown command: UnknownCommand")
+        );
     }
 
     #[test]
@@ -1358,9 +1352,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Bind command requires 3 arguments"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Bind command requires 3 arguments")
+        );
     }
 
     #[test]
@@ -1371,9 +1367,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unknown action: InvalidAction"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown action: InvalidAction")
+        );
     }
 
     #[test]
@@ -1384,9 +1382,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Invalid mouse input 'InvalidMouse'"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid mouse input 'InvalidMouse'")
+        );
     }
 
     #[test]
@@ -1397,9 +1397,11 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Invalid port number: 'invalid_port'"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid port number: 'invalid_port'")
+        );
     }
 
     #[test]
@@ -1417,9 +1419,11 @@ MouseBind InvalidMouse Panning
         assert_eq!(result.errors.len(), 4);
 
         // Check that valid lines are still processed
-        assert!(!result.config.keyboard[&BindingMode::Normal]
-            .as_slice()
-            .is_empty());
+        assert!(
+            !result.config.keyboard[&BindingMode::Normal]
+                .as_slice()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1430,9 +1434,11 @@ MouseBind InvalidMouse Panning
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unterminated quoted string"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unterminated quoted string")
+        );
     }
 
     #[test]
@@ -1477,8 +1483,11 @@ MouseBind MouseRight Normal Selection
         // With a known source file, the header names it
         let mut result = Config::parse_with_errors(config_str);
         result.set_source(PathBuf::from("/home/user/.config/miro-pdf/miro.conf"));
-        assert!(strip_ansi(&result.format_warnings())
-            .contains("Configuration parsing warnings in /home/user/.config/miro-pdf/miro.conf:"));
+        assert!(
+            strip_ansi(&result.format_warnings()).contains(
+                "Configuration parsing warnings in /home/user/.config/miro-pdf/miro.conf:"
+            )
+        );
     }
 
     #[test]
@@ -1619,9 +1628,11 @@ MouseBind Ctrl+ScrollUp ZoomIn
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Invalid float value for TrackpadSensitivity"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Invalid float value for TrackpadSensitivity")
+        );
     }
 
     #[test]
@@ -1640,9 +1651,11 @@ MouseBind Ctrl+ScrollUp ZoomIn
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(result.errors[0]
-            .message
-            .contains("Unknown search method: 'InvalidMethod'"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Unknown search method: 'InvalidMethod'")
+        );
     }
 
     #[test]
@@ -1659,9 +1672,11 @@ MouseBind Ctrl+ScrollUp ZoomIn
             }
 
             // Should still parse valid lines
-            assert!(!result.config.keyboard[&BindingMode::Normal]
-                .as_slice()
-                .is_empty());
+            assert!(
+                !result.config.keyboard[&BindingMode::Normal]
+                    .as_slice()
+                    .is_empty()
+            );
         }
     }
 }

@@ -35,6 +35,7 @@ use crate::{
     jumplist::{JumpLocation, Jumplist},
     pdf::{
         PdfMessage, SearchMethod,
+        page_layout::PageLayoutKind,
         widget::{OutlineItem, PdfViewer},
     },
     platform_specific,
@@ -591,7 +592,11 @@ impl App {
                     }
                     _ => {
                         config.binding_mode = BindingMode::Presentation;
-                        iced::Task::done(AppMessage::PdfMessage(PdfMessage::ZoomFit))
+                        iced::Task::done(AppMessage::PdfMessage(PdfMessage::ZoomFit)).chain(
+                            iced::Task::done(AppMessage::PdfMessage(PdfMessage::SetLayout(
+                                PageLayoutKind::Presentation,
+                            ))),
+                        )
                     }
                 }
             }
@@ -774,16 +779,18 @@ impl App {
     pub fn view(&self) -> iced::Element<'_, AppMessage> {
         let _span = tracy_client::span!("App view");
         let pg = PaneGrid::new(&self.pane_state, |_id, pane, _is_maximized| {
+            let config = CONFIG.read().unwrap();
             pane_grid::Content::new(match pane.pane_type {
                 PaneType::Sidebar => self.view_sidebar(),
                 PaneType::Pdf => {
                     let pdf_content: iced::Element<'_, AppMessage> = if self.pdfs.is_empty() {
                         widget::space::vertical().into()
                     } else {
-                        self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
+                        self.pdfs[self.pdf_idx]
+                            .view(config.binding_mode)
+                            .map(AppMessage::PdfMessage)
                     };
                     let tabs = self.create_tabs();
-                    let config = CONFIG.read().unwrap();
                     match config.binding_mode {
                         BindingMode::Normal => {
                             let mut stack_children: Vec<Element<'_, AppMessage>> = vec![
@@ -816,6 +823,7 @@ impl App {
                             }
                         }
                         BindingMode::Presentation => widget::column![stack![pdf_content,]].into(),
+                        BindingMode::Overview => widget::column![stack![pdf_content,]].into(),
                     }
                 }
             })

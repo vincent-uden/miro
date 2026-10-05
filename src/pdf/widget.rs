@@ -31,7 +31,7 @@ use tracing::{error};
 
 use crate::{
     CONFIG, DARK_THEME,
-    config::{MOVE_STEP, MouseAction},
+    config::{BindingMode, MOVE_STEP, MouseAction},
     geometry::{Rect, Vector},
     pdf::{
         PdfMessage, SearchMatch, SearchMethod, find_search_matches,
@@ -1215,7 +1215,7 @@ impl PdfViewer {
         out
     }
 
-    pub fn view(&self) -> iced::Element<'_, PdfMessage> {
+    pub fn view(&self, mode: BindingMode) -> iced::Element<'_, PdfMessage> {
         widget::responsive(|size| {
             {
                 let mut viewport = self.viewport.borrow_mut();
