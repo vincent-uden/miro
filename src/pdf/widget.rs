@@ -1216,7 +1216,7 @@ impl PdfViewer {
     }
 
     pub fn view(&self, mode: BindingMode) -> iced::Element<'_, PdfMessage> {
-        widget::responsive(|size| {
+        widget::responsive(move |size| {
             {
                 let mut viewport = self.viewport.borrow_mut();
                 *viewport = size;
@@ -1237,12 +1237,21 @@ impl PdfViewer {
             let effective_scale = self.scale * self.fractional_scaling;
 
             // Drop pixmap allocations for pages that are no longer visible.
-            let visible_indices: Vec<usize> = rects
-                .iter()
-                .enumerate()
-                .filter(|(_, r)| viewport_rect.intersects(r))
-                .map(|(i, _)| i)
-                .collect();
+            let visible_indices: Vec<usize> = match mode {
+                BindingMode::Normal => rects
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| viewport_rect.intersects(r))
+                    .map(|(i, _)| i)
+                    .collect(),
+                BindingMode::Presentation => {
+                    let current_page = self.current_page();
+                    (0..rects.len()).filter(|i| *i == current_page).collect()
+                }
+                // FIX: Cull and layout properly
+                BindingMode::Overview => rects.iter().enumerate().map(|(i, _)| i).collect(),
+            };
+
             self.pixmap_pool
                 .borrow_mut()
                 .retain(|idx, _| visible_indices.contains(idx));
@@ -1252,9 +1261,9 @@ impl PdfViewer {
                 .retain(|idx, _| visible_indices.contains(idx));
 
             let mut used_keys = vec![];
-            let with_handles: Vec<_> = rects
+            let with_handles: Vec<_> = visible_indices
                 .into_iter()
-                .enumerate()
+                .map(|i| (i, rects[i]))
                 .filter(|(_, r)| viewport_rect.intersects(r))
                 .map(|(i, rect_ss)| {
                     // rect_ss = A pages bounding box in screen coordinates (relative to the widgets origin)
