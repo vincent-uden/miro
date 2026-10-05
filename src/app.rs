@@ -70,7 +70,6 @@ pub struct App {
     pub dark_mode: bool,
     pub invert_pdf: bool,
     pub draw_page_borders: bool,
-    presentation_mode: bool,
     search_open: bool,
     search_hover: bool,
     bookmark_store: BookmarkStore,
@@ -180,7 +179,6 @@ impl App {
             dark_mode: CONFIG.read().unwrap().dark_mode,
             invert_pdf: CONFIG.read().unwrap().invert_pdf,
             draw_page_borders: CONFIG.read().unwrap().page_borders,
-            presentation_mode: false,
             search_open: false,
             search_hover: false,
             bookmark_store,
@@ -585,7 +583,11 @@ impl App {
             }
             AppMessage::ToggleFullscreen => toggle_fullscreen(),
             AppMessage::TogglePresentationMode => {
-                self.presentation_mode = !self.presentation_mode;
+                let mut config = CONFIG.write().unwrap();
+                config.binding_mode = match config.binding_mode {
+                    BindingMode::Presentation => BindingMode::Normal,
+                    _ => BindingMode::Presentation,
+                };
                 iced::Task::none()
             }
             AppMessage::OpenSearch => {
@@ -776,37 +778,39 @@ impl App {
                         self.pdfs[self.pdf_idx].view().map(AppMessage::PdfMessage)
                     };
                     let tabs = self.create_tabs();
-                    if self.presentation_mode {
-                        widget::column![stack![pdf_content,]].into()
-                    } else {
-                        let mut stack_children: Vec<Element<'_, AppMessage>> = vec![
-                            pdf_content,
-                            container(tabs)
-                                .align_y(alignment::Vertical::Bottom)
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .padding(8.0)
-                                .into(),
-                        ];
-                        if self.search_open {
-                            stack_children.push(
-                                container(self.search_view())
-                                    .align_x(alignment::Horizontal::Right)
-                                    .align_y(alignment::Vertical::Top)
+                    let config = CONFIG.read().unwrap();
+                    match config.binding_mode {
+                        BindingMode::Normal => {
+                            let mut stack_children: Vec<Element<'_, AppMessage>> = vec![
+                                pdf_content,
+                                container(tabs)
+                                    .align_y(alignment::Vertical::Bottom)
                                     .width(Length::Fill)
+                                    .height(Length::Fill)
                                     .padding(8.0)
                                     .into(),
-                            );
+                            ];
+                            if self.search_open {
+                                stack_children.push(
+                                    container(self.search_view())
+                                        .align_x(alignment::Horizontal::Right)
+                                        .align_y(alignment::Vertical::Top)
+                                        .width(Length::Fill)
+                                        .padding(8.0)
+                                        .into(),
+                                );
+                            }
+                            if self.mac_menu.is_none() {
+                                let menu_bar = platform_specific::iced_aw::create_menu_bar(
+                                    self.pdf_idx,
+                                    self.recent_files.get_recent(),
+                                );
+                                widget::column![menu_bar, stack(stack_children)].into()
+                            } else {
+                                widget::column![stack(stack_children)].into()
+                            }
                         }
-                        if self.mac_menu.is_none() {
-                            let menu_bar = platform_specific::iced_aw::create_menu_bar(
-                                self.pdf_idx,
-                                self.recent_files.get_recent(),
-                            );
-                            widget::column![menu_bar, stack(stack_children)].into()
-                        } else {
-                            widget::column![stack(stack_children)].into()
-                        }
+                        BindingMode::Presentation => widget::column![stack![pdf_content,]].into(),
                     }
                 }
             })
