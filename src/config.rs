@@ -717,7 +717,7 @@ fn canonize_path(path: PathBuf) -> PathBuf {
 impl Default for Config {
     fn default() -> Self {
         // All default bindings apply to the Normal binding mode. The
-        // Presentation mode starts out with no bindings at all.
+        // Presentation mode starts out with its own set of bindings.
         let mut keyboard = HashMap::new();
         keyboard.insert(
             BindingMode::Normal,
@@ -898,7 +898,67 @@ impl Default for Config {
                 ),
             ]),
         );
-        keyboard.insert(BindingMode::Presentation, Keybinds::new(vec![]));
+        // The default Presentation mode bindings mirror the Presentation
+        // section in assets/default.conf.
+        keyboard.insert(
+            BindingMode::Presentation,
+            Keybinds::new(vec![
+                Keybind::new(KeyInput::from_str("J").unwrap(), BindableMessage::NextPage),
+                Keybind::new(
+                    KeyInput::from_str("K").unwrap(),
+                    BindableMessage::PreviousPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("H").unwrap(),
+                    BindableMessage::PreviousTab,
+                ),
+                Keybind::new(KeyInput::from_str("L").unwrap(), BindableMessage::NextTab),
+                Keybind::new(
+                    KeyInput::from_str("Space").unwrap(),
+                    BindableMessage::NextPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Shift+Space").unwrap(),
+                    BindableMessage::PreviousPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Up").unwrap(),
+                    BindableMessage::PreviousPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Down").unwrap(),
+                    BindableMessage::NextPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Left").unwrap(),
+                    BindableMessage::PreviousPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Right").unwrap(),
+                    BindableMessage::NextPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+r").unwrap(),
+                    BindableMessage::ToggleDarkModePdf,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+k").unwrap(),
+                    BindableMessage::TogglePageBorders,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("F11").unwrap(),
+                    BindableMessage::ToggleFullscreen,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("F10").unwrap(),
+                    BindableMessage::TogglePresentationMode,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Escape").unwrap(),
+                    BindableMessage::TogglePresentationMode,
+                ),
+            ]),
+        );
 
         let mut mouse = HashMap::new();
         mouse.insert(
@@ -1020,7 +1080,33 @@ impl Default for Config {
                 ),
             ],
         );
-        mouse.insert(BindingMode::Presentation, vec![]);
+        // The default Presentation mode mouse bindings mirror the
+        // Presentation section in assets/default.conf.
+        mouse.insert(
+            BindingMode::Presentation,
+            vec![
+                (
+                    MouseInput {
+                        button: MouseButton::Left,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: false,
+                        },
+                    },
+                    MouseAction::NextPage,
+                ),
+                (
+                    MouseInput {
+                        button: MouseButton::Left,
+                        modifiers: MouseModifiers {
+                            ctrl: false,
+                            shift: true,
+                        },
+                    },
+                    MouseAction::PreviousPage,
+                ),
+            ],
+        );
 
         Config {
             binding_mode: BindingMode::Normal,
@@ -1067,6 +1153,31 @@ mod tests {
     use keybinds2::{KeyInput, Keybind};
 
     use super::*;
+
+    /// Strip ANSI escape sequences so assertions on formatted output work
+    /// the same whether or not `colored` emits color codes (colors are
+    /// active in a TTY but auto-disabled when piping output).
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                // Skip everything up to and including the terminator
+                // (ESC[ ... m in practice, but handle any final byte).
+                if chars.peek() == Some(&'[') {
+                    chars.next();
+                    for c in chars.by_ref() {
+                        if c.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
 
     #[test]
     pub fn can_parse_vim_bindings() {
@@ -1356,7 +1467,7 @@ MouseBind MouseRight Normal Selection
         assert_eq!(mouse_binds[1].1, MouseAction::Selection);
 
         // The formatted output lists each warning on its own line
-        let formatted = result.format_warnings();
+        let formatted = strip_ansi(&result.format_warnings());
         assert!(formatted.contains("Configuration parsing warnings:"));
         assert!(formatted.contains("Line 2:"));
         assert!(formatted.contains("Line 4:"));
@@ -1364,8 +1475,7 @@ MouseBind MouseRight Normal Selection
         // With a known source file, the header names it
         let mut result = Config::parse_with_errors(config_str);
         result.set_source(PathBuf::from("/home/user/.config/miro-pdf/miro.conf"));
-        assert!(result
-            .format_warnings()
+        assert!(strip_ansi(&result.format_warnings())
             .contains("Configuration parsing warnings in /home/user/.config/miro-pdf/miro.conf:"));
     }
 
@@ -1375,7 +1485,7 @@ MouseBind MouseRight Normal Selection
         let mut result = Config::parse_with_errors(config_str);
         result.set_source(PathBuf::from("/home/user/miro.conf"));
 
-        let formatted = result.format_errors();
+        let formatted = strip_ansi(&result.format_errors());
         assert!(
             formatted.contains("Configuration parsing errors in /home/user/miro.conf:"),
             "got: {formatted}"
@@ -1434,6 +1544,7 @@ Set RpcPort invalid_port
         println!("\n{}", formatted);
 
         // Verify the content is correct
+        let formatted = strip_ansi(&result.format_errors());
         assert!(formatted.contains("Configuration parsing errors:"));
         assert!(formatted.contains("Line 2:"));
         assert!(formatted.contains("Line 3:"));
