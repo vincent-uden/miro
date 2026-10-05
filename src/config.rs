@@ -957,6 +957,8 @@ impl Default for Config {
                     KeyInput::from_str("Escape").unwrap(),
                     BindableMessage::TogglePresentationMode,
                 ),
+                Keybind::new(KeyInput::from_str("_").unwrap(), BindableMessage::ZoomFit),
+                Keybind::new(KeyInput::from_str("q").unwrap(), BindableMessage::Exit),
             ]),
         );
 

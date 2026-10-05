@@ -584,11 +584,16 @@ impl App {
             AppMessage::ToggleFullscreen => toggle_fullscreen(),
             AppMessage::TogglePresentationMode => {
                 let mut config = CONFIG.write().unwrap();
-                config.binding_mode = match config.binding_mode {
-                    BindingMode::Presentation => BindingMode::Normal,
-                    _ => BindingMode::Presentation,
-                };
-                iced::Task::none()
+                match config.binding_mode {
+                    BindingMode::Presentation => {
+                        config.binding_mode = BindingMode::Normal;
+                        iced::Task::none()
+                    }
+                    _ => {
+                        config.binding_mode = BindingMode::Presentation;
+                        iced::Task::done(AppMessage::PdfMessage(PdfMessage::ZoomFit))
+                    }
+                }
             }
             AppMessage::OpenSearch => {
                 self.search_open = true;
