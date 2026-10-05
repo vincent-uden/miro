@@ -252,6 +252,7 @@ pub enum BindableMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
+    ToggleOverviewMode,
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
@@ -368,6 +369,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::PageDown => AppMessage::PdfMessage(PdfMessage::PageDown),
             BindableMessage::HalfPageUp => AppMessage::PdfMessage(PdfMessage::HalfPageUp),
             BindableMessage::HalfPageDown => AppMessage::PdfMessage(PdfMessage::HalfPageDown),
+            BindableMessage::ToggleOverviewMode => AppMessage::ToggleOverviewMode,
         }
     }
 }
@@ -417,12 +419,13 @@ impl Config {
         }
     }
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
-        let binds = self.keyboard[&self.binding_mode].as_slice();
+        let binds = self.keyboard.get(&self.binding_mode)?.as_slice();
         binds.iter().find(|b| b.action == msg).cloned()
     }
 
     pub fn get_mouse_action(&self, input: MouseInput) -> Option<MouseAction> {
-        self.mouse[&self.binding_mode]
+        self.mouse
+            .get(&self.binding_mode)?
             .iter()
             .find(|(mouse_input, _)| *mouse_input == input)
             .map(|(_, action)| *action)
@@ -696,10 +699,7 @@ impl Config {
     }
 
     pub fn dispatch(&mut self, e: iced::keyboard::Event) -> Option<&BindableMessage> {
-        self.keyboard
-            .get_mut(&self.binding_mode)
-            .unwrap()
-            .dispatch(e)
+        self.keyboard.get_mut(&self.binding_mode)?.dispatch(e)
     }
 }
 
@@ -823,6 +823,10 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("F10").unwrap(),
                     BindableMessage::TogglePresentationMode,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Enter").unwrap(),
+                    BindableMessage::ToggleOverviewMode,
                 ),
                 Keybind::new(
                     KeyInput::from_str("F1").unwrap(),
@@ -951,6 +955,25 @@ impl Default for Config {
                 ),
                 Keybind::new(KeyInput::from_str("_").unwrap(), BindableMessage::ZoomFit),
                 Keybind::new(KeyInput::from_str("q").unwrap(), BindableMessage::Exit),
+            ]),
+        );
+        // The default Overview mode bindings mirror the Overview section
+        // in assets/default.conf.
+        keyboard.insert(
+            BindingMode::Overview,
+            Keybinds::new(vec![
+                Keybind::new(
+                    KeyInput::from_str("Enter").unwrap(),
+                    BindableMessage::ToggleOverviewMode,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Escape").unwrap(),
+                    BindableMessage::ToggleOverviewMode,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+r").unwrap(),
+                    BindableMessage::ToggleDarkModePdf,
+                ),
             ]),
         );
 
@@ -1337,11 +1360,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown command: UnknownCommand")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown command: UnknownCommand"));
     }
 
     #[test]
@@ -1352,11 +1373,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Bind command requires 3 arguments")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Bind command requires 3 arguments"));
     }
 
     #[test]
@@ -1367,11 +1386,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown action: InvalidAction")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown action: InvalidAction"));
     }
 
     #[test]
@@ -1382,11 +1399,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid mouse input 'InvalidMouse'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid mouse input 'InvalidMouse'"));
     }
 
     #[test]
@@ -1397,11 +1412,9 @@ mod tests {
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid port number: 'invalid_port'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid port number: 'invalid_port'"));
     }
 
     #[test]
@@ -1419,11 +1432,9 @@ MouseBind InvalidMouse Panning
         assert_eq!(result.errors.len(), 4);
 
         // Check that valid lines are still processed
-        assert!(
-            !result.config.keyboard[&BindingMode::Normal]
-                .as_slice()
-                .is_empty()
-        );
+        assert!(!result.config.keyboard[&BindingMode::Normal]
+            .as_slice()
+            .is_empty());
     }
 
     #[test]
@@ -1434,11 +1445,9 @@ MouseBind InvalidMouse Panning
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].line_number, 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unterminated quoted string")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unterminated quoted string"));
     }
 
     #[test]
@@ -1483,11 +1492,8 @@ MouseBind MouseRight Normal Selection
         // With a known source file, the header names it
         let mut result = Config::parse_with_errors(config_str);
         result.set_source(PathBuf::from("/home/user/.config/miro-pdf/miro.conf"));
-        assert!(
-            strip_ansi(&result.format_warnings()).contains(
-                "Configuration parsing warnings in /home/user/.config/miro-pdf/miro.conf:"
-            )
-        );
+        assert!(strip_ansi(&result.format_warnings())
+            .contains("Configuration parsing warnings in /home/user/.config/miro-pdf/miro.conf:"));
     }
 
     #[test]
@@ -1628,11 +1634,9 @@ MouseBind Ctrl+ScrollUp ZoomIn
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Invalid float value for TrackpadSensitivity")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Invalid float value for TrackpadSensitivity"));
     }
 
     #[test]
@@ -1651,11 +1655,9 @@ MouseBind Ctrl+ScrollUp ZoomIn
 
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
-        assert!(
-            result.errors[0]
-                .message
-                .contains("Unknown search method: 'InvalidMethod'")
-        );
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown search method: 'InvalidMethod'"));
     }
 
     #[test]
@@ -1672,11 +1674,9 @@ MouseBind Ctrl+ScrollUp ZoomIn
             }
 
             // Should still parse valid lines
-            assert!(
-                !result.config.keyboard[&BindingMode::Normal]
-                    .as_slice()
-                    .is_empty()
-            );
+            assert!(!result.config.keyboard[&BindingMode::Normal]
+                .as_slice()
+                .is_empty());
         }
     }
 }

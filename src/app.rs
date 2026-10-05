@@ -146,6 +146,7 @@ pub enum AppMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
+    ToggleOverviewMode,
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
@@ -588,6 +589,7 @@ impl App {
                 match config.binding_mode {
                     BindingMode::Presentation => {
                         config.binding_mode = BindingMode::Normal;
+                        // FIX: Switch back to the previous layout
                         iced::Task::none()
                     }
                     _ => {
@@ -597,6 +599,22 @@ impl App {
                                 PageLayoutKind::Presentation,
                             ))),
                         )
+                    }
+                }
+            }
+            AppMessage::ToggleOverviewMode => {
+                let mut config = CONFIG.write().unwrap();
+                match config.binding_mode {
+                    BindingMode::Overview => {
+                        config.binding_mode = BindingMode::Normal;
+                        // FIX: Switch back to the previous layout
+                        iced::Task::none()
+                    }
+                    _ => {
+                        config.binding_mode = BindingMode::Overview;
+                        iced::Task::done(AppMessage::PdfMessage(PdfMessage::SetLayout(
+                            PageLayoutKind::Overview,
+                        )))
                     }
                 }
             }
