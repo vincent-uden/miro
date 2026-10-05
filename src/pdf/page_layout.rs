@@ -272,25 +272,29 @@ impl PageLayout {
             PageLayoutKind::Overview => {
                 // In screen pixels TODO: Logical or physical?
                 let max_page_size = 100.0;
-                let _pos: Vector<f32> = Vector::zero();
-                let mut prev_bounds = Rect::default();
+                let mut pos: Vector<f32> = Vector::zero();
                 for size in page_sizes.iter().copied() {
                     let proportion = max_page_size / size.x.max(size.y);
+                    let bounds_size = size.scaled(proportion);
 
-                    let bounds = Rect::from_pos_size(Vector::zero(), size.scaled(proportion));
+                    if pos.x > 0.0 && pos.x + bounds_size.x > vsize.x {
+                        pos.x = 0.0;
+                        pos.y += max_page_size + Self::GAP;
+                    }
 
-                    // bounds.translate((vsize - bounds.size()).scaled(0.5));
-                    // bounds.translate(translation.scaled(effective_scale));
-                    // bounds = bounds.scaled(effective_scale);
-                    // if i != 0 {
-                    // pos.y += (prev_bounds.height() + bounds.height()) / 2.0;
-                    // }
-                    // bounds.translate(pos);
-
-                    // pos.y += Self::GAP * effective_scale;
-                    prev_bounds = bounds;
-
+                    let bounds = Rect::from_pos_size(pos, bounds_size);
                     out.push(bounds);
+                    pos.x += bounds_size.x + Self::GAP;
+                }
+
+                if let Some(first) = out.first().copied() {
+                    let bbox = out.iter().fold(first, |acc, rect| acc.union(rect));
+                    let mut offset = (vsize - bbox.size()).scaled(0.5);
+                    offset -= bbox.x0;
+
+                    for bounds in &mut out {
+                        bounds.translate(offset);
+                    }
                 }
             }
         }
