@@ -261,6 +261,7 @@ struct Document<'a> {
     allocation_cache: &'a RefCell<HashMap<image::Id, image::Allocation>>,
     draw_page_borders: bool,
     pdf_dark_mode: bool,
+    highlight_page_idx: Option<usize>,
 }
 
 impl<'a> std::fmt::Debug for Document<'a> {
@@ -278,6 +279,7 @@ impl<'a> Document<'a> {
         pages: Vec<(image::Handle, Rect<f32>)>,
         draw_page_borders: bool,
         pdf_dark_mode: bool,
+        highlight_page_idx: Option<usize>,
     ) -> Self {
         Self {
             cache: Cache::default(),
@@ -285,6 +287,7 @@ impl<'a> Document<'a> {
             allocation_cache,
             draw_page_borders,
             pdf_dark_mode,
+            highlight_page_idx,
         }
     }
 }
@@ -296,7 +299,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
         &self,
         _state: &Self::State,
         renderer: &Renderer,
-        _theme: &iced::Theme,
+        theme: &iced::Theme,
         bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
@@ -305,7 +308,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
             let bg_color = get_pdf_background_color(self.pdf_dark_mode, self.draw_page_borders);
             frame.fill_rectangle(iced::Point::new(0.0, 0.0), bounds.size(), bg_color);
 
-            for (handle, rect) in &self.pages {
+            for (i, (handle, rect)) in self.pages.iter().enumerate() {
                 let bounds: iced::Rectangle = (*rect).into();
 
                 // NOTE: Ensure the image is explicitly allocated on the GPU so the next
@@ -325,6 +328,16 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
                     }
                 };
 
+                if Some(i) == self.highlight_page_idx {
+                    let palette = theme.palette();
+                    frame.stroke_rectangle(
+                        bounds.position(),
+                        bounds.size(),
+                        Stroke::default()
+                            .with_color(palette.primary)
+                            .with_width(5.0),
+                    );
+                }
                 frame.draw_image(bounds, img);
             }
         });
@@ -681,6 +694,9 @@ pub struct PdfViewer {
 
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
+
+    /// The index of the "hovered" page in overview mode.
+    pub overview_page_idx: usize,
 }
 
 impl Drop for PdfViewer {
@@ -812,6 +828,7 @@ impl PdfViewer {
             comments,
             hovered_comment: None,
             active_comment: None,
+            overview_page_idx: 0,
         })
     }
 }
@@ -1353,6 +1370,11 @@ impl PdfViewer {
                 with_handles,
                 self.draw_page_borders,
                 self.pdf_dark_mode,
+                if self.layout.layout == PageLayoutKind::Overview {
+                    Some(self.overview_page_idx)
+                } else {
+                    None
+                },
             ))
             .width(iced::Length::Fill)
             .height(iced::Length::Fill);
