@@ -1234,8 +1234,6 @@ impl PdfViewer {
             let viewport_rect =
                 Rect::from_pos_size(Vector::zero(), Vector::new(size.width, size.height));
 
-            let effective_scale = self.scale * self.fractional_scaling;
-
             // Drop pixmap allocations for pages that are no longer visible.
             let visible_indices: Vec<usize> = match mode {
                 BindingMode::Normal => rects
@@ -1268,6 +1266,11 @@ impl PdfViewer {
                 .map(|(i, rect_ss)| {
                     // rect_ss = A pages bounding box in screen coordinates (relative to the widgets origin)
                     let page_bounds = self.page_bounds[i];
+
+                    let effective_scale = match self.layout.layout {
+                        PageLayoutKind::Overview => 1.0 / (page_bounds.size().x / rect_ss.size().x),
+                        _ => self.scale * self.fractional_scaling,
+                    };
 
                     let TilePlan {
                         key,
