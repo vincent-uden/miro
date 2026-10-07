@@ -64,6 +64,15 @@ pub struct OutlineItem {
 
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
+
+/// A cardinal step when moving the overview selection between page thumbnails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverviewMoveDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
 /// How long a needle update waits before actually spawning a search scan. Typing spawns one
 /// task per keystroke; with this, intermediate ones are cancelled before doing any work.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
@@ -1994,6 +2003,66 @@ impl PdfViewer {
             )
             .ok()?;
         rects.get(page_idx).map(Rect::center)
+    }
+
+    /// Moves the highlighted overview thumbnail one step in `direction`.
+    ///
+    /// Left/Right stay within the current visual row; Up/Down pick the closest
+    /// thumbnail in the target direction, which lands on the column nearest the
+    /// current one when rows are uneven. Does nothing when not in the overview
+    /// layout or when already at an edge.
+    pub fn move_overview_selection(&mut self, direction: OverviewMoveDirection) {
+        if self.layout.layout != PageLayoutKind::Overview {
+            return;
+        }
+        let Ok(rects) = self.layout.pages_rects(
+            &self.page_bounds,
+            -self.translation,
+            self.scale,
+            self.fractional_scaling,
+            *self.viewport.borrow(),
+        ) else {
+            return;
+        };
+        self.overview_page_idx = self.overview_page_idx.min(rects.len().saturating_sub(1));
+        let Some(current_rect) = rects.get(self.overview_page_idx) else {
+            return;
+        };
+        let center = current_rect.center();
+
+        let mut best: Option<(usize, f32)> = None;
+        for (i, rect) in rects.iter().enumerate() {
+            if i == self.overview_page_idx {
+                continue;
+            }
+            let candidate_center = rect.center();
+            let in_direction = match direction {
+                OverviewMoveDirection::Left => {
+                    // Same visual row: the vertical ranges of the thumbnails overlap.
+                    rect.x0.y < current_rect.x1.y
+                        && rect.x1.y > current_rect.x0.y
+                        && candidate_center.x < center.x
+                }
+                OverviewMoveDirection::Right => {
+                    rect.x0.y < current_rect.x1.y
+                        && rect.x1.y > current_rect.x0.y
+                        && candidate_center.x > center.x
+                }
+                OverviewMoveDirection::Up => candidate_center.y < center.y,
+                OverviewMoveDirection::Down => candidate_center.y > center.y,
+            };
+            if !in_direction {
+                continue;
+            }
+            let distance = (candidate_center - center).norm_squared();
+            if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+                best = Some((i, distance));
+            }
+        }
+
+        if let Some((idx, _)) = best {
+            self.overview_page_idx = idx;
+        }
     }
 
     fn rotate_preserving_page_center(

@@ -29,14 +29,14 @@ use tracing::error;
 use crate::{
     CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
-    config::{BindingMode, MouseAction, MouseButton, MouseInput, MouseModifiers},
+    config::{BindingMode, MOVE_STEP, MouseAction, MouseButton, MouseInput, MouseModifiers},
     geometry::Vector,
     icons,
     jumplist::{JumpLocation, Jumplist},
     pdf::{
         PdfMessage, SearchMethod,
         page_layout::PageLayoutKind,
-        widget::{OutlineItem, PdfViewer},
+        widget::{OutlineItem, OverviewMoveDirection, PdfViewer},
     },
     platform_specific,
     recent_files::RecentFiles,
@@ -150,6 +150,10 @@ pub enum AppMessage {
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
+    MoveUp,
+    MoveDown,
+    MoveLeft,
+    MoveRight,
 }
 
 impl App {
@@ -301,6 +305,33 @@ impl App {
                     }
                 } else {
                     iced::Task::none()
+                }
+            }
+            msg @ (AppMessage::MoveUp
+            | AppMessage::MoveDown
+            | AppMessage::MoveLeft
+            | AppMessage::MoveRight) => {
+                let direction = match msg {
+                    AppMessage::MoveUp => OverviewMoveDirection::Up,
+                    AppMessage::MoveDown => OverviewMoveDirection::Down,
+                    AppMessage::MoveLeft => OverviewMoveDirection::Left,
+                    _ => OverviewMoveDirection::Right,
+                };
+                if !self.pdfs.is_empty()
+                    && CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                {
+                    // In overview mode the move keys step between the page
+                    // thumbnails instead of panning the document.
+                    self.pdfs[self.pdf_idx].move_overview_selection(direction);
+                    iced::Task::none()
+                } else {
+                    let (x, y) = match direction {
+                        OverviewMoveDirection::Up => (0.0, -MOVE_STEP),
+                        OverviewMoveDirection::Down => (0.0, MOVE_STEP),
+                        OverviewMoveDirection::Left => (-MOVE_STEP, 0.0),
+                        OverviewMoveDirection::Right => (MOVE_STEP, 0.0),
+                    };
+                    iced::Task::done(AppMessage::PdfMessage(PdfMessage::Move(Vector::new(x, y))))
                 }
             }
             AppMessage::OpenNewFileFinder => iced::Task::perform(
