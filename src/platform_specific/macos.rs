@@ -119,7 +119,7 @@ pub fn new_recent_file_menu_item(path: &PathBuf) -> muda::MenuItem {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| path.to_string_lossy().to_string());
-    
+
     muda::MenuItem::with_id(path.to_str().unwrap(), file_name, true, None)
 }
 
@@ -128,9 +128,10 @@ pub fn new_menu_item(label: &str, msg: BindableMessage) -> muda::MenuItem {
     let menu_id = msg.to_string();
     let menu_item = muda::MenuItem::with_id(menu_id, label, true, None);
     if let Some(keybind) = cfg.get_binding_for_msg(msg)
-        && let Ok(keyaccel) = keybind_to_keyaccelerator(keybind) {
-            menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
-        }
+        && let Ok(keyaccel) = keybind_to_keyaccelerator(keybind)
+    {
+        menu_item.set_key_accelerator(Some(keyaccel)).unwrap();
+    }
 
     menu_item
 }

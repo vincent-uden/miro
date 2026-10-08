@@ -252,6 +252,7 @@ pub enum BindableMessage {
     ToggleFullscreen,
     TogglePresentationMode,
     ToggleOverviewMode,
+    OverviewSelect,
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
@@ -281,6 +282,8 @@ impl BindableMessage {
             BindableMessage::ZoomFit => Some("Fit To Screen"),
             BindableMessage::ToggleSidebar => Some("Toggle Sidebar"),
             BindableMessage::TogglePresentationMode => Some("Toggle Presentation Mode"),
+            BindableMessage::ToggleOverviewMode => Some("Toggle Overview Mode"),
+            BindableMessage::OverviewSelect => Some("Enter Selected Overview Page"),
             BindableMessage::ToggleFullscreen => Some("Toggle Fullscreen"),
             BindableMessage::SinglePageLayout => Some("Single Page"),
             BindableMessage::DoublePageLayout => Some("Double Page"),
@@ -361,6 +364,7 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::HalfPageUp => AppMessage::PdfMessage(PdfMessage::HalfPageUp),
             BindableMessage::HalfPageDown => AppMessage::PdfMessage(PdfMessage::HalfPageDown),
             BindableMessage::ToggleOverviewMode => AppMessage::ToggleOverviewMode,
+            BindableMessage::OverviewSelect => AppMessage::OverviewSelect,
         }
     }
 }
@@ -955,7 +959,7 @@ impl Default for Config {
             Keybinds::new(vec![
                 Keybind::new(
                     KeyInput::from_str("Enter").unwrap(),
-                    BindableMessage::ToggleOverviewMode,
+                    BindableMessage::OverviewSelect,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Escape").unwrap(),

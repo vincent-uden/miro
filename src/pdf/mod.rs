@@ -84,10 +84,8 @@ pub fn find_search_matches(
                 if cancel.load(Ordering::Relaxed) {
                     return vec![];
                 }
-                let scan_start = floor_char_boundary(
-                    haystack,
-                    page_starts[chunk_idx].saturating_sub(overlap),
-                );
+                let scan_start =
+                    floor_char_boundary(haystack, page_starts[chunk_idx].saturating_sub(overlap));
                 for (start, matched) in haystack[scan_start..chunk_end].match_indices(needle) {
                     byte_ranges.push((scan_start + start, scan_start + start + matched.len()));
                 }
@@ -198,6 +196,9 @@ pub enum PdfMessage {
     /// Translation and scale
     SetLocation(Vector<f32>, f32),
     SetLayout(PageLayoutKind),
+    /// Leave overview mode and restore the layout that was active before it was
+    /// opened. When `true`, also navigate to the selected overview page.
+    ExitOverview(bool),
     RotatePageClockwise,
     RotatePageCounterClockwise,
     RotateAllPagesClockwise,

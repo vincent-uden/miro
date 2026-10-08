@@ -704,6 +704,10 @@ pub struct PdfViewer {
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
 
+    /// The layout kind that was active before the overview layout was entered,
+    /// restored when overview mode is left.
+    layout_before_overview: PageLayoutKind,
+
     /// The index of the "hovered" page in overview mode.
     pub overview_page_idx: usize,
 }
@@ -812,6 +816,7 @@ impl PdfViewer {
             fractional_scaling: 1.0,
             viewport: RefCell::default(),
             layout: PageLayout::new(PageLayoutKind::SinglePage),
+            layout_before_overview: PageLayoutKind::SinglePage,
             gradient_cache,
             mouse_pos: Vector::zero(),
             mouse_pressed_at: Vector::zero(),
@@ -900,7 +905,33 @@ impl PdfViewer {
                 self.scale = scale;
             }
             PdfMessage::SetLayout(page_layout) => {
+                if page_layout == PageLayoutKind::Overview
+                    && self.layout.layout != PageLayoutKind::Overview
+                {
+                    self.layout_before_overview = self.layout.layout;
+                    // Start the overview selection on the page that is
+                    // currently on screen.
+                    self.overview_page_idx = self.current_page();
+                }
                 self.layout.layout = page_layout;
+            }
+            PdfMessage::ExitOverview(navigate) => {
+                if self.layout.layout != PageLayoutKind::Overview {
+                    return iced::Task::none();
+                }
+                self.layout.layout = self.layout_before_overview;
+                if navigate {
+                    let idx = self.overview_page_idx.min(page_count.saturating_sub(1));
+                    if let Ok(translation) = self.layout.translation_for_page(
+                        &self.page_bounds,
+                        self.scale,
+                        self.fractional_scaling,
+                        idx,
+                        *self.viewport.borrow(),
+                    ) {
+                        self.translation = translation;
+                    }
+                }
             }
             PdfMessage::RotatePageClockwise => {
                 if page_count > 0 {

@@ -147,6 +147,9 @@ pub enum AppMessage {
     ToggleFullscreen,
     TogglePresentationMode,
     ToggleOverviewMode,
+    /// Confirm the selected overview page: navigate to it and return to the
+    /// layout that was active before overview mode was entered.
+    OverviewSelect,
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
@@ -638,8 +641,9 @@ impl App {
                 match config.binding_mode {
                     BindingMode::Overview => {
                         config.binding_mode = BindingMode::Normal;
-                        // FIX: Switch back to the previous layout
-                        iced::Task::none()
+                        // The pdf viewer restores the layout that was active
+                        // before overview mode was entered.
+                        iced::Task::done(AppMessage::PdfMessage(PdfMessage::ExitOverview(false)))
                     }
                     _ => {
                         config.binding_mode = BindingMode::Overview;
@@ -647,6 +651,20 @@ impl App {
                             PageLayoutKind::Overview,
                         )))
                     }
+                }
+            }
+            AppMessage::OverviewSelect => {
+                if !self.pdfs.is_empty() {
+                    CONFIG.write().unwrap().binding_mode = BindingMode::Normal;
+                    // Navigation lands in the previous layout, so record the
+                    // location only after the jump, not from overview space.
+                    let pdf_msg = self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::ExitOverview(true))
+                        .map(AppMessage::PdfMessage);
+                    self.record_location();
+                    pdf_msg
+                } else {
+                    iced::Task::none()
                 }
             }
             AppMessage::OpenSearch => {
