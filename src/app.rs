@@ -29,7 +29,9 @@ use tracing::error;
 use crate::{
     CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
-    config::{BindingMode, MouseAction, MouseButton, MouseInput, MouseModifiers},
+    config::{
+        BindingMode, MOVE_STEP, MoveDirection, MouseAction, MouseButton, MouseInput, MouseModifiers,
+    },
     geometry::Vector,
     icons,
     jumplist::{JumpLocation, Jumplist},
@@ -146,9 +148,16 @@ pub enum AppMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
+    ToggleOverviewMode,
+    /// Confirm the selected overview page: navigate to it and return to the
+    /// layout that was active before overview mode was entered.
+    OverviewSelect,
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
+    #[strum(disabled)]
+    #[serde(skip)]
+    Move(MoveDirection),
 }
 
 impl App {
@@ -302,6 +311,24 @@ impl App {
                     iced::Task::none()
                 }
             }
+            AppMessage::Move(direction) => {
+                if !self.pdfs.is_empty()
+                    && CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                {
+                    // In overview mode the move keys step between the page
+                    // thumbnails instead of panning the document.
+                    self.pdfs[self.pdf_idx].move_overview_selection(direction);
+                    iced::Task::none()
+                } else {
+                    let vector = match direction {
+                        MoveDirection::Up => Vector::new(0.0, -MOVE_STEP),
+                        MoveDirection::Down => Vector::new(0.0, MOVE_STEP),
+                        MoveDirection::Left => Vector::new(-MOVE_STEP, 0.0),
+                        MoveDirection::Right => Vector::new(MOVE_STEP, 0.0),
+                    };
+                    iced::Task::done(AppMessage::PdfMessage(PdfMessage::Move(vector)))
+                }
+            }
             AppMessage::OpenNewFileFinder => iced::Task::perform(
                 async {
                     AsyncFileDialog::new()
@@ -421,6 +448,12 @@ impl App {
                 if self.search_open && self.search_hover {
                     iced::Task::none()
                 } else if !self.pdfs.is_empty()
+                    && button == MouseButton::Left
+                    && CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                    && self.pdfs[self.pdf_idx].is_pointer_over_viewport()
+                {
+                    iced::Task::done(AppMessage::OverviewSelect)
+                } else if !self.pdfs.is_empty()
                     && let Some(action) = self.get_mouse_action(button)
                 {
                     self.pdfs[self.pdf_idx]
@@ -507,7 +540,27 @@ impl App {
             }
             AppMessage::CloseActiveTab => iced::Task::done(AppMessage::CloseTab(self.pdf_idx)),
             AppMessage::Scroll(delta) => {
-                if !self.pdfs.is_empty() {
+                if self.pdfs.is_empty() {
+                    iced::Task::none()
+                } else if CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                    && !self.pdfs[self.pdf_idx].is_pointer_over_viewport()
+                {
+                    iced::Task::none()
+                } else if CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                    && !self.ctrl_pressed
+                    && !self.shift_pressed
+                {
+                    match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. } => {
+                            self.pdfs[self.pdf_idx].scroll_overview_lines(y);
+                        }
+                        iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                            let sensitivity = CONFIG.read().unwrap().trackpad_sensitivity;
+                            self.pdfs[self.pdf_idx].scroll_overview_pixels(y * sensitivity);
+                        }
+                    }
+                    iced::Task::none()
+                } else {
                     match delta {
                         iced::mouse::ScrollDelta::Lines { y, .. } => {
                             let button = if y > 0.0 {
@@ -533,8 +586,6 @@ impl App {
                                 .map(AppMessage::PdfMessage)
                         }
                     }
-                } else {
-                    iced::Task::none()
                 }
             }
             AppMessage::Exit => exit(),
@@ -588,6 +639,7 @@ impl App {
                 match config.binding_mode {
                     BindingMode::Presentation => {
                         config.binding_mode = BindingMode::Normal;
+                        // FIX: Switch back to the previous layout
                         iced::Task::none()
                     }
                     _ => {
@@ -598,6 +650,37 @@ impl App {
                             ))),
                         )
                     }
+                }
+            }
+            AppMessage::ToggleOverviewMode => {
+                let mut config = CONFIG.write().unwrap();
+                match config.binding_mode {
+                    BindingMode::Overview => {
+                        config.binding_mode = BindingMode::Normal;
+                        // The pdf viewer restores the layout that was active
+                        // before overview mode was entered.
+                        iced::Task::done(AppMessage::PdfMessage(PdfMessage::ExitOverview(false)))
+                    }
+                    _ => {
+                        config.binding_mode = BindingMode::Overview;
+                        iced::Task::done(AppMessage::PdfMessage(PdfMessage::SetLayout(
+                            PageLayoutKind::Overview,
+                        )))
+                    }
+                }
+            }
+            AppMessage::OverviewSelect => {
+                if !self.pdfs.is_empty() {
+                    CONFIG.write().unwrap().binding_mode = BindingMode::Normal;
+                    // Navigation lands in the previous layout, so record the
+                    // location only after the jump, not from overview space.
+                    let pdf_msg = self.pdfs[self.pdf_idx]
+                        .update(PdfMessage::ExitOverview(true))
+                        .map(AppMessage::PdfMessage);
+                    self.record_location();
+                    pdf_msg
+                } else {
+                    iced::Task::none()
                 }
             }
             AppMessage::OpenSearch => {

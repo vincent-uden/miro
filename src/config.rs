@@ -7,11 +7,18 @@ use strum::{Display, EnumString};
 
 use crate::{
     app::AppMessage,
-    geometry::Vector,
     pdf::{PdfMessage, SearchMethod, page_layout::PageLayoutKind},
 };
 
 pub const MOVE_STEP: f32 = 40.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
 
 #[derive(Debug, Clone)]
 pub struct ConfigError {
@@ -252,6 +259,8 @@ pub enum BindableMessage {
     JumpForward,
     ToggleFullscreen,
     TogglePresentationMode,
+    ToggleOverviewMode,
+    OverviewSelect,
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
@@ -281,6 +290,8 @@ impl BindableMessage {
             BindableMessage::ZoomFit => Some("Fit To Screen"),
             BindableMessage::ToggleSidebar => Some("Toggle Sidebar"),
             BindableMessage::TogglePresentationMode => Some("Toggle Presentation Mode"),
+            BindableMessage::ToggleOverviewMode => Some("Toggle Overview Mode"),
+            BindableMessage::OverviewSelect => Some("Enter Selected Overview Page"),
             BindableMessage::ToggleFullscreen => Some("Toggle Fullscreen"),
             BindableMessage::SinglePageLayout => Some("Single Page"),
             BindableMessage::DoublePageLayout => Some("Double Page"),
@@ -299,18 +310,10 @@ impl BindableMessage {
 impl From<BindableMessage> for AppMessage {
     fn from(val: BindableMessage) -> Self {
         match val {
-            BindableMessage::MoveUp => {
-                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(0.0, -MOVE_STEP)))
-            }
-            BindableMessage::MoveDown => {
-                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(0.0, MOVE_STEP)))
-            }
-            BindableMessage::MoveLeft => {
-                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(-MOVE_STEP, 0.0)))
-            }
-            BindableMessage::MoveRight => {
-                AppMessage::PdfMessage(PdfMessage::Move(Vector::new(MOVE_STEP, 0.0)))
-            }
+            BindableMessage::MoveUp => AppMessage::Move(MoveDirection::Up),
+            BindableMessage::MoveDown => AppMessage::Move(MoveDirection::Down),
+            BindableMessage::MoveLeft => AppMessage::Move(MoveDirection::Left),
+            BindableMessage::MoveRight => AppMessage::Move(MoveDirection::Right),
             BindableMessage::NextPage => AppMessage::PdfMessage(PdfMessage::NextPage),
             BindableMessage::PreviousPage => AppMessage::PdfMessage(PdfMessage::PreviousPage),
             BindableMessage::ZoomHome => AppMessage::PdfMessage(PdfMessage::ZoomHome),
@@ -368,6 +371,8 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::PageDown => AppMessage::PdfMessage(PdfMessage::PageDown),
             BindableMessage::HalfPageUp => AppMessage::PdfMessage(PdfMessage::HalfPageUp),
             BindableMessage::HalfPageDown => AppMessage::PdfMessage(PdfMessage::HalfPageDown),
+            BindableMessage::ToggleOverviewMode => AppMessage::ToggleOverviewMode,
+            BindableMessage::OverviewSelect => AppMessage::OverviewSelect,
         }
     }
 }
@@ -417,12 +422,13 @@ impl Config {
         }
     }
     pub fn get_binding_for_msg(&self, msg: BindableMessage) -> Option<Keybind<BindableMessage>> {
-        let binds = self.keyboard[&self.binding_mode].as_slice();
+        let binds = self.keyboard.get(&self.binding_mode)?.as_slice();
         binds.iter().find(|b| b.action == msg).cloned()
     }
 
     pub fn get_mouse_action(&self, input: MouseInput) -> Option<MouseAction> {
-        self.mouse[&self.binding_mode]
+        self.mouse
+            .get(&self.binding_mode)?
             .iter()
             .find(|(mouse_input, _)| *mouse_input == input)
             .map(|(_, action)| *action)
@@ -696,10 +702,7 @@ impl Config {
     }
 
     pub fn dispatch(&mut self, e: iced::keyboard::Event) -> Option<&BindableMessage> {
-        self.keyboard
-            .get_mut(&self.binding_mode)
-            .unwrap()
-            .dispatch(e)
+        self.keyboard.get_mut(&self.binding_mode)?.dispatch(e)
     }
 }
 
@@ -823,6 +826,10 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("F10").unwrap(),
                     BindableMessage::TogglePresentationMode,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Enter").unwrap(),
+                    BindableMessage::ToggleOverviewMode,
                 ),
                 Keybind::new(
                     KeyInput::from_str("F1").unwrap(),
@@ -951,6 +958,42 @@ impl Default for Config {
                 ),
                 Keybind::new(KeyInput::from_str("_").unwrap(), BindableMessage::ZoomFit),
                 Keybind::new(KeyInput::from_str("q").unwrap(), BindableMessage::Exit),
+            ]),
+        );
+        // The default Overview mode bindings mirror the Overview section
+        // in assets/default.conf.
+        keyboard.insert(
+            BindingMode::Overview,
+            Keybinds::new(vec![
+                Keybind::new(
+                    KeyInput::from_str("Enter").unwrap(),
+                    BindableMessage::OverviewSelect,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Escape").unwrap(),
+                    BindableMessage::ToggleOverviewMode,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Ctrl+r").unwrap(),
+                    BindableMessage::ToggleDarkModePdf,
+                ),
+                Keybind::new(KeyInput::from_str("j").unwrap(), BindableMessage::MoveDown),
+                Keybind::new(KeyInput::from_str("k").unwrap(), BindableMessage::MoveUp),
+                Keybind::new(KeyInput::from_str("h").unwrap(), BindableMessage::MoveLeft),
+                Keybind::new(KeyInput::from_str("l").unwrap(), BindableMessage::MoveRight),
+                Keybind::new(KeyInput::from_str("Up").unwrap(), BindableMessage::MoveUp),
+                Keybind::new(
+                    KeyInput::from_str("Down").unwrap(),
+                    BindableMessage::MoveDown,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Left").unwrap(),
+                    BindableMessage::MoveLeft,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Right").unwrap(),
+                    BindableMessage::MoveRight,
+                ),
             ]),
         );
 

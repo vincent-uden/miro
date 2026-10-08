@@ -16,6 +16,8 @@ pub enum PageLayoutKind {
     DoublePageTitlePage,
     /// Only one page on the screen at a time
     Presentation,
+    /// Show many pages as thumbnails, used for navigation and a visual overview of the document
+    Overview,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
@@ -267,6 +269,34 @@ impl PageLayout {
                     }
                 }
             }
+            PageLayoutKind::Overview => {
+                // In screen pixels TODO: Logical or physical?
+                let max_page_size = 100.0;
+                let mut pos: Vector<f32> = Vector::zero();
+                for size in page_sizes.iter().copied() {
+                    let proportion = max_page_size / size.x.max(size.y);
+                    let bounds_size = size.scaled(proportion);
+
+                    if pos.x > 0.0 && pos.x + bounds_size.x > vsize.x {
+                        pos.x = 0.0;
+                        pos.y += max_page_size + Self::GAP;
+                    }
+
+                    let bounds = Rect::from_pos_size(pos, bounds_size);
+                    out.push(bounds);
+                    pos.x += bounds_size.x + Self::GAP;
+                }
+
+                if let Some(first) = out.first().copied() {
+                    let bbox = out.iter().fold(first, |acc, rect| acc.union(rect));
+                    let mut offset = (vsize - bbox.size()).scaled(0.5);
+                    offset -= bbox.x0;
+
+                    for bounds in &mut out {
+                        bounds.translate(offset);
+                    }
+                }
+            }
         }
         Ok(out)
     }
@@ -289,6 +319,8 @@ impl PageLayout {
             PageLayoutKind::DoublePage => page_idx - (page_idx % 2),
             PageLayoutKind::DoublePageTitlePage if page_idx == 0 => 0,
             PageLayoutKind::DoublePageTitlePage => page_idx - ((page_idx - 1) % 2),
+            PageLayoutKind::Overview => page_idx, // TODO: (Viewport width)/(page size - padding and
+                                                  // gaps)
         };
         let end = match self.layout {
             PageLayoutKind::SinglePage | PageLayoutKind::Presentation => start,
@@ -428,6 +460,7 @@ impl PageLayout {
             PageLayoutKind::DoublePage => idx.saturating_sub(2),
             PageLayoutKind::DoublePageTitlePage => idx.saturating_sub(2),
             PageLayoutKind::Presentation => idx.saturating_sub(1),
+            PageLayoutKind::Overview => idx.saturating_sub(1), // TODO: Based on viewport size
         })
         .clamp(0, rects.len() - 1);
         Ok(rects[idx])
@@ -452,6 +485,7 @@ impl PageLayout {
                 }
             }
             PageLayoutKind::Presentation => idx + 1,
+            PageLayoutKind::Overview => idx + 1, // TODO: Based on viewport size
         })
         .clamp(0, rects.len() - 1);
         Ok(rects[idx])

@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{
@@ -31,7 +31,7 @@ use tracing::{error};
 
 use crate::{
     CONFIG, DARK_THEME,
-    config::{BindingMode, MOVE_STEP, MouseAction},
+    config::{BindingMode, MOVE_STEP, MoveDirection, MouseAction},
     geometry::{Rect, Vector},
     pdf::{
         PdfMessage, SearchMatch, SearchMethod, find_search_matches,
@@ -64,6 +64,60 @@ pub struct OutlineItem {
 
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
+const OVERVIEW_SCROLL_MARGIN: f32 = 64.0;
+const OVERVIEW_SCROLL_STEP_PIXELS: f32 = 80.0;
+
+/// Scroll the overview grid just enough to keep the selected thumbnail inside a vertical safe
+/// zone. `scroll_y` is measured in screen pixels from the top-padded start of the content.
+fn apply_overview_scroll(
+    rects: &mut [Rect<f32>],
+    selected_page_idx: usize,
+    viewport: Size<f32>,
+    scroll_y: &mut f32,
+) {
+    let Some(first) = rects.first().copied() else {
+        *scroll_y = 0.0;
+        return;
+    };
+
+    let content = rects
+        .iter()
+        .skip(1)
+        .fold(first, |bounds, rect| bounds.union(rect));
+    let margin = OVERVIEW_SCROLL_MARGIN.min(viewport.height.max(0.0) * 0.25);
+    let safe_top = margin;
+    let safe_bottom = (viewport.height - margin).max(safe_top);
+    let safe_height = safe_bottom - safe_top;
+
+    // A short grid is already centered by PageLayout; leave it untouched.
+    if content.height() <= safe_height {
+        *scroll_y = 0.0;
+        return;
+    }
+
+    let max_scroll = content.height() - safe_height;
+    *scroll_y = scroll_y.clamp(0.0, max_scroll);
+
+    let mut selected = rects[selected_page_idx.min(rects.len() - 1)];
+    let initial_offset = safe_top - content.x0.y - *scroll_y;
+    selected.translate(Vector::new(0.0, initial_offset));
+    let correction = if selected.height() > safe_height {
+        selected.center().y - viewport.height * 0.5
+    } else if selected.x0.y < safe_top {
+        selected.x0.y - safe_top
+    } else if selected.x1.y > safe_bottom {
+        selected.x1.y - safe_bottom
+    } else {
+        0.0
+    };
+    *scroll_y = (*scroll_y + correction).clamp(0.0, max_scroll);
+
+    let offset = safe_top - content.x0.y - *scroll_y;
+    for rect in rects {
+        rect.translate(Vector::new(0.0, offset));
+    }
+}
+
 /// How long a needle update waits before actually spawning a search scan. Typing spawns one
 /// task per keystroke; with this, intermediate ones are cancelled before doing any work.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
@@ -107,12 +161,12 @@ type BufferPool = Arc<Mutex<HashMap<usize, Vec<Vec<u8>>>>>;
 /// - `Full` is used when the entire page fits inside the viewport. The cached
 ///   image is independent of translation so panning does not trigger re-renders.
 /// - `Partial` is used when only a sub-rect of the page is visible. The key
-///   includes the visible rectangle (in viewport pixels) so that any pan or
-///   zoom invalidates the cache.
+///   includes the visible pixel dimensions and source offset so that panning
+///   invalidates the cached crop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum RenderKey {
     Full(usize, u32, PageRotation),
-    Partial(usize, u32, i32, i32, PageRotation),
+    Partial(usize, u32, i32, i32, u32, u32, PageRotation),
 }
 
 /// How a single page should be rasterized for the current frame: which cache key
@@ -126,6 +180,14 @@ struct TilePlan {
     height: i32,
     matrix: Matrix,
     scissor: mupdf::Rect,
+}
+
+fn overview_render_scale(
+    page_bounds: Rect<f32>,
+    rotation: PageRotation,
+    rect_ss: Rect<f32>,
+) -> f32 {
+    rect_ss.width() / rotation.rotated_size(page_bounds.size()).x
 }
 
 /// Decide whether a page can be rendered once in full or must be scissored to
@@ -171,7 +233,15 @@ fn plan_tile(
         let render_offset_x = rect_ss.x0.x - vis.x0.x;
         let render_offset_y = rect_ss.x0.y - vis.x0.y;
 
-        let key = RenderKey::Partial(page_idx, effective_scale.to_bits(), width, height, rotation);
+        let key = RenderKey::Partial(
+            page_idx,
+            effective_scale.to_bits(),
+            width,
+            height,
+            render_offset_x.to_bits(),
+            render_offset_y.to_bits(),
+            rotation,
+        );
 
         let matrix = page_matrix(
             page_bounds,
@@ -257,10 +327,11 @@ fn pdf_rect_to_screen(
 
 struct Document<'a> {
     cache: Cache,
-    pages: Vec<(image::Handle, Rect<f32>)>,
+    pages: Vec<(usize, image::Handle, Rect<f32>)>,
     allocation_cache: &'a RefCell<HashMap<image::Id, image::Allocation>>,
     draw_page_borders: bool,
     pdf_dark_mode: bool,
+    highlight_page_idx: Option<usize>,
 }
 
 impl<'a> std::fmt::Debug for Document<'a> {
@@ -275,9 +346,10 @@ impl<'a> std::fmt::Debug for Document<'a> {
 impl<'a> Document<'a> {
     pub fn new(
         allocation_cache: &'a RefCell<HashMap<image::Id, image::Allocation>>,
-        pages: Vec<(image::Handle, Rect<f32>)>,
+        pages: Vec<(usize, image::Handle, Rect<f32>)>,
         draw_page_borders: bool,
         pdf_dark_mode: bool,
+        highlight_page_idx: Option<usize>,
     ) -> Self {
         Self {
             cache: Cache::default(),
@@ -285,6 +357,7 @@ impl<'a> Document<'a> {
             allocation_cache,
             draw_page_borders,
             pdf_dark_mode,
+            highlight_page_idx,
         }
     }
 }
@@ -296,7 +369,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
         &self,
         _state: &Self::State,
         renderer: &Renderer,
-        _theme: &iced::Theme,
+        theme: &iced::Theme,
         bounds: iced::Rectangle,
         _cursor: iced::advanced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
@@ -305,7 +378,7 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
             let bg_color = get_pdf_background_color(self.pdf_dark_mode, self.draw_page_borders);
             frame.fill_rectangle(iced::Point::new(0.0, 0.0), bounds.size(), bg_color);
 
-            for (handle, rect) in &self.pages {
+            for (page_idx, handle, rect) in &self.pages {
                 let bounds: iced::Rectangle = (*rect).into();
 
                 // NOTE: Ensure the image is explicitly allocated on the GPU so the next
@@ -325,6 +398,16 @@ impl<'a> widget::canvas::Program<PdfMessage> for Document<'a> {
                     }
                 };
 
+                if Some(*page_idx) == self.highlight_page_idx {
+                    let palette = theme.palette();
+                    frame.stroke_rectangle(
+                        bounds.position(),
+                        bounds.size(),
+                        Stroke::default()
+                            .with_color(palette.primary)
+                            .with_width(5.0),
+                    );
+                }
                 frame.draw_image(bounds, img);
             }
         });
@@ -681,6 +764,17 @@ pub struct PdfViewer {
 
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
+
+    /// The layout kind that was active before the overview layout was entered,
+    /// restored when overview mode is left.
+    layout_before_overview: PageLayoutKind,
+
+    /// The index of the "hovered" page in overview mode.
+    overview_page_idx: usize,
+    /// Screen-pixel scroll offset for keeping the overview selection in its safe zone.
+    overview_scroll_y: Cell<f32>,
+    /// Fractional page movement accumulated from trackpad scrolling.
+    overview_scroll_remainder: f32,
 }
 
 impl Drop for PdfViewer {
@@ -787,6 +881,7 @@ impl PdfViewer {
             fractional_scaling: 1.0,
             viewport: RefCell::default(),
             layout: PageLayout::new(PageLayoutKind::SinglePage),
+            layout_before_overview: PageLayoutKind::SinglePage,
             gradient_cache,
             mouse_pos: Vector::zero(),
             mouse_pressed_at: Vector::zero(),
@@ -812,6 +907,9 @@ impl PdfViewer {
             comments,
             hovered_comment: None,
             active_comment: None,
+            overview_page_idx: 0,
+            overview_scroll_y: Cell::new(0.0),
+            overview_scroll_remainder: 0.0,
         })
     }
 }
@@ -874,7 +972,37 @@ impl PdfViewer {
                 self.scale = scale;
             }
             PdfMessage::SetLayout(page_layout) => {
+                if page_layout == PageLayoutKind::Overview
+                    && self.layout.layout != PageLayoutKind::Overview
+                {
+                    self.layout_before_overview = self.layout.layout;
+                    // Start the overview selection on the page that is
+                    // currently on screen.
+                    self.overview_page_idx = self.current_page();
+                    self.overview_scroll_y.set(0.0);
+                    self.overview_scroll_remainder = 0.0;
+                }
                 self.layout.layout = page_layout;
+            }
+            PdfMessage::ExitOverview(navigate) => {
+                if self.layout.layout != PageLayoutKind::Overview {
+                    return iced::Task::none();
+                }
+                self.layout.layout = self.layout_before_overview;
+                self.overview_scroll_y.set(0.0);
+                self.overview_scroll_remainder = 0.0;
+                if navigate {
+                    let idx = self.overview_page_idx.min(page_count.saturating_sub(1));
+                    if let Ok(translation) = self.layout.translation_for_page(
+                        &self.page_bounds,
+                        self.scale,
+                        self.fractional_scaling,
+                        idx,
+                        *self.viewport.borrow(),
+                    ) {
+                        self.translation = translation;
+                    }
+                }
             }
             PdfMessage::RotatePageClockwise => {
                 if page_count > 0 {
@@ -935,6 +1063,7 @@ impl PdfViewer {
             }
             PdfMessage::MouseMoved(vector) => {
                 let old_local = self.local_mouse_pos();
+                let pointer_moved = vector != self.mouse_pos;
                 self.mouse_pos = vector;
                 let new_local = self.local_mouse_pos();
                 match self.mouse_interaction {
@@ -947,6 +1076,17 @@ impl PdfViewer {
                     }
                     MouseInteraction::Selecting => {
                         self.selection_end = Some(new_local);
+                    }
+                }
+                // Ignore duplicate cursor events so keyboard selection isn't reset under a
+                // stationary pointer.
+                if pointer_moved && self.layout.layout == PageLayoutKind::Overview {
+                    let viewport = *self.viewport.borrow();
+                    if let Ok(rects) = self.page_rects(viewport)
+                        && let Some(page_idx) =
+                            rects.iter().position(|rect| rect.contains(new_local))
+                    {
+                        self.overview_page_idx = page_idx;
                     }
                 }
                 self.update_hover_state();
@@ -1221,24 +1361,13 @@ impl PdfViewer {
                 let mut viewport = self.viewport.borrow_mut();
                 *viewport = size;
             }
-            let rects = self
-                .layout
-                .pages_rects(
-                    &self.page_bounds,
-                    self.translation.scaled(-1.0),
-                    self.scale,
-                    self.fractional_scaling,
-                    size,
-                )
-                .unwrap();
+            let rects = self.page_rects(size).unwrap();
             let viewport_rect =
                 Rect::from_pos_size(Vector::zero(), Vector::new(size.width, size.height));
 
-            let effective_scale = self.scale * self.fractional_scaling;
-
             // Drop pixmap allocations for pages that are no longer visible.
             let visible_indices: Vec<usize> = match mode {
-                BindingMode::Normal => rects
+                BindingMode::Normal | BindingMode::Overview => rects
                     .iter()
                     .enumerate()
                     .filter(|(_, r)| viewport_rect.intersects(r))
@@ -1248,8 +1377,6 @@ impl PdfViewer {
                     let current_page = self.current_page();
                     (0..rects.len()).filter(|i| *i == current_page).collect()
                 }
-                // FIX: Cull and layout properly
-                BindingMode::Overview => rects.iter().enumerate().map(|(i, _)| i).collect(),
             };
 
             self.pixmap_pool
@@ -1268,6 +1395,13 @@ impl PdfViewer {
                 .map(|(i, rect_ss)| {
                     // rect_ss = A pages bounding box in screen coordinates (relative to the widgets origin)
                     let page_bounds = self.page_bounds[i];
+
+                    let effective_scale = match self.layout.layout {
+                        PageLayoutKind::Overview => {
+                            overview_render_scale(page_bounds, self.layout.rotation(i), rect_ss)
+                        }
+                        _ => self.scale * self.fractional_scaling,
+                    };
 
                     let TilePlan {
                         key,
@@ -1311,7 +1445,7 @@ impl PdfViewer {
                             self.run(&mut pix, i, &matrix, scissor, key);
                         }
                     }
-                    if matches!(key, RenderKey::Partial(_, _, _, _, _)) {
+                    if matches!(key, RenderKey::Partial(_, _, _, _, _, _, _)) {
                         self.run(&mut pix, i, &matrix, scissor, key);
                     }
                     // NOTE: I am not 100% sure how the key can be missing at this point, but it can
@@ -1328,7 +1462,7 @@ impl PdfViewer {
 
                     used_keys.push(key);
                     let cache = self.render_cache.borrow_mut();
-                    (cache[&key].clone(), draw_rect)
+                    (i, cache[&key].clone(), draw_rect)
                 })
                 .collect();
 
@@ -1350,6 +1484,11 @@ impl PdfViewer {
                 with_handles,
                 self.draw_page_borders,
                 self.pdf_dark_mode,
+                if self.layout.layout == PageLayoutKind::Overview {
+                    Some(self.overview_page_idx)
+                } else {
+                    None
+                },
             ))
             .width(iced::Length::Fill)
             .height(iced::Length::Fill);
@@ -1601,13 +1740,7 @@ impl PdfViewer {
 
         let viewport = *self.viewport.borrow();
 
-        let Ok(rects) = self.layout.pages_rects(
-            &self.page_bounds,
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(rects) = self.page_rects(viewport) else {
             return String::new();
         };
 
@@ -1684,13 +1817,7 @@ impl PdfViewer {
 
     fn visible_links(&self, viewport: iced::Size<f32>) -> Vec<((usize, usize), Rect<f32>)> {
         let mut result = Vec::new();
-        let Ok(page_rects) = self.layout.pages_rects(
-            &self.page_bounds,
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
         };
 
@@ -1723,13 +1850,7 @@ impl PdfViewer {
         if !self.show_search_results {
             return result;
         }
-        let Ok(page_rects) = self.layout.pages_rects(
-            &self.page_bounds,
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
         };
 
@@ -1763,13 +1884,7 @@ impl PdfViewer {
 
     fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
         let mut result = Vec::new();
-        let Ok(page_rects) = self.layout.pages_rects(
-            &self.page_bounds,
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
         };
 
@@ -1951,24 +2066,136 @@ impl PdfViewer {
         format!("({} / {})", current, total)
     }
 
+    pub fn is_pointer_over_viewport(&self) -> bool {
+        let local_mouse = self.local_mouse_pos();
+        let viewport = *self.viewport.borrow();
+        local_mouse.x >= 0.0
+            && local_mouse.y >= 0.0
+            && local_mouse.x < viewport.width
+            && local_mouse.y < viewport.height
+    }
+
     pub fn current_page(&self) -> usize {
+        if self.layout.layout == PageLayoutKind::Overview {
+            return self
+                .overview_page_idx
+                .min(self.page_bounds.len().saturating_sub(1));
+        }
         self.layout
             .current_page_index(&self.page_bounds, self.translation, *self.viewport.borrow())
             .unwrap()
     }
 
+    fn page_rects(&self, viewport: Size<f32>) -> Result<Vec<Rect<f32>>> {
+        let mut rects = self.layout.pages_rects(
+            &self.page_bounds,
+            -self.translation,
+            self.scale,
+            self.fractional_scaling,
+            viewport,
+        )?;
+        if self.layout.layout == PageLayoutKind::Overview {
+            let mut scroll_y = self.overview_scroll_y.get();
+            apply_overview_scroll(&mut rects, self.overview_page_idx, viewport, &mut scroll_y);
+            self.overview_scroll_y.set(scroll_y);
+        }
+        Ok(rects)
+    }
+
     fn page_screen_center(&self, page_idx: usize, viewport: Size<f32>) -> Option<Vector<f32>> {
-        let rects = self
-            .layout
-            .pages_rects(
-                &self.page_bounds,
-                -self.translation,
-                self.scale,
-                self.fractional_scaling,
-                viewport,
-            )
-            .ok()?;
+        let rects = self.page_rects(viewport).ok()?;
         rects.get(page_idx).map(Rect::center)
+    }
+
+    pub fn scroll_overview_lines(&mut self, lines: f32) {
+        self.scroll_overview_steps(-lines);
+    }
+
+    pub fn scroll_overview_pixels(&mut self, pixels: f32) {
+        self.scroll_overview_steps(pixels / OVERVIEW_SCROLL_STEP_PIXELS);
+    }
+
+    fn scroll_overview_steps(&mut self, steps: f32) {
+        if self.layout.layout != PageLayoutKind::Overview || !steps.is_finite() {
+            return;
+        }
+
+        self.overview_scroll_remainder =
+            (self.overview_scroll_remainder + steps.clamp(-10.0, 10.0)).clamp(-10.0, 10.0);
+        while self.overview_scroll_remainder.abs() >= 1.0 {
+            let step = if self.overview_scroll_remainder > 0.0 {
+                1.0
+            } else {
+                -1.0
+            };
+            let previous_page = self.overview_page_idx;
+            let last_page = self.page_bounds.len().saturating_sub(1);
+            self.overview_page_idx = if step > 0.0 {
+                previous_page.saturating_add(1).min(last_page)
+            } else {
+                previous_page.saturating_sub(1)
+            };
+            if self.overview_page_idx == previous_page {
+                self.overview_scroll_remainder = 0.0;
+                break;
+            }
+            self.overview_scroll_remainder -= step;
+        }
+    }
+
+    /// Moves the highlighted overview thumbnail one step in `direction`.
+    ///
+    /// Left/Right stay within the current visual row; Up/Down pick the closest
+    /// thumbnail in the target direction, which lands on the column nearest the
+    /// current one when rows are uneven. Does nothing when not in the overview
+    /// layout or when already at an edge.
+    pub fn move_overview_selection(&mut self, direction: MoveDirection) {
+        if self.layout.layout != PageLayoutKind::Overview {
+            return;
+        }
+        let viewport = *self.viewport.borrow();
+        let Ok(rects) = self.page_rects(viewport) else {
+            return;
+        };
+        self.overview_page_idx = self.overview_page_idx.min(rects.len().saturating_sub(1));
+        let Some(current_rect) = rects.get(self.overview_page_idx) else {
+            return;
+        };
+        let center = current_rect.center();
+
+        let mut best: Option<(usize, f32)> = None;
+        for (i, rect) in rects.iter().enumerate() {
+            if i == self.overview_page_idx {
+                continue;
+            }
+            let candidate_center = rect.center();
+            let in_direction = match direction {
+                MoveDirection::Left => {
+                    // Same visual row: the vertical ranges of the thumbnails overlap.
+                    rect.x0.y < current_rect.x1.y
+                        && rect.x1.y > current_rect.x0.y
+                        && candidate_center.x < center.x
+                }
+                MoveDirection::Right => {
+                    rect.x0.y < current_rect.x1.y
+                        && rect.x1.y > current_rect.x0.y
+                        && candidate_center.x > center.x
+                }
+                MoveDirection::Up => candidate_center.y < center.y,
+                MoveDirection::Down => candidate_center.y > center.y,
+            };
+            if !in_direction {
+                continue;
+            }
+            let distance = (candidate_center - center).norm_squared();
+            if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+                best = Some((i, distance));
+            }
+        }
+
+        if let Some((idx, _)) = best {
+            self.overview_page_idx = idx;
+        }
     }
 
     fn rotate_preserving_page_center(
@@ -2136,7 +2363,15 @@ mod tests {
 
         assert_eq!(
             plan.key,
-            RenderKey::Partial(0, effective_scale.to_bits(), 500, 350, PageRotation::Deg0)
+            RenderKey::Partial(
+                0,
+                effective_scale.to_bits(),
+                500,
+                350,
+                (-100.0_f32).to_bits(),
+                (-50.0_f32).to_bits(),
+                PageRotation::Deg0,
+            )
         );
         assert_eq!(
             plan.draw_rect,
