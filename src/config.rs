@@ -12,6 +12,14 @@ use crate::{
 
 pub const MOVE_STEP: f32 = 40.0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfigError {
     pub line_number: usize,
@@ -302,10 +310,10 @@ impl BindableMessage {
 impl From<BindableMessage> for AppMessage {
     fn from(val: BindableMessage) -> Self {
         match val {
-            BindableMessage::MoveUp => AppMessage::MoveUp,
-            BindableMessage::MoveDown => AppMessage::MoveDown,
-            BindableMessage::MoveLeft => AppMessage::MoveLeft,
-            BindableMessage::MoveRight => AppMessage::MoveRight,
+            BindableMessage::MoveUp => AppMessage::Move(MoveDirection::Up),
+            BindableMessage::MoveDown => AppMessage::Move(MoveDirection::Down),
+            BindableMessage::MoveLeft => AppMessage::Move(MoveDirection::Left),
+            BindableMessage::MoveRight => AppMessage::Move(MoveDirection::Right),
             BindableMessage::NextPage => AppMessage::PdfMessage(PdfMessage::NextPage),
             BindableMessage::PreviousPage => AppMessage::PdfMessage(PdfMessage::PreviousPage),
             BindableMessage::ZoomHome => AppMessage::PdfMessage(PdfMessage::ZoomHome),

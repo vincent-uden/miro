@@ -31,7 +31,7 @@ use tracing::{error};
 
 use crate::{
     CONFIG, DARK_THEME,
-    config::{BindingMode, MOVE_STEP, MouseAction},
+    config::{BindingMode, MOVE_STEP, MoveDirection, MouseAction},
     geometry::{Rect, Vector},
     pdf::{
         PdfMessage, SearchMatch, SearchMethod, find_search_matches,
@@ -117,14 +117,6 @@ fn apply_overview_scroll(
     }
 }
 
-/// A cardinal step when moving the overview selection between page thumbnails.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OverviewMoveDirection {
-    Up,
-    Down,
-    Left,
-    Right,
-}
 /// How long a needle update waits before actually spawning a search scan. Typing spawns one
 /// task per keystroke; with this, intermediate ones are cancelled before doing any work.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
@@ -187,6 +179,14 @@ struct TilePlan {
     height: i32,
     matrix: Matrix,
     scissor: mupdf::Rect,
+}
+
+fn overview_render_scale(
+    page_bounds: Rect<f32>,
+    rotation: PageRotation,
+    rect_ss: Rect<f32>,
+) -> f32 {
+    rect_ss.width() / rotation.rotated_size(page_bounds.size()).x
 }
 
 /// Decide whether a page can be rendered once in full or must be scissored to
@@ -769,7 +769,7 @@ pub struct PdfViewer {
     layout_before_overview: PageLayoutKind,
 
     /// The index of the "hovered" page in overview mode.
-    pub overview_page_idx: usize,
+    overview_page_idx: usize,
     /// Screen-pixel scroll offset for keeping the overview selection in its safe zone.
     overview_scroll_y: Cell<f32>,
 }
@@ -1343,20 +1343,13 @@ impl PdfViewer {
                 let mut viewport = self.viewport.borrow_mut();
                 *viewport = size;
             }
-            let rects = self
-                .page_rects(
-                    self.translation.scaled(-1.0),
-                    self.scale,
-                    self.fractional_scaling,
-                    size,
-                )
-                .unwrap();
+            let rects = self.page_rects(size).unwrap();
             let viewport_rect =
                 Rect::from_pos_size(Vector::zero(), Vector::new(size.width, size.height));
 
             // Drop pixmap allocations for pages that are no longer visible.
             let visible_indices: Vec<usize> = match mode {
-                BindingMode::Normal => rects
+                BindingMode::Normal | BindingMode::Overview => rects
                     .iter()
                     .enumerate()
                     .filter(|(_, r)| viewport_rect.intersects(r))
@@ -1366,8 +1359,6 @@ impl PdfViewer {
                     let current_page = self.current_page();
                     (0..rects.len()).filter(|i| *i == current_page).collect()
                 }
-                // FIX: Cull and layout properly
-                BindingMode::Overview => rects.iter().enumerate().map(|(i, _)| i).collect(),
             };
 
             self.pixmap_pool
@@ -1388,7 +1379,9 @@ impl PdfViewer {
                     let page_bounds = self.page_bounds[i];
 
                     let effective_scale = match self.layout.layout {
-                        PageLayoutKind::Overview => 1.0 / (page_bounds.size().x / rect_ss.size().x),
+                        PageLayoutKind::Overview => {
+                            overview_render_scale(page_bounds, self.layout.rotation(i), rect_ss)
+                        }
                         _ => self.scale * self.fractional_scaling,
                     };
 
@@ -1729,12 +1722,7 @@ impl PdfViewer {
 
         let viewport = *self.viewport.borrow();
 
-        let Ok(rects) = self.page_rects(
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(rects) = self.page_rects(viewport) else {
             return String::new();
         };
 
@@ -1811,12 +1799,7 @@ impl PdfViewer {
 
     fn visible_links(&self, viewport: iced::Size<f32>) -> Vec<((usize, usize), Rect<f32>)> {
         let mut result = Vec::new();
-        let Ok(page_rects) = self.page_rects(
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
         };
 
@@ -1849,12 +1832,7 @@ impl PdfViewer {
         if !self.show_search_results {
             return result;
         }
-        let Ok(page_rects) = self.page_rects(
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
         };
 
@@ -1888,12 +1866,7 @@ impl PdfViewer {
 
     fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
         let mut result = Vec::new();
-        let Ok(page_rects) = self.page_rects(
-            self.translation.scaled(-1.0),
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
         };
 
@@ -2086,18 +2059,12 @@ impl PdfViewer {
             .unwrap()
     }
 
-    fn page_rects(
-        &self,
-        translation: Vector<f32>,
-        scale: f32,
-        fractional_scale: f32,
-        viewport: Size<f32>,
-    ) -> Result<Vec<Rect<f32>>> {
+    fn page_rects(&self, viewport: Size<f32>) -> Result<Vec<Rect<f32>>> {
         let mut rects = self.layout.pages_rects(
             &self.page_bounds,
-            translation,
-            scale,
-            fractional_scale,
+            -self.translation,
+            self.scale,
+            self.fractional_scaling,
             viewport,
         )?;
         if self.layout.layout == PageLayoutKind::Overview {
@@ -2109,14 +2076,7 @@ impl PdfViewer {
     }
 
     fn page_screen_center(&self, page_idx: usize, viewport: Size<f32>) -> Option<Vector<f32>> {
-        let rects = self
-            .page_rects(
-                -self.translation,
-                self.scale,
-                self.fractional_scaling,
-                viewport,
-            )
-            .ok()?;
+        let rects = self.page_rects(viewport).ok()?;
         rects.get(page_idx).map(Rect::center)
     }
 
@@ -2126,17 +2086,12 @@ impl PdfViewer {
     /// thumbnail in the target direction, which lands on the column nearest the
     /// current one when rows are uneven. Does nothing when not in the overview
     /// layout or when already at an edge.
-    pub fn move_overview_selection(&mut self, direction: OverviewMoveDirection) {
+    pub fn move_overview_selection(&mut self, direction: MoveDirection) {
         if self.layout.layout != PageLayoutKind::Overview {
             return;
         }
         let viewport = *self.viewport.borrow();
-        let Ok(rects) = self.page_rects(
-            -self.translation,
-            self.scale,
-            self.fractional_scaling,
-            viewport,
-        ) else {
+        let Ok(rects) = self.page_rects(viewport) else {
             return;
         };
         self.overview_page_idx = self.overview_page_idx.min(rects.len().saturating_sub(1));
@@ -2152,19 +2107,19 @@ impl PdfViewer {
             }
             let candidate_center = rect.center();
             let in_direction = match direction {
-                OverviewMoveDirection::Left => {
+                MoveDirection::Left => {
                     // Same visual row: the vertical ranges of the thumbnails overlap.
                     rect.x0.y < current_rect.x1.y
                         && rect.x1.y > current_rect.x0.y
                         && candidate_center.x < center.x
                 }
-                OverviewMoveDirection::Right => {
+                MoveDirection::Right => {
                     rect.x0.y < current_rect.x1.y
                         && rect.x1.y > current_rect.x0.y
                         && candidate_center.x > center.x
                 }
-                OverviewMoveDirection::Up => candidate_center.y < center.y,
-                OverviewMoveDirection::Down => candidate_center.y > center.y,
+                MoveDirection::Up => candidate_center.y < center.y,
+                MoveDirection::Down => candidate_center.y > center.y,
             };
             if !in_direction {
                 continue;
@@ -2177,12 +2132,6 @@ impl PdfViewer {
 
         if let Some((idx, _)) = best {
             self.overview_page_idx = idx;
-            let _ = self.page_rects(
-                -self.translation,
-                self.scale,
-                self.fractional_scaling,
-                viewport,
-            );
         }
     }
 
@@ -2299,6 +2248,20 @@ mod tests {
     use std::path::PathBuf;
     use crate::pdf::find_search_matches;
     use super::*;
+
+    #[test]
+    fn overview_render_scale_accounts_for_page_rotation() {
+        let page_bounds = Rect::from_pos_size(Vector::zero(), Vector::new(612.0, 792.0));
+        let rect_ss =
+            Rect::from_pos_size(Vector::zero(), Vector::new(100.0, 100.0 * 612.0 / 792.0));
+        let rotation = PageRotation::Deg90;
+
+        let scale = overview_render_scale(page_bounds, rotation, rect_ss);
+        let rotated_size = rotation.rotated_size(page_bounds.size());
+
+        assert!((rotated_size.x * scale - rect_ss.width()).abs() < 1e-3);
+        assert!((rotated_size.y * scale - rect_ss.height()).abs() < 1e-3);
+    }
 
     #[test]
     fn overview_scroll_keeps_selection_in_safe_zone_without_recentering() {

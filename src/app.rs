@@ -29,14 +29,16 @@ use tracing::error;
 use crate::{
     CONFIG,
     bookmarks::{BookmarkMessage, BookmarkStore},
-    config::{BindingMode, MOVE_STEP, MouseAction, MouseButton, MouseInput, MouseModifiers},
+    config::{
+        BindingMode, MOVE_STEP, MoveDirection, MouseAction, MouseButton, MouseInput, MouseModifiers,
+    },
     geometry::Vector,
     icons,
     jumplist::{JumpLocation, Jumplist},
     pdf::{
         PdfMessage, SearchMethod,
         page_layout::PageLayoutKind,
-        widget::{OutlineItem, OverviewMoveDirection, PdfViewer},
+        widget::{OutlineItem, PdfViewer},
     },
     platform_specific,
     recent_files::RecentFiles,
@@ -153,10 +155,9 @@ pub enum AppMessage {
     OpenSearch,
     CloseSearch,
     ToggleSearchMethod,
-    MoveUp,
-    MoveDown,
-    MoveLeft,
-    MoveRight,
+    #[strum(disabled)]
+    #[serde(skip)]
+    Move(MoveDirection),
 }
 
 impl App {
@@ -310,16 +311,7 @@ impl App {
                     iced::Task::none()
                 }
             }
-            msg @ (AppMessage::MoveUp
-            | AppMessage::MoveDown
-            | AppMessage::MoveLeft
-            | AppMessage::MoveRight) => {
-                let direction = match msg {
-                    AppMessage::MoveUp => OverviewMoveDirection::Up,
-                    AppMessage::MoveDown => OverviewMoveDirection::Down,
-                    AppMessage::MoveLeft => OverviewMoveDirection::Left,
-                    _ => OverviewMoveDirection::Right,
-                };
+            AppMessage::Move(direction) => {
                 if !self.pdfs.is_empty()
                     && CONFIG.read().unwrap().binding_mode == BindingMode::Overview
                 {
@@ -328,13 +320,13 @@ impl App {
                     self.pdfs[self.pdf_idx].move_overview_selection(direction);
                     iced::Task::none()
                 } else {
-                    let (x, y) = match direction {
-                        OverviewMoveDirection::Up => (0.0, -MOVE_STEP),
-                        OverviewMoveDirection::Down => (0.0, MOVE_STEP),
-                        OverviewMoveDirection::Left => (-MOVE_STEP, 0.0),
-                        OverviewMoveDirection::Right => (MOVE_STEP, 0.0),
+                    let vector = match direction {
+                        MoveDirection::Up => Vector::new(0.0, -MOVE_STEP),
+                        MoveDirection::Down => Vector::new(0.0, MOVE_STEP),
+                        MoveDirection::Left => Vector::new(-MOVE_STEP, 0.0),
+                        MoveDirection::Right => Vector::new(MOVE_STEP, 0.0),
                     };
-                    iced::Task::done(AppMessage::PdfMessage(PdfMessage::Move(Vector::new(x, y))))
+                    iced::Task::done(AppMessage::PdfMessage(PdfMessage::Move(vector)))
                 }
             }
             AppMessage::OpenNewFileFinder => iced::Task::perform(
