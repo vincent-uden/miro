@@ -448,6 +448,12 @@ impl App {
                 if self.search_open && self.search_hover {
                     iced::Task::none()
                 } else if !self.pdfs.is_empty()
+                    && button == MouseButton::Left
+                    && CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                    && self.pdfs[self.pdf_idx].is_pointer_over_viewport()
+                {
+                    iced::Task::done(AppMessage::OverviewSelect)
+                } else if !self.pdfs.is_empty()
                     && let Some(action) = self.get_mouse_action(button)
                 {
                     self.pdfs[self.pdf_idx]
@@ -534,7 +540,27 @@ impl App {
             }
             AppMessage::CloseActiveTab => iced::Task::done(AppMessage::CloseTab(self.pdf_idx)),
             AppMessage::Scroll(delta) => {
-                if !self.pdfs.is_empty() {
+                if self.pdfs.is_empty() {
+                    iced::Task::none()
+                } else if CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                    && !self.pdfs[self.pdf_idx].is_pointer_over_viewport()
+                {
+                    iced::Task::none()
+                } else if CONFIG.read().unwrap().binding_mode == BindingMode::Overview
+                    && !self.ctrl_pressed
+                    && !self.shift_pressed
+                {
+                    match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. } => {
+                            self.pdfs[self.pdf_idx].scroll_overview_lines(y);
+                        }
+                        iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                            let sensitivity = CONFIG.read().unwrap().trackpad_sensitivity;
+                            self.pdfs[self.pdf_idx].scroll_overview_pixels(y * sensitivity);
+                        }
+                    }
+                    iced::Task::none()
+                } else {
                     match delta {
                         iced::mouse::ScrollDelta::Lines { y, .. } => {
                             let button = if y > 0.0 {
@@ -560,8 +586,6 @@ impl App {
                                 .map(AppMessage::PdfMessage)
                         }
                     }
-                } else {
-                    iced::Task::none()
                 }
             }
             AppMessage::Exit => exit(),

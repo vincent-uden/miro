@@ -65,6 +65,7 @@ pub struct OutlineItem {
 const MIN_SELECTION: f32 = 5.0;
 const MIN_CLICK_DISTANCE: f32 = 5.0;
 const OVERVIEW_SCROLL_MARGIN: f32 = 64.0;
+const OVERVIEW_SCROLL_STEP_PIXELS: f32 = 80.0;
 
 /// Scroll the overview grid just enough to keep the selected thumbnail inside a vertical safe
 /// zone. `scroll_y` is measured in screen pixels from the top-padded start of the content.
@@ -772,6 +773,8 @@ pub struct PdfViewer {
     overview_page_idx: usize,
     /// Screen-pixel scroll offset for keeping the overview selection in its safe zone.
     overview_scroll_y: Cell<f32>,
+    /// Fractional page movement accumulated from trackpad scrolling.
+    overview_scroll_remainder: f32,
 }
 
 impl Drop for PdfViewer {
@@ -906,6 +909,7 @@ impl PdfViewer {
             active_comment: None,
             overview_page_idx: 0,
             overview_scroll_y: Cell::new(0.0),
+            overview_scroll_remainder: 0.0,
         })
     }
 }
@@ -976,6 +980,7 @@ impl PdfViewer {
                     // currently on screen.
                     self.overview_page_idx = self.current_page();
                     self.overview_scroll_y.set(0.0);
+                    self.overview_scroll_remainder = 0.0;
                 }
                 self.layout.layout = page_layout;
             }
@@ -985,6 +990,7 @@ impl PdfViewer {
                 }
                 self.layout.layout = self.layout_before_overview;
                 self.overview_scroll_y.set(0.0);
+                self.overview_scroll_remainder = 0.0;
                 if navigate {
                     let idx = self.overview_page_idx.min(page_count.saturating_sub(1));
                     if let Ok(translation) = self.layout.translation_for_page(
@@ -1057,6 +1063,7 @@ impl PdfViewer {
             }
             PdfMessage::MouseMoved(vector) => {
                 let old_local = self.local_mouse_pos();
+                let pointer_moved = vector != self.mouse_pos;
                 self.mouse_pos = vector;
                 let new_local = self.local_mouse_pos();
                 match self.mouse_interaction {
@@ -1069,6 +1076,17 @@ impl PdfViewer {
                     }
                     MouseInteraction::Selecting => {
                         self.selection_end = Some(new_local);
+                    }
+                }
+                // Ignore duplicate cursor events so keyboard selection isn't reset under a
+                // stationary pointer.
+                if pointer_moved && self.layout.layout == PageLayoutKind::Overview {
+                    let viewport = *self.viewport.borrow();
+                    if let Ok(rects) = self.page_rects(viewport)
+                        && let Some(page_idx) =
+                            rects.iter().position(|rect| rect.contains(new_local))
+                    {
+                        self.overview_page_idx = page_idx;
                     }
                 }
                 self.update_hover_state();
@@ -2048,6 +2066,15 @@ impl PdfViewer {
         format!("({} / {})", current, total)
     }
 
+    pub fn is_pointer_over_viewport(&self) -> bool {
+        let local_mouse = self.local_mouse_pos();
+        let viewport = *self.viewport.borrow();
+        local_mouse.x >= 0.0
+            && local_mouse.y >= 0.0
+            && local_mouse.x < viewport.width
+            && local_mouse.y < viewport.height
+    }
+
     pub fn current_page(&self) -> usize {
         if self.layout.layout == PageLayoutKind::Overview {
             return self
@@ -2078,6 +2105,42 @@ impl PdfViewer {
     fn page_screen_center(&self, page_idx: usize, viewport: Size<f32>) -> Option<Vector<f32>> {
         let rects = self.page_rects(viewport).ok()?;
         rects.get(page_idx).map(Rect::center)
+    }
+
+    pub fn scroll_overview_lines(&mut self, lines: f32) {
+        self.scroll_overview_steps(-lines);
+    }
+
+    pub fn scroll_overview_pixels(&mut self, pixels: f32) {
+        self.scroll_overview_steps(pixels / OVERVIEW_SCROLL_STEP_PIXELS);
+    }
+
+    fn scroll_overview_steps(&mut self, steps: f32) {
+        if self.layout.layout != PageLayoutKind::Overview || !steps.is_finite() {
+            return;
+        }
+
+        self.overview_scroll_remainder =
+            (self.overview_scroll_remainder + steps.clamp(-10.0, 10.0)).clamp(-10.0, 10.0);
+        while self.overview_scroll_remainder.abs() >= 1.0 {
+            let step = if self.overview_scroll_remainder > 0.0 {
+                1.0
+            } else {
+                -1.0
+            };
+            let previous_page = self.overview_page_idx;
+            let last_page = self.page_bounds.len().saturating_sub(1);
+            self.overview_page_idx = if step > 0.0 {
+                previous_page.saturating_add(1).min(last_page)
+            } else {
+                previous_page.saturating_sub(1)
+            };
+            if self.overview_page_idx == previous_page {
+                self.overview_scroll_remainder = 0.0;
+                break;
+            }
+            self.overview_scroll_remainder -= step;
+        }
     }
 
     /// Moves the highlighted overview thumbnail one step in `direction`.
