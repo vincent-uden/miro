@@ -192,9 +192,9 @@ pub enum PdfMessage {
     HalfPageUp,
     HalfPageDown,
     SetPage(usize),
-    SetTranslation(Vector<f32>),
+    SetTranslation(Vector<f64>),
     /// Translation and scale
-    SetLocation(Vector<f32>, f32),
+    SetLocation(Vector<f64>, f32),
     SetLayout(PageLayoutKind),
     /// Leave overview mode and restore the layout that was active before it was
     /// opened. When `true`, also navigate to the selected overview page.
@@ -208,7 +208,7 @@ pub enum PdfMessage {
     ZoomHome,
     ZoomFit,
     /// Move some distance in Document space
-    Move(Vector<f32>),
+    Move(Vector<f64>),
     MouseMoved(Vector<f32>),
     /// A [MouseAction] and whether it's pressed (true) or released (false)
     MouseAction(MouseAction, bool),

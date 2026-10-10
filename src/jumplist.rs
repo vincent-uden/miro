@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::Vector;
 use std::{collections::VecDeque, path::PathBuf};
 
-const LOCATION_TOLERANCE_PX: f32 = 5.0;
+const LOCATION_TOLERANCE_PX: f64 = 5.0;
 const JUMPLIST_CAPACITY: usize = 100;
 
 // FIX: We cant just use translation and scale since they are layout dependent. Translation, scale
@@ -12,7 +12,7 @@ const JUMPLIST_CAPACITY: usize = 100;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct JumpLocation {
     pub pdf_path: PathBuf,
-    pub translation: Vector<f32>,
+    pub translation: Vector<f64>,
     pub scale: f32,
 }
 

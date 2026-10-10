@@ -126,6 +126,30 @@ impl From<Vector<f32>> for Vector<i32> {
     }
 }
 
+impl From<Vector<f32>> for Vector<f64> {
+    fn from(value: Vector<f32>) -> Self {
+        Vector {
+            x: value.x as f64,
+            y: value.y as f64,
+        }
+    }
+}
+
+impl From<Rect<f64>> for Rect<f32> {
+    fn from(value: Rect<f64>) -> Self {
+        Rect {
+            x0: Vector {
+                x: value.x0.x as f32,
+                y: value.x0.y as f32,
+            },
+            x1: Vector {
+                x: value.x1.x as f32,
+                y: value.x1.y as f32,
+            },
+        }
+    }
+}
+
 impl From<Vector<f32>> for iced::Point {
     fn from(val: Vector<f32>) -> Self {
         iced::Point::new(val.x, val.y)

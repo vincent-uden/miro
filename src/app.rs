@@ -326,7 +326,7 @@ impl App {
                         MoveDirection::Left => Vector::new(-MOVE_STEP, 0.0),
                         MoveDirection::Right => Vector::new(MOVE_STEP, 0.0),
                     };
-                    iced::Task::done(AppMessage::PdfMessage(PdfMessage::Move(vector)))
+                    iced::Task::done(AppMessage::PdfMessage(PdfMessage::Move(vector.into())))
                 }
             }
             AppMessage::OpenNewFileFinder => iced::Task::perform(
@@ -582,7 +582,7 @@ impl App {
                             let sensitivity = CONFIG.read().unwrap().trackpad_sensitivity;
                             let move_vec = Vector::new(-x * sensitivity, y * sensitivity);
                             self.pdfs[self.pdf_idx]
-                                .update(PdfMessage::Move(move_vec))
+                                .update(PdfMessage::Move(move_vec.into()))
                                 .map(AppMessage::PdfMessage)
                         }
                     }

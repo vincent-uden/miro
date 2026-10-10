@@ -714,7 +714,7 @@ pub struct PdfViewer {
     /// it to avoid allocating multi-megabyte buffers on every frame during zoom or pan.
     buffer_pool: BufferPool,
 
-    pub translation: Vector<f32>,
+    pub translation: Vector<f64>,
     pub scale: f32,
     fractional_scaling: f32,
 
@@ -933,7 +933,7 @@ impl PdfViewer {
                     )
                     .unwrap();
 
-                self.translation.y += next.center().y - current.center().y;
+                self.translation.y += (next.center().y - current.center().y) as f64;
             }
             PdfMessage::PreviousPage => {
                 let current = self
@@ -949,7 +949,7 @@ impl PdfViewer {
                     )
                     .unwrap();
 
-                self.translation.y += prev.center().y - current.center().y;
+                self.translation.y += (prev.center().y - current.center().y) as f64;
             }
             PdfMessage::SetPage(idx) => {
                 if idx < page_count
@@ -1071,7 +1071,8 @@ impl PdfViewer {
                     MouseInteraction::Panning => {
                         out = iced::Task::done(PdfMessage::Move(
                             (old_local - new_local)
-                                .scaled(1.0 / (self.scale * self.fractional_scaling)),
+                                .scaled(1.0 / (self.scale * self.fractional_scaling))
+                                .into(),
                         ))
                     }
                     MouseInteraction::Selecting => {
@@ -1121,16 +1122,28 @@ impl PdfViewer {
                             out = iced::Task::done(PdfMessage::ZoomOut);
                         }
                         MouseAction::MoveUp => {
-                            out = iced::Task::done(PdfMessage::Move(Vector::new(0.0, -MOVE_STEP)));
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(
+                                0.0,
+                                -(MOVE_STEP as f64),
+                            )));
                         }
                         MouseAction::MoveDown => {
-                            out = iced::Task::done(PdfMessage::Move(Vector::new(0.0, MOVE_STEP)));
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(
+                                0.0,
+                                MOVE_STEP as f64,
+                            )));
                         }
                         MouseAction::MoveLeft => {
-                            out = iced::Task::done(PdfMessage::Move(Vector::new(-MOVE_STEP, 0.0)));
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(
+                                -(MOVE_STEP as f64),
+                                0.0,
+                            )));
                         }
                         MouseAction::MoveRight => {
-                            out = iced::Task::done(PdfMessage::Move(Vector::new(MOVE_STEP, 0.0)));
+                            out = iced::Task::done(PdfMessage::Move(Vector::new(
+                                MOVE_STEP as f64,
+                                0.0,
+                            )));
                         }
                     }
                 } else {
@@ -1240,28 +1253,28 @@ impl PdfViewer {
                 let vp = self.viewport.borrow();
                 out = iced::Task::done(PdfMessage::Move(Vector::new(
                     0.0,
-                    -vp.height / (self.scale * self.fractional_scaling),
+                    (-(vp.height / (self.scale * self.fractional_scaling))) as f64,
                 )));
             }
             PdfMessage::PageDown => {
                 let vp = self.viewport.borrow();
                 out = iced::Task::done(PdfMessage::Move(Vector::new(
                     0.0,
-                    vp.height / (self.scale * self.fractional_scaling),
+                    (vp.height / (self.scale * self.fractional_scaling)) as f64,
                 )));
             }
             PdfMessage::HalfPageUp => {
                 let vp = self.viewport.borrow();
                 out = iced::Task::done(PdfMessage::Move(Vector::new(
                     0.0,
-                    -vp.height / (self.scale * self.fractional_scaling * 2.0),
+                    (-(vp.height / (self.scale * self.fractional_scaling * 2.0))) as f64,
                 )));
             }
             PdfMessage::HalfPageDown => {
                 let vp = self.viewport.borrow();
                 out = iced::Task::done(PdfMessage::Move(Vector::new(
                     0.0,
-                    vp.height / (self.scale * self.fractional_scaling * 2.0),
+                    (vp.height / (self.scale * self.fractional_scaling * 2.0)) as f64,
                 )));
             }
             PdfMessage::HighlightSearchResults => {
@@ -1290,7 +1303,8 @@ impl PdfViewer {
                         });
                         let match_center = rotated_match.center();
                         // Center vertically.
-                        self.translation.y = base_translation.y + (match_center.y - page_center.y);
+                        self.translation.y =
+                            base_translation.y + (match_center.y - page_center.y) as f64;
                         // Horizontal: adjust minimally from current pan to keep match visible.
                         let viewport = *self.viewport.borrow();
                         let effective_scale = self.scale * self.fractional_scaling;
@@ -1299,11 +1313,11 @@ impl PdfViewer {
                         let upper_bound = rotated_match.x0.x - page_center.x + half_viewport;
                         if lower_bound > upper_bound {
                             // Wider than viewport: center horizontally.
-                            self.translation.x = match_center.x - page_center.x;
-                        } else if self.translation.x < lower_bound {
-                            self.translation.x = lower_bound;
-                        } else if self.translation.x > upper_bound {
-                            self.translation.x = upper_bound;
+                            self.translation.x = (match_center.x - page_center.x) as f64;
+                        } else if self.translation.x < lower_bound as f64 {
+                            self.translation.x = lower_bound as f64;
+                        } else if self.translation.x > upper_bound as f64 {
+                            self.translation.x = upper_bound as f64;
                         }
                     }
                 }
@@ -2213,7 +2227,7 @@ impl PdfViewer {
             && effective_scale.is_finite()
             && effective_scale.abs() > f32::EPSILON
         {
-            self.translation += (after - before).scaled(1.0 / effective_scale);
+            self.translation += (after - before).scaled(1.0 / effective_scale).into();
         }
     }
 

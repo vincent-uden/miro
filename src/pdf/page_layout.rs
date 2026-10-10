@@ -86,7 +86,7 @@ pub struct PageLayout {
 }
 
 impl PageLayout {
-    const GAP: f32 = 10.0;
+    const GAP: f64 = 10.0;
 
     pub fn new(layout: PageLayoutKind) -> Self {
         Self {
@@ -135,23 +135,23 @@ impl PageLayout {
     }
 
     fn append_spread_rows(
-        out: &mut Vec<Rect<f32>>,
-        page_sizes: &[Vector<f32>],
-        center: Vector<f32>,
-        effective_scale: f32,
-        previous_row_height: Option<f32>,
+        out: &mut Vec<Rect<f64>>,
+        page_sizes: &[Vector<f64>],
+        center: Vector<f64>,
+        effective_scale: f64,
+        previous_row_height: Option<f64>,
     ) {
         let mut row_center_y = center.y;
         let mut previous_row_height = previous_row_height;
         for row in page_sizes.chunks(2) {
-            let row_height = row.iter().map(|size| size.y).fold(0.0, f32::max);
+            let row_height = row.iter().map(|size| size.y).fold(0.0, f64::max);
             if let Some(previous_height) = previous_row_height {
                 row_center_y +=
                     (previous_height / 2.0 + Self::GAP + row_height / 2.0) * effective_scale;
             }
 
-            let row_width = row.iter().map(|size| size.x).sum::<f32>()
-                + Self::GAP * row.len().saturating_sub(1) as f32;
+            let row_width = row.iter().map(|size| size.x).sum::<f64>()
+                + Self::GAP * row.len().saturating_sub(1) as f64;
             let mut page_x = center.x - row_width * effective_scale / 2.0;
             for size in row {
                 let screen_size = size.scaled(effective_scale);
@@ -170,25 +170,26 @@ impl PageLayout {
     /// of (0,0) should result in the first page row being centered on the screen. Scale is applied
     /// after translation with respect to the center of the screen. Thus zooming doesn't move the
     /// doucment.
-    pub fn pages_rects(
+    fn pages_rects_f64(
         &self,
         page_bounds: &[Rect<f32>],
-        translation: Vector<f32>, // In document space
+        translation: Vector<f64>, // In document space
         scale: f32,
         fractional_scale: f32,
         viewport: Size<f32>,
-    ) -> Result<Vec<Rect<f32>>> {
+    ) -> Result<Vec<Rect<f64>>> {
         let page_sizes: Vec<_> = page_bounds
             .iter()
             .enumerate()
             .map(|(i, bounds)| self.page_rect(i, *bounds).size())
+            .map(|size: Vector<f32>| size.into())
             .collect();
-        let mut out: Vec<Rect<f32>> = vec![];
-        let vsize: Vector<_> = viewport.into();
-        let effective_scale = scale * fractional_scale;
+        let mut out: Vec<Rect<f64>> = vec![];
+        let vsize = Vector::new(viewport.width as f64, viewport.height as f64);
+        let effective_scale = (scale * fractional_scale) as f64;
         match self.layout {
             PageLayoutKind::SinglePage => {
-                let mut pos: Vector<f32> = Vector::zero();
+                let mut pos: Vector<f64> = Vector::zero();
                 let mut prev_bounds = Rect::default();
                 for (i, size) in page_sizes.iter().copied().enumerate() {
                     let mut bounds = Rect::from_pos_size(Vector::zero(), size);
@@ -213,7 +214,7 @@ impl PageLayout {
             }
             PageLayoutKind::DoublePageTitlePage => {
                 let Some(first_size) = page_sizes.first().copied() else {
-                    return Ok(out);
+                    return Ok(out.into_iter().collect());
                 };
                 let center =
                     Vector::new(vsize.x * 0.5, vsize.y * 0.5) + translation.scaled(effective_scale);
@@ -231,7 +232,7 @@ impl PageLayout {
                 );
             }
             PageLayoutKind::Presentation => {
-                let mut pos: Vector<f32> = Vector::zero();
+                let mut pos: Vector<f64> = Vector::zero();
                 let mut prev_bounds = Rect::default();
                 for (i, size) in page_sizes.iter().copied().enumerate() {
                     let mut bounds = Rect::from_pos_size(Vector::zero(), size);
@@ -272,7 +273,7 @@ impl PageLayout {
             PageLayoutKind::Overview => {
                 // In screen pixels TODO: Logical or physical?
                 let max_page_size = 100.0;
-                let mut pos: Vector<f32> = Vector::zero();
+                let mut pos: Vector<f64> = Vector::zero();
                 for size in page_sizes.iter().copied() {
                     let proportion = max_page_size / size.x.max(size.y);
                     let bounds_size = size.scaled(proportion);
@@ -299,6 +300,24 @@ impl PageLayout {
             }
         }
         Ok(out)
+    }
+
+    /// [Self::pages_rects_f64] quantized to f32 for the render path (iced geometry is f32).
+    /// Fine for rendering: a visible page's rect is near the viewport, so the f64 math above
+    /// cancels the huge document offset before this conversion.
+    pub fn pages_rects(
+        &self,
+        page_bounds: &[Rect<f32>],
+        translation: Vector<f64>,
+        scale: f32,
+        fractional_scale: f32,
+        viewport: Size<f32>,
+    ) -> Result<Vec<Rect<f32>>> {
+        Ok(self
+            .pages_rects_f64(page_bounds, translation, scale, fractional_scale, viewport)?
+            .into_iter()
+            .map(Rect::from)
+            .collect())
     }
 
     /// Returns the inclusive range of page indices that are laid out side by side in the same
@@ -338,8 +357,8 @@ impl PageLayout {
         scale: f32,
         fractional_scale: f32,
         viewport: Size<f32>,
-    ) -> Result<Rect<f32>> {
-        let rects = self.pages_rects(
+    ) -> Result<Rect<f64>> {
+        let rects = self.pages_rects_f64(
             page_bounds,
             Vector::zero(),
             scale,
@@ -366,7 +385,7 @@ impl PageLayout {
         page_idx: usize,
         fractional_scale: f32,
         viewport: Size<f32>,
-    ) -> Result<(f32, Vector<f32>)> {
+    ) -> Result<(f32, Vector<f64>)> {
         if viewport.width <= 0.0 || viewport.height <= 0.0 {
             return Err(anyhow!("Cannot fit pages in a zero-sized viewport"));
         }
@@ -376,13 +395,15 @@ impl PageLayout {
         if size.x <= 0.0 || size.y <= 0.0 {
             return Err(anyhow!("Cannot fit a spread with zero size"));
         }
-        let effective_scale = (viewport.width / size.x).min(viewport.height / size.y);
-        let scale = effective_scale / fractional_scale;
+        let effective_scale =
+            ((viewport.width as f64) / size.x).min((viewport.height as f64) / size.y);
+        let scale = (effective_scale / fractional_scale as f64) as f32;
 
         // Recompute at the target scale since scaling around each page's center can shift the
         // bounding box when the pages have different sizes.
         let spread = self.spread_rect(page_bounds, page_idx, scale, fractional_scale, viewport)?;
-        let viewport_center = Vector::new(viewport.width, viewport.height).scaled(0.5);
+        let viewport_center =
+            Vector::new(viewport.width as f64, viewport.height as f64).scaled(0.5);
         // `pages_rects` is called with `-translation` when rendering, so a spread below the
         // viewport center needs a positive translation (same convention as
         // `translation_for_page`).
@@ -399,8 +420,8 @@ impl PageLayout {
         fractional_scale: f32,
         page_idx: usize,
         viewport: Size<f32>,
-    ) -> Result<Vector<f32>> {
-        let rects = self.pages_rects(
+    ) -> Result<Vector<f64>> {
+        let rects = self.pages_rects_f64(
             page_bounds,
             Vector::zero(),
             scale,
@@ -410,19 +431,20 @@ impl PageLayout {
         let rect = rects
             .get(page_idx)
             .ok_or(anyhow!("Page index {page_idx} out of bounds"))?;
-        let viewport_center = Vector::new(viewport.width, viewport.height).scaled(0.5);
-        Ok((rect.center() - viewport_center).scaled(1.0 / (scale * fractional_scale)))
+        let viewport_center =
+            Vector::new(viewport.width as f64, viewport.height as f64).scaled(0.5);
+        Ok((rect.center() - viewport_center).scaled(1.0 / ((scale * fractional_scale) as f64)))
     }
 
     pub fn current_page_index(
         &self,
         page_bounds: &[Rect<f32>],
-        translation: Vector<f32>,
+        translation: Vector<f64>,
         viewport: Size<f32>,
     ) -> Result<usize> {
-        let rects = self.pages_rects(page_bounds, -translation, 1.0, 1.0, viewport)?;
+        let rects = self.pages_rects_f64(page_bounds, -translation, 1.0, 1.0, viewport)?;
         let mut closest = 0;
-        let viewport: Vector<_> = viewport.into();
+        let viewport: Vector<f64> = Vector::new(viewport.width as f64, viewport.height as f64);
         if rects.is_empty() {
             return Err(anyhow!("There are no pages"));
         }
@@ -439,7 +461,7 @@ impl PageLayout {
     pub fn center_of_page(
         &self,
         page_bounds: &[Rect<f32>],
-        translation: Vector<f32>,
+        translation: Vector<f64>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
         let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
@@ -450,7 +472,7 @@ impl PageLayout {
     pub fn center_of_page_above(
         &self,
         page_bounds: &[Rect<f32>],
-        translation: Vector<f32>,
+        translation: Vector<f64>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
         let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
@@ -469,7 +491,7 @@ impl PageLayout {
     pub fn center_of_page_below(
         &self,
         page_bounds: &[Rect<f32>],
-        translation: Vector<f32>,
+        translation: Vector<f64>,
         viewport: Size<f32>,
     ) -> Result<Rect<f32>> {
         let rects = self.pages_rects(page_bounds, translation, 1.0, 1.0, viewport)?;
