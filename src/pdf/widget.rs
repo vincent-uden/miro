@@ -67,25 +67,6 @@ struct AnnotationCommentData {
     in_reply_to: Option<i32>,
 }
 
-fn root_annotation_index(
-    annotation_index: usize,
-    annotations: &[AnnotationCommentData],
-    annotations_by_id: &HashMap<i32, usize>,
-) -> Option<usize> {
-    let mut current = annotation_index;
-    let mut visited = HashSet::new();
-
-    loop {
-        if !visited.insert(current) {
-            return None;
-        }
-        let Some(parent_id) = annotations[current].in_reply_to else {
-            return Some(current);
-        };
-        current = *annotations_by_id.get(&parent_id)?;
-    }
-}
-
 fn build_comment_subtree(
     index: usize,
     annotations: &[AnnotationCommentData],
@@ -140,9 +121,6 @@ fn build_comments(annotations: Vec<AnnotationCommentData>) -> Vec<Comment> {
         .enumerate()
         .filter_map(|(index, annotation)| annotation.object_id.map(|id| (id, index)))
         .collect();
-    let roots: Vec<Option<usize>> = (0..annotations.len())
-        .map(|index| root_annotation_index(index, &annotations, &annotations_by_id))
-        .collect();
 
     let mut children_by_parent = vec![Vec::new(); annotations.len()];
     for (index, annotation) in annotations.iter().enumerate() {
@@ -157,28 +135,20 @@ fn build_comments(annotations: Vec<AnnotationCommentData>) -> Vec<Comment> {
         }
     }
 
-    let mut has_replies = vec![false; annotations.len()];
-    for (index, root) in roots.iter().enumerate() {
-        if let Some(root) = root
-            && *root != index
-            && annotations[index].content.is_some()
-        {
-            has_replies[*root] = true;
-        }
-    }
-
     let mut comments = Vec::new();
     let mut visited = HashSet::new();
     for (index, annotation) in annotations.iter().enumerate() {
-        let is_root = roots[index] == Some(index);
-        let is_text_comment =
-            annotation.annotation_type == PdfAnnotationType::Text && annotation.content.is_some();
-        if !is_root || (!is_text_comment && !has_replies[index]) || annotation.bounds.is_none() {
+        if annotation.in_reply_to.is_some() || annotation.bounds.is_none() {
             continue;
         }
-        if let Some(comment) =
+        let Some(comment) =
             build_comment_subtree(index, &annotations, &children_by_parent, &mut visited)
-        {
+        else {
+            continue;
+        };
+        let is_text_comment =
+            annotation.annotation_type == PdfAnnotationType::Text && annotation.content.is_some();
+        if is_text_comment || !comment.replies.is_empty() {
             comments.push(comment);
         }
     }
@@ -1878,7 +1848,7 @@ impl PdfViewer {
         .width(iced::Length::Fill)
         .max_height(max_thread_height);
 
-        let popup = widget::container(widget::column![thread].spacing(8.0))
+        let popup = widget::container(thread)
             .width(popup_width)
             .padding(16.0)
             .style(|theme: &iced::Theme| widget::container::Style {
@@ -3052,6 +3022,35 @@ mod tests {
         assert_eq!(
             comments[0].replies[1].content.as_deref(),
             Some("sibling reply")
+        );
+    }
+
+    #[test]
+    fn test_orphaned_and_cyclic_replies_are_preserved() {
+        let annotation = |object_id, in_reply_to, content: &str| AnnotationCommentData {
+            page_idx: 0,
+            bounds: Some(mupdf::Rect::new(0.0, 0.0, 10.0, 10.0)),
+            content: Some(content.to_string()),
+            author: None,
+            annotation_type: PdfAnnotationType::Text,
+            object_id: Some(object_id),
+            in_reply_to,
+        };
+        let comments = build_comments(vec![
+            annotation(30, None, "standalone"),
+            annotation(31, Some(999), "orphan"),
+            annotation(32, Some(33), "cycle root"),
+            annotation(33, Some(32), "cycle reply"),
+        ]);
+
+        assert_eq!(comments.len(), 3);
+        assert_eq!(comments[0].content.as_deref(), Some("standalone"));
+        assert_eq!(comments[1].content.as_deref(), Some("orphan"));
+        assert_eq!(comments[2].content.as_deref(), Some("cycle root"));
+        assert_eq!(comments[2].replies.len(), 1);
+        assert_eq!(
+            comments[2].replies[0].content.as_deref(),
+            Some("cycle reply")
         );
     }
 
