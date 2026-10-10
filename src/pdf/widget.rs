@@ -51,8 +51,12 @@ struct Comment {
     id: usize,
     page_idx: usize,
     bounds: Option<mupdf::Rect>,
+    /// Bounding rects of the individual quad points of quad-based markup
+    /// annotations (highlights, strike-outs, ...); empty for rect-based ones.
+    quads: Vec<mupdf::Rect>,
     content: Option<String>,
     author: Option<String>,
+    annotation_type: PdfAnnotationType,
     replies: Vec<Comment>,
 }
 
@@ -65,6 +69,7 @@ struct AnnotationCommentData {
     annotation_type: PdfAnnotationType,
     object_id: Option<i32>,
     in_reply_to: Option<i32>,
+    quads: Vec<mupdf::Rect>,
 }
 
 fn build_comment_subtree(
@@ -90,8 +95,10 @@ fn build_comment_subtree(
         id: index,
         page_idx: annotation.page_idx,
         bounds: annotation.bounds,
+        quads: annotation.quads.clone(),
         content: annotation.content.clone(),
         author: annotation.author.clone(),
+        annotation_type: annotation.annotation_type,
         replies,
     })
 }
@@ -128,6 +135,38 @@ fn is_commentable(annotation_type: PdfAnnotationType) -> bool {
             | PdfAnnotationType::Squiggly
             | PdfAnnotationType::Ink
     )
+}
+
+/// Annotation types whose visible area is defined by quad points rather than their rect.
+fn is_quad_markup_type(annotation_type: PdfAnnotationType) -> bool {
+    matches!(
+        annotation_type,
+        PdfAnnotationType::Highlight
+            | PdfAnnotationType::Underline
+            | PdfAnnotationType::StrikeOut
+            | PdfAnnotationType::Squiggly
+    )
+}
+
+fn annotation_type_label(annotation_type: PdfAnnotationType) -> &'static str {
+    match annotation_type {
+        PdfAnnotationType::Text => "Sticky note",
+        PdfAnnotationType::Highlight => "Highlight",
+        PdfAnnotationType::Underline => "Underline",
+        PdfAnnotationType::StrikeOut => "Strike-out",
+        PdfAnnotationType::Squiggly => "Squiggly",
+        PdfAnnotationType::Ink => "Ink drawing",
+        _ => "Comment",
+    }
+}
+
+/// Bounding rect of a single quad point.
+fn quad_bounds(quad: mupdf::Quad) -> mupdf::Rect {
+    let min_x = quad.ul.x.min(quad.ur.x).min(quad.ll.x).min(quad.lr.x);
+    let max_x = quad.ul.x.max(quad.ur.x).max(quad.ll.x).max(quad.lr.x);
+    let min_y = quad.ul.y.min(quad.ur.y).min(quad.ll.y).min(quad.lr.y);
+    let max_y = quad.ul.y.max(quad.ur.y).max(quad.ll.y).max(quad.lr.y);
+    mupdf::Rect::new(min_x, min_y, max_x, max_y)
 }
 
 /// Builds reply trees in PDF annotation order; xref IDs are used only to resolve `/IRT` links.
@@ -776,17 +815,19 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
 
         // Draw hovered comment indicator.
         if let Some(comment_idx) = self.viewer.hovered_comment
-            && let Some((_, rect)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx)
+            && let Some((_, rects)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx)
         {
             let mut color = iced::Color::from_rgb(1.0, 0.9, 0.0);
             color.a = 0.25;
-            frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
             let stroke_color = iced::Color::from_rgb(1.0, 0.9, 0.0);
-            frame.stroke_rectangle(
-                rect.x0.into(),
-                rect.size().into(),
-                Stroke::default().with_color(stroke_color).with_width(1.5),
-            );
+            for rect in rects {
+                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
+                frame.stroke_rectangle(
+                    rect.x0.into(),
+                    rect.size().into(),
+                    Stroke::default().with_color(stroke_color).with_width(1.5),
+                );
+            }
         }
 
         vec![frame.into_geometry()]
@@ -977,6 +1018,15 @@ impl PdfViewer {
                         continue;
                     }
 
+                    let quads = if is_quad_markup_type(annotation_type) {
+                        ann.quad_points()
+                            .ok()
+                            .map(|quads| quads.into_iter().map(quad_bounds).collect())
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+
                     let object_id = pdf_obj
                         .as_ref()
                         .and_then(|object| object.as_indirect().ok());
@@ -1003,6 +1053,7 @@ impl PdfViewer {
                         annotation_type,
                         object_id,
                         in_reply_to,
+                        quads,
                     });
                 }
             }
@@ -1851,13 +1902,19 @@ impl PdfViewer {
     ) -> Option<iced::Element<'_, PdfMessage>> {
         let active_idx = self.active_comment?;
         let comment_visible = self.visible_comments(viewport_size);
-        let (_, comment_rect) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
+        let (_, comment_rects) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
 
         const POPUP_MARGIN: f32 = 8.0;
         const POPUP_HEIGHT_WITHOUT_THREAD: f32 = 60.0;
         let popup_width = 280.0_f32.min(viewport_size.width - 16.0).max(120.0);
-        let popup_x = comment_rect.x1.x + 8.0;
-        let popup_y = comment_rect.x0.y;
+        // Anchor to the union of the comment's rects so a multi-quad highlight
+        // doesn't make the popup jump around.
+        let mut anchor = comment_rects[0];
+        for rect in &comment_rects[1..] {
+            anchor = anchor.union(rect);
+        }
+        let popup_x = anchor.x1.x + 8.0;
+        let popup_y = anchor.x0.y;
 
         // Keep the popup's full height available regardless of its anchor position. It is moved
         // upward to fit first; scrolling is only needed when the thread exceeds the viewport.
@@ -2115,7 +2172,7 @@ impl PdfViewer {
         result
     }
 
-    fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
+    fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Vec<Rect<f32>>)> {
         let mut result = Vec::new();
         let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
@@ -2137,14 +2194,30 @@ impl PdfViewer {
                     continue;
                 };
                 let comment_bounds: Rect<f32> = comment_bounds.into();
-                let screen_rect = pdf_rect_to_screen(
-                    comment_bounds,
-                    page_bounds,
-                    *page_rect,
-                    self.layout.rotation(page_idx),
-                );
-                if viewport_rect.intersects(&screen_rect) {
-                    result.push((comment_idx, screen_rect));
+                // For quad-point annotations hit-test each highlighted span
+                // individually, otherwise the union rect would also trigger on
+                // the whitespace between the marked lines.
+                let pdf_rects: Vec<Rect<f32>> = if comment.quads.is_empty() {
+                    vec![comment_bounds]
+                } else {
+                    comment.quads.iter().map(|quad| Rect::from(*quad)).collect()
+                };
+                let screen_rects: Vec<Rect<f32>> = pdf_rects
+                    .iter()
+                    .map(|pdf_rect| {
+                        pdf_rect_to_screen(
+                            *pdf_rect,
+                            page_bounds,
+                            *page_rect,
+                            self.layout.rotation(page_idx),
+                        )
+                    })
+                    .collect();
+                if screen_rects
+                    .iter()
+                    .any(|screen_rect| viewport_rect.intersects(screen_rect))
+                {
+                    result.push((comment_idx, screen_rects));
                 }
             }
         }
@@ -2184,7 +2257,7 @@ impl PdfViewer {
         let visible_comments = self.visible_comments(viewport);
         self.hovered_comment = visible_comments
             .iter()
-            .find(|(_, rect)| rect.contains(local_mouse))
+            .find(|(_, rects)| rects.iter().any(|rect| rect.contains(local_mouse)))
             .map(|(comment_idx, _)| *comment_idx);
     }
 
@@ -3022,6 +3095,7 @@ mod tests {
                 annotation_type,
                 object_id: Some(object_id),
                 in_reply_to,
+                quads: Vec::new(),
             };
         let comments = build_comments(vec![
             annotation(20, None, PdfAnnotationType::Ink, "original ink note"),
@@ -3058,6 +3132,7 @@ mod tests {
             annotation_type: PdfAnnotationType::Text,
             object_id: Some(object_id),
             in_reply_to,
+            quads: Vec::new(),
         };
         let comments = build_comments(vec![
             annotation(30, None, "standalone"),
