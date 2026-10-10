@@ -1043,7 +1043,14 @@ impl PdfViewer {
                         .map(|value| value.to_string())
                         .filter(|value| !value.trim().is_empty());
                     let bounds = ann.rect().ok();
-                    let author = ann.author().ok().flatten().map(|value| value.to_string());
+                    // Empty /T dict entries show up as Some(""); normalize so the
+                    // popup falls back to "Unknown author".
+                    let author = ann
+                        .author()
+                        .ok()
+                        .flatten()
+                        .map(|value| value.to_string())
+                        .filter(|value| !value.trim().is_empty());
 
                     annotation_comments.push(AnnotationCommentData {
                         page_idx,
