@@ -1714,7 +1714,7 @@ impl PdfViewer {
                 interactive_overlay.into(),
             ];
 
-            if let Some(popup) = self.build_comment_popup(size) {
+            if let Some(popup) = self.view_comment_popup(size) {
                 stack_children.push(popup);
             }
 
@@ -1773,29 +1773,36 @@ impl PdfViewer {
         handle
     }
 
-    fn build_comment_node<'a>(&'a self, comment: &'a Comment) -> iced::Element<'a, PdfMessage> {
+    fn view_comment_node<'a>(&'a self, comment: &'a Comment) -> iced::Element<'a, PdfMessage> {
         let has_replies = !comment.replies.is_empty();
         let is_collapsed = self.collapsed_comments.contains(&comment.id);
-        let collapse_control: iced::Element<'_, PdfMessage> = if has_replies {
-            widget::button(widget::text(if is_collapsed { "▸" } else { "▾" }))
-                .padding(2.0)
-                .on_press(PdfMessage::ToggleCommentCollapse(comment.id))
-                .into()
-        } else {
-            widget::space::horizontal()
-                .width(iced::Length::Fixed(0.0))
-                .into()
-        };
         let author = comment.author.as_deref().unwrap_or("Unknown author");
-        let reply_count: iced::Element<'_, PdfMessage> = if is_collapsed && has_replies {
-            widget::text(format!("{} replies", comment.replies.len()))
-                .size(12.0)
-                .into()
+        let reply_count: iced::Element<'_, PdfMessage> = if has_replies {
+            widget::button(
+                widget::text(format!(
+                    "{} {} replies",
+                    if is_collapsed { "[+]" } else { "[-]" },
+                    comment.replies.len(),
+                ))
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    widget::text::Style {
+                        color: Some(palette.primary.base.color),
+                        ..Default::default()
+                    }
+                })
+                .size(14.0),
+            )
+            .style(widget::button::text)
+            .padding(2.0)
+            .on_press(PdfMessage::ToggleCommentCollapse(comment.id))
+            .into()
         } else {
             widget::space::horizontal().into()
         };
         let header = widget::row![
-            collapse_control,
+            reply_count,
+            widget::space::horizontal().width(iced::Length::Fill),
             widget::text(author)
                 .font(iced::Font {
                     style: iced::font::Style::Italic,
@@ -1808,8 +1815,6 @@ impl PdfViewer {
                         ..Default::default()
                     }
                 }),
-            widget::space::horizontal().width(iced::Length::Fill),
-            reply_count,
         ]
         .align_y(iced::alignment::Vertical::Center)
         .spacing(8);
@@ -1824,7 +1829,7 @@ impl PdfViewer {
         }
         if !is_collapsed {
             for reply in &comment.replies {
-                body = body.push(self.build_comment_node(reply));
+                body = body.push(self.view_comment_node(reply));
             }
         }
 
@@ -1847,7 +1852,7 @@ impl PdfViewer {
         .into()
     }
 
-    fn build_comment_popup(
+    fn view_comment_popup(
         &self,
         viewport_size: iced::Size,
     ) -> Option<iced::Element<'_, PdfMessage>> {
@@ -1866,7 +1871,7 @@ impl PdfViewer {
         let max_thread_height =
             (viewport_size.height - 2.0 * POPUP_MARGIN - POPUP_HEIGHT_WITHOUT_THREAD).max(0.0);
         let thread = widget::container(
-            widget::scrollable(self.build_comment_node(&self.comments[active_idx]))
+            widget::scrollable(self.view_comment_node(&self.comments[active_idx]))
                 .width(iced::Length::Fill)
                 .height(iced::Length::Shrink),
         )
