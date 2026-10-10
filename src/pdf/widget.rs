@@ -114,6 +114,22 @@ fn popup_position(
     )
 }
 
+/// Annotation types whose content makes them standalone comment roots. This covers the
+/// quadpoint-based markup annotations (highlights, strike-outs, ...) which carry notes the
+/// same way text annotations do. Other types are deliberately excluded: FreeText is
+/// already visible on the page and Caret, Redact, Stamp etc. have odd semantics.
+fn is_commentable(annotation_type: PdfAnnotationType) -> bool {
+    matches!(
+        annotation_type,
+        PdfAnnotationType::Text
+            | PdfAnnotationType::Highlight
+            | PdfAnnotationType::Underline
+            | PdfAnnotationType::StrikeOut
+            | PdfAnnotationType::Squiggly
+            | PdfAnnotationType::Ink
+    )
+}
+
 /// Builds reply trees in PDF annotation order; xref IDs are used only to resolve `/IRT` links.
 fn build_comments(annotations: Vec<AnnotationCommentData>) -> Vec<Comment> {
     let annotations_by_id: HashMap<i32, usize> = annotations
@@ -146,17 +162,17 @@ fn build_comments(annotations: Vec<AnnotationCommentData>) -> Vec<Comment> {
         else {
             continue;
         };
-        let is_text_comment =
-            annotation.annotation_type == PdfAnnotationType::Text && annotation.content.is_some();
-        if is_text_comment || !comment.replies.is_empty() {
+        let is_comment_root =
+            is_commentable(annotation.annotation_type) && annotation.content.is_some();
+        if is_comment_root || !comment.replies.is_empty() {
             comments.push(comment);
         }
     }
 
-    // Preserve standalone Text comments and orphaned replies if their parent is missing or cyclic.
+    // Preserve standalone comments and orphaned replies if their parent is missing or cyclic.
     for (index, annotation) in annotations.iter().enumerate() {
         if visited.contains(&index)
-            || annotation.annotation_type != PdfAnnotationType::Text
+            || !is_commentable(annotation.annotation_type)
             || annotation.content.is_none()
             || annotation.bounds.is_none()
         {
@@ -968,7 +984,14 @@ impl PdfViewer {
                         .as_ref()
                         .and_then(|object| object.get_dict("IRT").ok().flatten())
                         .and_then(|reply_to| reply_to.as_indirect().ok());
-                    let content = ann.contents().ok().flatten().map(|value| value.to_string());
+                    // Replacement annotation groups carry placeholder strike-outs with empty
+                    // notes; treat empty content as no content so they can't become comment roots.
+                    let content = ann
+                        .contents()
+                        .ok()
+                        .flatten()
+                        .map(|value| value.to_string())
+                        .filter(|value| !value.trim().is_empty());
                     let bounds = ann.rect().ok();
                     let author = ann.author().ok().flatten().map(|value| value.to_string());
 
