@@ -75,7 +75,7 @@ impl SidebarTab {
 
     fn sidebar_text(&self) -> &'static str {
         match self {
-            SidebarTab::Outline => "Document outline",
+            SidebarTab::Outline => "Outline",
             SidebarTab::Bookmark => "Bookmarks",
             SidebarTab::Comments => "Comments",
         }
@@ -89,10 +89,9 @@ impl SidebarTab {
         }
     }
 
-    pub fn view_expanded_button(&self) -> iced::Element<'_, AppMessage> {
+    pub fn view_button(&self, active: bool) -> iced::Element<'_, AppMessage> {
         button(
-            widget::row![
-                text(self.sidebar_text()).width(Length::Fill),
+            widget::column![
                 widget::svg(self.sidebar_icon())
                     .width(18.0)
                     .height(18.0)
@@ -101,54 +100,26 @@ impl SidebarTab {
                         widget::svg::Style {
                             color: Some(palette.primary.base.text),
                         }
-                    })
+                    }),
+                text(self.sidebar_text())
+                    .width(Length::Fill)
+                    .align_x(alignment::Horizontal::Center),
             ]
-            .align_y(alignment::Vertical::Center),
+            .align_x(alignment::Horizontal::Center),
         )
         .width(Length::Fill)
-        .height(30.0)
-        .padding(6.0)
-        .style(|theme: &Theme, _status| {
+        .padding(Padding::default().horizontal(12.0).vertical(6.0))
+        .style(move |theme: &Theme, _status| {
             let palette = theme.extended_palette();
+            let mut color = palette.primary.base.color;
+            if !active {
+                color.a = 0.6;
+            }
             button::Style {
-                background: Some(palette.primary.base.color.into()),
+                background: Some(color.into()),
                 text_color: palette.primary.base.text,
                 border: Border {
                     radius: Radius::from(4.0),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        })
-        .on_press(AppMessage::SetSidebar(*self))
-        .into()
-    }
-
-    pub fn view_collapsed_button(&self) -> iced::Element<'_, AppMessage> {
-        button(
-            widget::svg(self.sidebar_icon())
-                .width(18.0)
-                .height(18.0)
-                .style(|theme: &Theme, _| {
-                    let palette = theme.extended_palette();
-                    widget::svg::Style {
-                        color: Some(palette.primary.base.text),
-                    }
-                }),
-        )
-        .width(Length::Shrink)
-        .height(30.0)
-        .padding(6.0)
-        .style(|theme: &Theme, status| {
-            let palette = theme.extended_palette();
-            widget::button::Style {
-                background: match status {
-                    widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
-                    widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
-                    _ => Some(palette.primary.base.color.into()),
-                },
-                border: Border {
-                    radius: 4.0.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1007,7 +978,8 @@ impl App {
             })
             .style(|_theme: &Theme| Default::default())
         })
-        .on_resize(10, AppMessage::PaneResize);
+        .on_resize(10, AppMessage::PaneResize)
+        .min_size(320.0);
 
         pg.into()
     }
@@ -1015,13 +987,7 @@ impl App {
     fn view_sidebar(&self) -> Element<'_, AppMessage> {
         let buttons: widget::Row<_> = SidebarTab::all()
             .iter()
-            .map(|tab| {
-                if &self.sidebar_tab == tab {
-                    tab.view_expanded_button()
-                } else {
-                    tab.view_collapsed_button()
-                }
-            })
+            .map(|tab| tab.view_button(tab == &self.sidebar_tab))
             .collect();
 
         let sidebar_picker = buttons
