@@ -25,6 +25,7 @@ A native pdf viewer for Windows, macOS and Linux (Wayland/X11) with configurable
 - Shows recently opened files
 - Search through documents using plain text or regular expressions
 - Read comments and show annotations
+- An overview mode showing many pages in a grid for quick navigation
 
 ## Configuration
 
@@ -38,7 +39,7 @@ The configuration file uses a simple text format with three types of commands an
 
 #### Key Bindings
 ```
-Bind <key_sequence> <action>
+Bind <key_sequence> <mode> <action>
 ```
 
 Key sequences can be:
@@ -48,9 +49,14 @@ Key sequences can be:
 
 All available actions are bound in the example config file. If you need a more exact view of the syntax it is documented in the [keybinds-rs](https://github.com/rhysd/keybinds-rs/blob/main/doc/binding_syntax.md) crate.
 
+The mode is one of several modes available, all of them are bound in the default config. Refer to it for the complete definition. Some examples are Normal, Presentation and Overview.
+
+> [!WARNING]
+> There is **no** inheritance of bindings between modes. All keys need to be bound for each mode separately. Thus, forgetting to bind `TogglePresentation` inside the presentation mode will leave you unable to exit to normal mode.
+
 #### Mouse Bindings
 ```
-MouseBind <mouse_input> <action>
+MouseBind <mouse_input> <mode> <action>
 ```
 
 Mouse inputs can be:
