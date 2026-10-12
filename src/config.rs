@@ -1645,7 +1645,7 @@ MouseBind Ctrl+ScrollUp ZoomIn
         assert_eq!(mouse_binds[1].1, MouseAction::ZoomIn);
 
         // The binds are active in the default (Normal) binding mode
-        let mut config = result.config;
+        let config = result.config;
         assert_eq!(
             config.get_mouse_action(MouseInput {
                 button: MouseButton::Left,

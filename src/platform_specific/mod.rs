@@ -3,6 +3,9 @@ use iced::Subscription;
 use iced::Task;
 
 pub mod iced_aw;
+
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub mod macos;
 
 pub fn startup_tasks() -> Vec<Task<AppMessage>> {

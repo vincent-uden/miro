@@ -6,7 +6,7 @@ use keybinds2::{Keybind};
 use crate::config::BindableMessage;
 use crate::app::AppMessage;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub struct Menu {
@@ -114,7 +114,7 @@ impl Menu {
     }
 }
 
-pub fn new_recent_file_menu_item(path: &PathBuf) -> muda::MenuItem {
+pub fn new_recent_file_menu_item(path: &Path) -> muda::MenuItem {
     let file_name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())

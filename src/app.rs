@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use strum::EnumString;
 use tokio::sync::mpsc;
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{
     CONFIG,
@@ -148,7 +148,6 @@ pub struct App {
     ctrl_pressed: bool,
     scale_factor: f64,
     jumplist: Jumplist,
-    binding_mode: BindingMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumString, Default)]
@@ -265,7 +264,6 @@ impl App {
             ctrl_pressed: false,
             scale_factor: 1.0,
             jumplist: Jumplist::new(),
-            binding_mode: BindingMode::default(),
         }
     }
 

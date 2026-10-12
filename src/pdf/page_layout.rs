@@ -56,7 +56,11 @@ impl PageRotation {
     }
 
     /// Map PDF coordinates to the page's normalized, rotated coordinate space.
-    pub fn to_rotated(self, point: Vector<f32>, bounds: Rect<f32>) -> Vector<f32> {
+    pub fn pdf_cord_to_rotated_page_coord(
+        self,
+        point: Vector<f32>,
+        bounds: Rect<f32>,
+    ) -> Vector<f32> {
         match self {
             Self::Deg0 => Vector::new(point.x - bounds.x0.x, point.y - bounds.x0.y),
             Self::Deg90 => Vector::new(bounds.x1.y - point.y, point.x - bounds.x0.x),
@@ -66,7 +70,11 @@ impl PageRotation {
     }
 
     /// Map normalized, rotated page coordinates back to PDF coordinates.
-    pub fn from_rotated(self, point: Vector<f32>, bounds: Rect<f32>) -> Vector<f32> {
+    pub fn pdf_coord_from_rotated_page_coord(
+        self,
+        point: Vector<f32>,
+        bounds: Rect<f32>,
+    ) -> Vector<f32> {
         match self {
             Self::Deg0 => Vector::new(point.x + bounds.x0.x, point.y + bounds.x0.y),
             Self::Deg90 => Vector::new(point.y + bounds.x0.x, bounds.x1.y - point.x),

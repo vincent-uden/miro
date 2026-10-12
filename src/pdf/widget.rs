@@ -27,7 +27,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfObject, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -146,18 +146,6 @@ fn is_quad_markup_type(annotation_type: PdfAnnotationType) -> bool {
             | PdfAnnotationType::StrikeOut
             | PdfAnnotationType::Squiggly
     )
-}
-
-fn annotation_type_label(annotation_type: PdfAnnotationType) -> &'static str {
-    match annotation_type {
-        PdfAnnotationType::Text => "Sticky note",
-        PdfAnnotationType::Highlight => "Highlight",
-        PdfAnnotationType::Underline => "Underline",
-        PdfAnnotationType::StrikeOut => "Strike-out",
-        PdfAnnotationType::Squiggly => "Squiggly",
-        PdfAnnotationType::Ink => "Ink drawing",
-        _ => "Comment",
-    }
 }
 
 /// Bounding rect of a single quad point.
@@ -493,7 +481,7 @@ fn pdf_rect_to_screen(
     let scale_x = page_rect.width() / rotated_size.x;
     let scale_y = page_rect.height() / rotated_size.y;
     transform_rect(pdf_rect, |point| {
-        let rotated = rotation.to_rotated(point, page_bounds);
+        let rotated = rotation.pdf_cord_to_rotated_page_coord(point, page_bounds);
         page_rect.x0 + Vector::new(rotated.x * scale_x, rotated.y * scale_y)
     })
 }
@@ -1548,7 +1536,7 @@ impl PdfViewer {
                         let page_center = rotation.rotated_size(page_bounds.size()).scaled(0.5);
                         let match_rect = m.rects[0].1;
                         let rotated_match = transform_rect(match_rect, |point| {
-                            rotation.to_rotated(point, page_bounds)
+                            rotation.pdf_cord_to_rotated_page_coord(point, page_bounds)
                         });
                         let match_center = rotated_match.center();
                         // Center vertically.
@@ -1998,7 +1986,7 @@ impl PdfViewer {
             let scale_x = page_rect.width() / rotated_size.x;
             let scale_y = page_rect.height() / rotated_size.y;
             let screen_to_pdf = |point: Vector<f32>| {
-                rotation.from_rotated(
+                rotation.pdf_coord_from_rotated_page_coord(
                     Vector::new(
                         (point.x - page_rect.x0.x) / scale_x,
                         (point.y - page_rect.x0.y) / scale_y,
@@ -2511,7 +2499,6 @@ pub fn view_comment_node<'a>(
                 let palette = theme.extended_palette();
                 widget::text::Style {
                     color: Some(palette.primary.base.color),
-                    ..Default::default()
                 }
             })
             .size(14.0),
@@ -2523,7 +2510,6 @@ pub fn view_comment_node<'a>(
                     let palette = theme.extended_palette();
                     widget::text::Style {
                         color: Some(palette.primary.base.color),
-                        ..Default::default()
                     }
                 })
                 .size(14.0),
@@ -2547,7 +2533,6 @@ pub fn view_comment_node<'a>(
                 let palette = theme.extended_palette();
                 widget::text::Style {
                     color: Some(palette.primary.base.color),
-                    ..Default::default()
                 }
             }),
     ]
@@ -2612,8 +2597,7 @@ fn cpu_pdf_dark_mode_shader(pixmap: &mut mupdf::Pixmap, gradient_cache: &[[u8; 4
         let g: u16 = pixel[1] as u16;
         let b: u16 = pixel[2] as u16;
         let brightness = ((r + g + b) / 3) as usize;
-        let pixel_array: &mut [u8; 4] = pixel.try_into().unwrap();
-        *pixel_array = gradient_cache[brightness];
+        *pixel = gradient_cache[brightness];
     }
 }
 
