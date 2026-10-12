@@ -6,6 +6,7 @@ use iced::{
 const SVG_DELETE: &[u8] = include_bytes!("../assets/icons/delete.svg");
 const SVG_TABLE_OF_CONTENTS: &[u8] = include_bytes!("../assets/icons/table_of_contents.svg");
 const SVG_BOOKMARK: &[u8] = include_bytes!("../assets/icons/bookmark.svg");
+const SVG_COMMENT: &[u8] = include_bytes!("../assets/icons/comment.svg");
 
 pub fn delete() -> svg::Handle {
     svg::Handle::from_memory(SVG_DELETE)
@@ -17,6 +18,10 @@ pub fn table_of_contents() -> svg::Handle {
 
 pub fn bookmark() -> svg::Handle {
     svg::Handle::from_memory(SVG_BOOKMARK)
+}
+
+pub fn comment() -> svg::Handle {
+    svg::Handle::from_memory(SVG_COMMENT)
 }
 
 #[allow(unused)]
