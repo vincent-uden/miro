@@ -238,6 +238,8 @@ pub enum PdfMessage {
     #[strum(disabled)]
     #[serde(skip)]
     SearchResultsReady(Vec<SearchMatch>, u64),
+    /// Takes the comment id, NOT its index
+    HighlightComment(usize),
     #[default]
     None,
 }

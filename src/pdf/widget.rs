@@ -27,7 +27,7 @@ use mupdf::{
     pdf::{PdfAnnotationType, PdfObject, PdfPage},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{error};
+use tracing::{debug, error};
 
 use crate::{
     CONFIG, DARK_THEME,
@@ -48,7 +48,7 @@ struct PageLink {
 
 #[derive(Debug, Clone)]
 pub struct Comment {
-    id: usize,
+    pub id: usize,
     page_idx: usize,
     bounds: Option<mupdf::Rect>,
     /// Bounding rects of the individual quad points of quad-based markup
@@ -1320,7 +1320,9 @@ impl PdfViewer {
                         self.overview_page_idx = page_idx;
                     }
                 }
-                self.update_hover_state();
+                if self.is_pointer_over_viewport() {
+                    self.update_hover_state();
+                }
             }
             PdfMessage::MouseAction(mouse_action, pressed) => {
                 if pressed && !self.is_pointer_over_viewport() {
@@ -1610,6 +1612,19 @@ impl PdfViewer {
                     self.search_matches = matches;
                     self.current_search_result = None;
                 }
+            }
+            PdfMessage::HighlightComment(id) => {
+                let Some((idx, comment)) = self
+                    .comments
+                    .iter()
+                    .enumerate()
+                    .find(|(_, comment)| comment.id == id)
+                else {
+                    return out;
+                };
+
+                self.hovered_comment = Some(idx);
+                out = iced::Task::done(PdfMessage::SetPage(comment.page_idx))
             }
             PdfMessage::None => {}
         }
@@ -2522,6 +2537,7 @@ pub fn view_comment_node<'a>(
     let header = widget::row![
         reply_count,
         widget::space::horizontal().width(iced::Length::Fill),
+        widget::text(format!("{}", comment.id)),
         widget::text(author)
             .font(iced::Font {
                 style: iced::font::Style::Italic,

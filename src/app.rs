@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use strum::EnumString;
 use tokio::sync::mpsc;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::{
     CONFIG,
@@ -1064,8 +1064,15 @@ impl App {
                 pdf.comments
                     .iter()
                     .map(|comment| {
-                        crate::pdf::widget::view_comment_node(&pdf.collapsed_comments, comment)
-                            .map(AppMessage::PdfMessage)
+                        widget::button(
+                            crate::pdf::widget::view_comment_node(&pdf.collapsed_comments, comment)
+                                .map(AppMessage::PdfMessage),
+                        )
+                        .on_press_with(|| {
+                            AppMessage::PdfMessage(PdfMessage::HighlightComment(comment.id))
+                        })
+                        .style(widget::button::text)
+                        .into()
                     })
                     .collect()
             })
