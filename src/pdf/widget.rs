@@ -12,7 +12,7 @@ use std::{
 use anyhow::Result;
 use colorgrad::{Gradient as _, GradientBuilder, LinearGradient};
 use iced::{
-    Renderer, Size,
+    Renderer, Size, Theme,
     advanced::{graphics::geometry, image},
     widget::{
         self,
@@ -24,7 +24,7 @@ use bytes::Bytes;
 
 use mupdf::{
     Colorspace, Device, Matrix, Pixmap, TextPageFlags,
-    pdf::{PdfAnnotationType, PdfPage},
+    pdf::{PdfAnnotationType, PdfObject, PdfPage},
 };
 use serde::{Deserialize, Serialize};
 use tracing::{error};
@@ -48,10 +48,183 @@ struct PageLink {
 
 #[derive(Debug, Clone)]
 struct Comment {
+    id: usize,
     page_idx: usize,
-    bounds: mupdf::Rect,
-    content: String,
+    bounds: Option<mupdf::Rect>,
+    /// Bounding rects of the individual quad points of quad-based markup
+    /// annotations (highlights, strike-outs, ...); empty for rect-based ones.
+    quads: Vec<mupdf::Rect>,
+    content: Option<String>,
     author: Option<String>,
+    annotation_type: PdfAnnotationType,
+    replies: Vec<Comment>,
+}
+
+#[derive(Debug, Clone)]
+struct AnnotationCommentData {
+    page_idx: usize,
+    bounds: Option<mupdf::Rect>,
+    content: Option<String>,
+    author: Option<String>,
+    annotation_type: PdfAnnotationType,
+    object_id: Option<i32>,
+    in_reply_to: Option<i32>,
+    quads: Vec<mupdf::Rect>,
+}
+
+fn build_comment_subtree(
+    index: usize,
+    annotations: &[AnnotationCommentData],
+    children_by_parent: &[Vec<usize>],
+    visited: &mut HashSet<usize>,
+) -> Option<Comment> {
+    if !visited.insert(index) {
+        return None;
+    }
+
+    let replies: Vec<Comment> = children_by_parent[index]
+        .iter()
+        .filter_map(|child| build_comment_subtree(*child, annotations, children_by_parent, visited))
+        .collect();
+    let annotation = &annotations[index];
+    if annotation.content.is_none() && replies.is_empty() {
+        return None;
+    }
+
+    Some(Comment {
+        id: index,
+        page_idx: annotation.page_idx,
+        bounds: annotation.bounds,
+        quads: annotation.quads.clone(),
+        content: annotation.content.clone(),
+        author: annotation.author.clone(),
+        annotation_type: annotation.annotation_type,
+        replies,
+    })
+}
+
+fn popup_position(
+    anchor: iced::Point,
+    popup_size: iced::Size,
+    viewport: iced::Rectangle,
+) -> iced::Point {
+    const POPUP_MARGIN: f32 = 8.0;
+    iced::Point::new(
+        anchor
+            .x
+            .min(viewport.x + viewport.width - popup_size.width - POPUP_MARGIN)
+            .max(viewport.x + POPUP_MARGIN),
+        anchor
+            .y
+            .min(viewport.y + viewport.height - popup_size.height - POPUP_MARGIN)
+            .max(viewport.y + POPUP_MARGIN),
+    )
+}
+
+/// Annotation types whose content makes them standalone comment roots. This covers the
+/// quadpoint-based markup annotations (highlights, strike-outs, ...) which carry notes the
+/// same way text annotations do. Other types are deliberately excluded: FreeText is
+/// already visible on the page and Caret, Redact, Stamp etc. have odd semantics.
+fn is_commentable(annotation_type: PdfAnnotationType) -> bool {
+    matches!(
+        annotation_type,
+        PdfAnnotationType::Text
+            | PdfAnnotationType::Highlight
+            | PdfAnnotationType::Underline
+            | PdfAnnotationType::StrikeOut
+            | PdfAnnotationType::Squiggly
+            | PdfAnnotationType::Ink
+    )
+}
+
+/// Annotation types whose visible area is defined by quad points rather than their rect.
+fn is_quad_markup_type(annotation_type: PdfAnnotationType) -> bool {
+    matches!(
+        annotation_type,
+        PdfAnnotationType::Highlight
+            | PdfAnnotationType::Underline
+            | PdfAnnotationType::StrikeOut
+            | PdfAnnotationType::Squiggly
+    )
+}
+
+fn annotation_type_label(annotation_type: PdfAnnotationType) -> &'static str {
+    match annotation_type {
+        PdfAnnotationType::Text => "Sticky note",
+        PdfAnnotationType::Highlight => "Highlight",
+        PdfAnnotationType::Underline => "Underline",
+        PdfAnnotationType::StrikeOut => "Strike-out",
+        PdfAnnotationType::Squiggly => "Squiggly",
+        PdfAnnotationType::Ink => "Ink drawing",
+        _ => "Comment",
+    }
+}
+
+/// Bounding rect of a single quad point.
+fn quad_bounds(quad: mupdf::Quad) -> mupdf::Rect {
+    let min_x = quad.ul.x.min(quad.ur.x).min(quad.ll.x).min(quad.lr.x);
+    let max_x = quad.ul.x.max(quad.ur.x).max(quad.ll.x).max(quad.lr.x);
+    let min_y = quad.ul.y.min(quad.ur.y).min(quad.ll.y).min(quad.lr.y);
+    let max_y = quad.ul.y.max(quad.ur.y).max(quad.ll.y).max(quad.lr.y);
+    mupdf::Rect::new(min_x, min_y, max_x, max_y)
+}
+
+/// Builds reply trees in PDF annotation order; xref IDs are used only to resolve `/IRT` links.
+fn build_comments(annotations: Vec<AnnotationCommentData>) -> Vec<Comment> {
+    let annotations_by_id: HashMap<i32, usize> = annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, annotation)| annotation.object_id.map(|id| (id, index)))
+        .collect();
+
+    let mut children_by_parent = vec![Vec::new(); annotations.len()];
+    for (index, annotation) in annotations.iter().enumerate() {
+        let Some(parent_id) = annotation.in_reply_to else {
+            continue;
+        };
+        let Some(parent_index) = annotations_by_id.get(&parent_id).copied() else {
+            continue;
+        };
+        if parent_index != index {
+            children_by_parent[parent_index].push(index);
+        }
+    }
+
+    let mut comments = Vec::new();
+    let mut visited = HashSet::new();
+    for (index, annotation) in annotations.iter().enumerate() {
+        if annotation.in_reply_to.is_some() || annotation.bounds.is_none() {
+            continue;
+        }
+        let Some(comment) =
+            build_comment_subtree(index, &annotations, &children_by_parent, &mut visited)
+        else {
+            continue;
+        };
+        let is_comment_root =
+            is_commentable(annotation.annotation_type) && annotation.content.is_some();
+        if is_comment_root || !comment.replies.is_empty() {
+            comments.push(comment);
+        }
+    }
+
+    // Preserve standalone comments and orphaned replies if their parent is missing or cyclic.
+    for (index, annotation) in annotations.iter().enumerate() {
+        if visited.contains(&index)
+            || !is_commentable(annotation.annotation_type)
+            || annotation.content.is_none()
+            || annotation.bounds.is_none()
+        {
+            continue;
+        }
+        if let Some(comment) =
+            build_comment_subtree(index, &annotations, &children_by_parent, &mut visited)
+        {
+            comments.push(comment);
+        }
+    }
+
+    comments
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -642,17 +815,19 @@ impl<'a> widget::canvas::Program<PdfMessage> for InteractiveOverlay<'a> {
 
         // Draw hovered comment indicator.
         if let Some(comment_idx) = self.viewer.hovered_comment
-            && let Some((_, rect)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx)
+            && let Some((_, rects)) = comment_visible.iter().find(|(idx, _)| *idx == comment_idx)
         {
             let mut color = iced::Color::from_rgb(1.0, 0.9, 0.0);
             color.a = 0.25;
-            frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
             let stroke_color = iced::Color::from_rgb(1.0, 0.9, 0.0);
-            frame.stroke_rectangle(
-                rect.x0.into(),
-                rect.size().into(),
-                Stroke::default().with_color(stroke_color).with_width(1.5),
-            );
+            for rect in rects {
+                frame.fill_rectangle(rect.x0.into(), rect.size().into(), color);
+                frame.stroke_rectangle(
+                    rect.x0.into(),
+                    rect.size().into(),
+                    Stroke::default().with_color(stroke_color).with_width(1.5),
+                );
+            }
         }
 
         vec![frame.into_geometry()]
@@ -757,10 +932,13 @@ pub struct PdfViewer {
     /// iced's tokio runtime shutdown (which waits for blocking tasks).
     search_cancel: Arc<AtomicBool>,
 
-    /// All text annotations (sticky notes / comments) extracted from the document.
+    /// Comment-thread roots extracted from PDF annotations.
     comments: Vec<Comment>,
+    /// IDs of comment nodes whose reply subtrees are collapsed.
+    collapsed_comments: HashSet<usize>,
     hovered_comment: Option<usize>,
     active_comment: Option<usize>,
+    comment_popup_hovered: bool,
 
     /// The widget's position in window coordinates, updated each frame by the overlay draw.
     widget_position: RefCell<iced::Point>,
@@ -799,8 +977,8 @@ impl PdfViewer {
     )> {
         let mut display_lists = vec![];
         let mut links = vec![];
-        let mut comments = vec![];
         let mut page_bounds = vec![];
+        let mut annotation_comments = vec![];
         for (page_idx, page) in doc.pages()?.flatten().enumerate() {
             let page_bound: mupdf::Rect = page.bounds()?;
             page_bounds.push(page_bound.into());
@@ -822,23 +1000,72 @@ impl PdfViewer {
 
             if let Ok(pdf_page) = PdfPage::try_from(page) {
                 for ann in pdf_page.annotations() {
-                    let Ok(PdfAnnotationType::Text) = ann.r#type() else {
+                    let Ok(annotation_type) = ann.r#type() else {
                         continue;
                     };
-                    let Ok(Some(content)) = ann.contents() else {
+                    if annotation_type == PdfAnnotationType::Popup {
                         continue;
+                    }
+
+                    let pdf_obj = PdfObject::try_from(&ann).ok();
+                    // Replacement annotation groups are not discussion replies.
+                    let is_group = pdf_obj
+                        .as_ref()
+                        .and_then(|object| object.get_dict("RT").ok().flatten())
+                        .and_then(|reply_type| reply_type.as_name().ok())
+                        .is_some_and(|reply_type| reply_type.as_slice() == b"Group");
+                    if is_group {
+                        continue;
+                    }
+
+                    let quads = if is_quad_markup_type(annotation_type) {
+                        ann.quad_points()
+                            .ok()
+                            .map(|quads| quads.into_iter().map(quad_bounds).collect())
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
                     };
-                    let Ok(bounds) = ann.rect() else { continue };
-                    let Ok(author) = ann.author() else { continue };
-                    comments.push(Comment {
+
+                    let object_id = pdf_obj
+                        .as_ref()
+                        .and_then(|object| object.as_indirect().ok());
+                    let in_reply_to = pdf_obj
+                        .as_ref()
+                        .and_then(|object| object.get_dict("IRT").ok().flatten())
+                        .and_then(|reply_to| reply_to.as_indirect().ok());
+                    // Replacement annotation groups carry placeholder strike-outs with empty
+                    // notes; treat empty content as no content so they can't become comment roots.
+                    let content = ann
+                        .contents()
+                        .ok()
+                        .flatten()
+                        .map(|value| value.to_string())
+                        .filter(|value| !value.trim().is_empty());
+                    let bounds = ann.rect().ok();
+                    // Empty /T dict entries show up as Some(""); normalize so the
+                    // popup falls back to "Unknown author".
+                    let author = ann
+                        .author()
+                        .ok()
+                        .flatten()
+                        .map(|value| value.to_string())
+                        .filter(|value| !value.trim().is_empty());
+
+                    annotation_comments.push(AnnotationCommentData {
                         page_idx,
                         bounds,
-                        content: content.to_string(),
-                        author: author.map(|s| s.to_string()),
+                        content,
+                        author,
+                        annotation_type,
+                        object_id,
+                        in_reply_to,
+                        quads,
                     });
                 }
             }
         }
+        let comments = build_comments(annotation_comments);
         let outline = Self::extract_outline(doc).unwrap_or_default();
         Ok((display_lists, links, outline, comments, page_bounds))
     }
@@ -905,11 +1132,13 @@ impl PdfViewer {
             search_generation: Arc::new(AtomicU64::new(0)),
             search_cancel: Arc::new(AtomicBool::new(false)),
             comments,
+            collapsed_comments: HashSet::new(),
             hovered_comment: None,
             active_comment: None,
             overview_page_idx: 0,
             overview_scroll_y: Cell::new(0.0),
             overview_scroll_remainder: 0.0,
+            comment_popup_hovered: false,
         })
     }
 }
@@ -1093,7 +1322,11 @@ impl PdfViewer {
                 self.update_hover_state();
             }
             PdfMessage::MouseAction(mouse_action, pressed) => {
-                if pressed {
+                if self.comment_popup_hovered {
+                    self.mouse_interaction = MouseInteraction::None;
+                    self.selection_start = None;
+                    self.selection_end = None;
+                } else if pressed {
                     match mouse_action {
                         MouseAction::Panning => {
                             self.mouse_interaction = MouseInteraction::Panning;
@@ -1216,6 +1449,15 @@ impl PdfViewer {
             }
             PdfMessage::CloseComment => {
                 self.active_comment = None;
+                self.comment_popup_hovered = false;
+            }
+            PdfMessage::CommentPopupHovered(hovered) => {
+                self.comment_popup_hovered = hovered;
+            }
+            PdfMessage::ToggleCommentCollapse(comment_id) => {
+                if !self.collapsed_comments.remove(&comment_id) {
+                    self.collapsed_comments.insert(comment_id);
+                }
             }
             PdfMessage::FileChanged => {
                 self.render_cache.borrow_mut().clear();
@@ -1233,8 +1475,10 @@ impl PdfViewer {
                     self.links = links;
                     self.outline = outline;
                     self.comments = comments;
+                    self.collapsed_comments.clear();
                     self.active_comment = None;
                     self.hovered_comment = None;
+                    self.comment_popup_hovered = false;
                 }
             }
             PdfMessage::PrintPdf => {
@@ -1521,7 +1765,7 @@ impl PdfViewer {
                 interactive_overlay.into(),
             ];
 
-            if let Some(popup) = self.build_comment_popup(size) {
+            if let Some(popup) = self.view_comment_popup(size) {
                 stack_children.push(popup);
             }
 
@@ -1580,102 +1824,141 @@ impl PdfViewer {
         handle
     }
 
-    fn build_comment_popup(
+    fn view_comment_node<'a>(&'a self, comment: &'a Comment) -> iced::Element<'a, PdfMessage> {
+        let has_replies = !comment.replies.is_empty();
+        let is_collapsed = self.collapsed_comments.contains(&comment.id);
+        let author = comment.author.as_deref().unwrap_or("Unknown author");
+        let reply_count: iced::Element<'_, PdfMessage> = if has_replies {
+            widget::button(
+                widget::text(format!(
+                    "{} {} replies",
+                    if is_collapsed { "[+]" } else { "[-]" },
+                    comment.replies.len(),
+                ))
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    widget::text::Style {
+                        color: Some(palette.primary.base.color),
+                        ..Default::default()
+                    }
+                })
+                .size(14.0),
+            )
+            .style(widget::button::text)
+            .padding(2.0)
+            .on_press(PdfMessage::ToggleCommentCollapse(comment.id))
+            .into()
+        } else {
+            widget::space::horizontal().into()
+        };
+        let header = widget::row![
+            reply_count,
+            widget::space::horizontal().width(iced::Length::Fill),
+            widget::text(author)
+                .font(iced::Font {
+                    style: iced::font::Style::Italic,
+                    ..Default::default()
+                })
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    widget::text::Style {
+                        color: Some(palette.primary.base.color),
+                        ..Default::default()
+                    }
+                }),
+        ]
+        .align_y(iced::alignment::Vertical::Center)
+        .spacing(8);
+
+        let mut body = widget::column![header].spacing(6.0);
+        if let Some(content) = comment.content.as_deref() {
+            body = body.push(
+                widget::text(content)
+                    .size(14.0)
+                    .wrapping(widget::text::Wrapping::Word),
+            );
+        }
+        if !is_collapsed {
+            for reply in &comment.replies {
+                body = body.push(self.view_comment_node(reply));
+            }
+        }
+
+        let line = widget::rule::vertical(2.0).style(|theme: &iced::Theme| {
+            let mut color = theme.extended_palette().primary.base.color;
+            color.a = 0.65;
+            widget::rule::Style {
+                color,
+                radius: iced::border::Radius::from(1.0),
+                fill_mode: widget::rule::FillMode::Full,
+                snap: true,
+            }
+        });
+        widget::row![
+            line,
+            widget::container(body).padding(iced::Padding::new(0.0).left(6.0)),
+        ]
+        .spacing(8.0)
+        .height(iced::Length::Shrink)
+        .into()
+    }
+
+    fn view_comment_popup(
         &self,
         viewport_size: iced::Size,
     ) -> Option<iced::Element<'_, PdfMessage>> {
         let active_idx = self.active_comment?;
         let comment_visible = self.visible_comments(viewport_size);
-        let (_, comment_rect) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
+        let (_, comment_rects) = comment_visible.iter().find(|(idx, _)| *idx == active_idx)?;
 
+        const POPUP_MARGIN: f32 = 8.0;
+        const POPUP_HEIGHT_WITHOUT_THREAD: f32 = 60.0;
         let popup_width = 280.0_f32.min(viewport_size.width - 16.0).max(120.0);
-        let popup_x = comment_rect.x1.x + 8.0;
-        let popup_y = comment_rect.x0.y;
-        let clamped_x = popup_x
-            .min(viewport_size.width - popup_width - 8.0)
-            .max(8.0);
-        let clamped_y = popup_y.min(viewport_size.height - 100.0).max(8.0);
+        // Anchor to the union of the comment's rects so a multi-quad highlight
+        // doesn't make the popup jump around.
+        let mut anchor = comment_rects[0];
+        for rect in &comment_rects[1..] {
+            anchor = anchor.union(rect);
+        }
+        let popup_x = anchor.x1.x + 8.0;
+        let popup_y = anchor.x0.y;
 
-        let author_font = iced::Font {
-            style: iced::font::Style::Italic,
-            ..Default::default()
-        };
-
-        let popup = widget::container(
-            widget::column![
-                widget::row![
-                    widget::text(self.comments[active_idx].author.clone().unwrap_or_default())
-                        .font(author_font)
-                        .style(|theme: &iced::Theme| {
-                            let palette = theme.extended_palette();
-                            iced::widget::text::Style {
-                                color: Some(palette.primary.base.color),
-                            }
-                        }),
-                    widget::space::horizontal().width(iced::Length::Fill),
-                    widget::button(
-                        widget::text("×")
-                            .align_y(iced::alignment::Vertical::Bottom)
-                            .size(24.0),
-                    )
-                    .padding(0.0)
-                    .style(|theme: &iced::Theme, status: widget::button::Status| {
-                        let palette = theme.extended_palette();
-                        let base = widget::button::Style {
-                            background: Some(iced::Background::Color(
-                                palette.background.strong.color,
-                            )),
-                            text_color: palette.background.strong.text,
-                            border: iced::border::rounded(2),
-                            ..widget::button::Style::default()
-                        };
-                        match status {
-                            widget::button::Status::Active
-                            | widget::button::Status::Pressed
-                            | widget::button::Status::Hovered => widget::button::Style {
-                                background: None,
-                                text_color: palette.background.base.text,
-                                ..base
-                            },
-                            widget::button::Status::Disabled => widget::button::Style {
-                                background: base.background.map(|bg| bg.scale_alpha(0.5)),
-                                text_color: base.text_color.scale_alpha(0.5),
-                                ..base
-                            },
-                        }
-                    })
-                    .on_press(PdfMessage::CloseComment),
-                ]
-                .align_y(iced::alignment::Vertical::Center),
-                widget::text(&self.comments[active_idx].content)
-                    .size(14.0)
-                    .wrapping(widget::text::Wrapping::Word),
-            ]
-            .spacing(8.0),
+        // Keep the popup's full height available regardless of its anchor position. It is moved
+        // upward to fit first; scrolling is only needed when the thread exceeds the viewport.
+        let max_thread_height =
+            (viewport_size.height - 2.0 * POPUP_MARGIN - POPUP_HEIGHT_WITHOUT_THREAD).max(0.0);
+        let thread = widget::container(
+            widget::scrollable(self.view_comment_node(&self.comments[active_idx]))
+                .width(iced::Length::Fill)
+                .height(iced::Length::Shrink),
         )
-        .width(popup_width)
-        .padding(12.0)
-        .style(|theme: &iced::Theme| widget::container::Style {
-            background: Some(theme.extended_palette().background.weak.color.into()),
-            border: iced::Border {
-                color: theme.extended_palette().primary.base.color,
-                width: 2.0,
-                radius: iced::border::Radius::from(8.0),
-            },
-            shadow: iced::Shadow {
-                color: theme.extended_palette().primary.base.color,
-                offset: iced::Vector { x: 0.0, y: 2.0 },
-                blur_radius: 4.0,
-            },
-            ..Default::default()
-        });
+        .width(iced::Length::Fill)
+        .max_height(max_thread_height);
 
-        let positioned = widget::container(widget::mouse_area(popup).on_press(PdfMessage::None))
-            .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
-            .padding(iced::Padding::new(0.0).top(clamped_y).left(clamped_x))
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Top);
+        let popup = widget::container(thread)
+            .width(popup_width)
+            .padding(16.0)
+            .style(|theme: &iced::Theme| widget::container::Style {
+                background: Some(theme.extended_palette().background.weak.color.into()),
+                border: iced::Border {
+                    color: theme.extended_palette().primary.base.color,
+                    width: 2.0,
+                    radius: iced::border::Radius::from(8.0),
+                },
+                ..Default::default()
+            });
+
+        let positioned = widget::float(
+            widget::mouse_area(popup)
+                .on_press(PdfMessage::None)
+                .on_enter(PdfMessage::CommentPopupHovered(true))
+                .on_exit(PdfMessage::CommentPopupHovered(false)),
+        )
+        .translate(move |bounds, viewport| {
+            let anchor = iced::Point::new(bounds.x + popup_x, bounds.y + popup_y);
+            let position = popup_position(anchor, bounds.size(), viewport);
+            iced::Vector::new(position.x - bounds.x, position.y - bounds.y)
+        });
 
         Some(positioned.into())
     }
@@ -1896,7 +2179,7 @@ impl PdfViewer {
         result
     }
 
-    fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Rect<f32>)> {
+    fn visible_comments(&self, viewport: iced::Size<f32>) -> Vec<(usize, Vec<Rect<f32>>)> {
         let mut result = Vec::new();
         let Ok(page_rects) = self.page_rects(viewport) else {
             return result;
@@ -1914,15 +2197,34 @@ impl PdfViewer {
                 if comment.page_idx != page_idx {
                     continue;
                 }
-                let comment_bounds: Rect<f32> = comment.bounds.into();
-                let screen_rect = pdf_rect_to_screen(
-                    comment_bounds,
-                    page_bounds,
-                    *page_rect,
-                    self.layout.rotation(page_idx),
-                );
-                if viewport_rect.intersects(&screen_rect) {
-                    result.push((comment_idx, screen_rect));
+                let Some(comment_bounds) = comment.bounds else {
+                    continue;
+                };
+                let comment_bounds: Rect<f32> = comment_bounds.into();
+                // For quad-point annotations hit-test each highlighted span
+                // individually, otherwise the union rect would also trigger on
+                // the whitespace between the marked lines.
+                let pdf_rects: Vec<Rect<f32>> = if comment.quads.is_empty() {
+                    vec![comment_bounds]
+                } else {
+                    comment.quads.iter().map(|quad| Rect::from(*quad)).collect()
+                };
+                let screen_rects: Vec<Rect<f32>> = pdf_rects
+                    .iter()
+                    .map(|pdf_rect| {
+                        pdf_rect_to_screen(
+                            *pdf_rect,
+                            page_bounds,
+                            *page_rect,
+                            self.layout.rotation(page_idx),
+                        )
+                    })
+                    .collect();
+                if screen_rects
+                    .iter()
+                    .any(|screen_rect| viewport_rect.intersects(screen_rect))
+                {
+                    result.push((comment_idx, screen_rects));
                 }
             }
         }
@@ -1962,7 +2264,7 @@ impl PdfViewer {
         let visible_comments = self.visible_comments(viewport);
         self.hovered_comment = visible_comments
             .iter()
-            .find(|(_, rect)| rect.contains(local_mouse))
+            .find(|(_, rects)| rects.iter().any(|rect| rect.contains(local_mouse)))
             .map(|(comment_idx, _)| *comment_idx);
     }
 
@@ -2778,6 +3080,86 @@ mod tests {
     }
 
     #[test]
+    fn test_clicking_comment_popup_does_not_dismiss_it() -> Result<()> {
+        let mut viewer = PdfViewer::from_path(PathBuf::from("assets/links_commented.pdf"))?;
+        viewer.active_comment = Some(0);
+        let _ = viewer.update(PdfMessage::CommentPopupHovered(true));
+        let _ = viewer.update(PdfMessage::MouseAction(MouseAction::Selection, false));
+
+        assert_eq!(viewer.active_comment, Some(0));
+        assert!(matches!(viewer.mouse_interaction, MouseInteraction::None));
+        Ok(())
+    }
+
+    #[test]
+    fn test_replies_preserve_nested_parent_relationships() {
+        let annotation =
+            |object_id, in_reply_to, annotation_type, content: &str| AnnotationCommentData {
+                page_idx: 0,
+                bounds: Some(mupdf::Rect::new(0.0, 0.0, 10.0, 10.0)),
+                content: Some(content.to_string()),
+                author: None,
+                annotation_type,
+                object_id: Some(object_id),
+                in_reply_to,
+                quads: Vec::new(),
+            };
+        let comments = build_comments(vec![
+            annotation(20, None, PdfAnnotationType::Ink, "original ink note"),
+            annotation(21, Some(20), PdfAnnotationType::Text, "first reply"),
+            annotation(22, Some(21), PdfAnnotationType::Text, "nested reply"),
+            annotation(23, Some(20), PdfAnnotationType::Text, "sibling reply"),
+        ]);
+
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].content.as_deref(), Some("original ink note"));
+        assert_eq!(comments[0].replies.len(), 2);
+        assert_eq!(
+            comments[0].replies[0].content.as_deref(),
+            Some("first reply")
+        );
+        assert_eq!(comments[0].replies[0].replies.len(), 1);
+        assert_eq!(
+            comments[0].replies[0].replies[0].content.as_deref(),
+            Some("nested reply")
+        );
+        assert_eq!(
+            comments[0].replies[1].content.as_deref(),
+            Some("sibling reply")
+        );
+    }
+
+    #[test]
+    fn test_orphaned_and_cyclic_replies_are_preserved() {
+        let annotation = |object_id, in_reply_to, content: &str| AnnotationCommentData {
+            page_idx: 0,
+            bounds: Some(mupdf::Rect::new(0.0, 0.0, 10.0, 10.0)),
+            content: Some(content.to_string()),
+            author: None,
+            annotation_type: PdfAnnotationType::Text,
+            object_id: Some(object_id),
+            in_reply_to,
+            quads: Vec::new(),
+        };
+        let comments = build_comments(vec![
+            annotation(30, None, "standalone"),
+            annotation(31, Some(999), "orphan"),
+            annotation(32, Some(33), "cycle root"),
+            annotation(33, Some(32), "cycle reply"),
+        ]);
+
+        assert_eq!(comments.len(), 3);
+        assert_eq!(comments[0].content.as_deref(), Some("standalone"));
+        assert_eq!(comments[1].content.as_deref(), Some("orphan"));
+        assert_eq!(comments[2].content.as_deref(), Some("cycle root"));
+        assert_eq!(comments[2].replies.len(), 1);
+        assert_eq!(
+            comments[2].replies[0].content.as_deref(),
+            Some("cycle reply")
+        );
+    }
+
+    #[test]
     fn test_comment_extraction_from_commented_pdf() -> Result<()> {
         let viewer = PdfViewer::from_path(PathBuf::from("assets/links_commented.pdf"))?;
         assert!(
@@ -2786,11 +3168,16 @@ mod tests {
         );
         for comment in &viewer.comments {
             assert!(
-                !comment.content.is_empty(),
+                comment
+                    .content
+                    .as_deref()
+                    .is_some_and(|content| !content.is_empty()),
                 "comment content should not be empty"
             );
             assert!(
-                comment.bounds.x1 > comment.bounds.x0 && comment.bounds.y1 > comment.bounds.y0,
+                comment
+                    .bounds
+                    .is_some_and(|bounds| { bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0 }),
                 "comment bounds should be valid"
             );
         }

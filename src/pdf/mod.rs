@@ -231,6 +231,12 @@ pub enum PdfMessage {
     CloseComment,
     #[strum(disabled)]
     #[serde(skip)]
+    CommentPopupHovered(bool),
+    #[strum(disabled)]
+    #[serde(skip)]
+    ToggleCommentCollapse(usize),
+    #[strum(disabled)]
+    #[serde(skip)]
     SearchResultsReady(Vec<SearchMatch>, u64),
     #[default]
     None,
