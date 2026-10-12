@@ -2485,7 +2485,7 @@ pub fn view_comment_node<'a>(
     let has_replies = !comment.replies.is_empty();
     let is_collapsed = collapsed_comments.contains(&comment.id);
     let author = comment.author.as_deref().unwrap_or("Unknown author");
-    let reply_count: iced::Element<'_, PdfMessage> = if has_replies {
+    let reply_count: iced::Element<'_, PdfMessage> = (if has_replies {
         widget::button(
             widget::text(format!(
                 "{} {} replies",
@@ -2501,13 +2501,24 @@ pub fn view_comment_node<'a>(
             })
             .size(14.0),
         )
-        .style(widget::button::text)
-        .padding(2.0)
-        .on_press(PdfMessage::ToggleCommentCollapse(comment.id))
-        .into()
     } else {
-        widget::space::horizontal().into()
-    };
+        widget::button(
+            widget::text(if is_collapsed { "[+]" } else { "[-]" })
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    widget::text::Style {
+                        color: Some(palette.primary.base.color),
+                        ..Default::default()
+                    }
+                })
+                .size(14.0),
+        )
+    })
+    .style(widget::button::text)
+    .padding(2.0)
+    .on_press(PdfMessage::ToggleCommentCollapse(comment.id))
+    .into();
+
     let header = widget::row![
         reply_count,
         widget::space::horizontal().width(iced::Length::Fill),
@@ -2528,7 +2539,10 @@ pub fn view_comment_node<'a>(
     .spacing(8);
 
     let mut body = widget::column![header].spacing(6.0);
-    if let Some(content) = comment.content.as_deref() {
+
+    if let Some(content) = comment.content.as_deref()
+        && !is_collapsed
+    {
         body = body.push(
             widget::text(content)
                 .size(14.0)
