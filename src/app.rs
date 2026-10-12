@@ -1,7 +1,4 @@
-use std::{
-    fs::canonicalize,
-    path::{PathBuf},
-};
+use std::{collections::HashSet, fs::canonicalize, path::PathBuf};
 
 use iced::{
     Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
@@ -14,9 +11,11 @@ use iced::{
     keyboard::Modifiers,
     theme::palette,
     widget::{
-        self, PaneGrid, button, container, pane_grid, scrollable,
-        scrollable::{Direction, Scrollbar},
-        stack, text,
+        self, PaneGrid, button,
+        canvas::path::lyon_path::Side,
+        container, pane_grid,
+        scrollable::{self, Direction, Scrollbar},
+        stack, svg, text,
     },
 };
 use rfd::AsyncFileDialog;
@@ -57,11 +56,107 @@ struct Pane {
     pane_type: PaneType,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, Default, PartialEq, Eq)]
 pub enum SidebarTab {
     #[default]
     Outline,
     Bookmark,
+    Comments,
+}
+
+impl SidebarTab {
+    const fn all() -> &'static [Self; 3] {
+        &[
+            SidebarTab::Outline,
+            SidebarTab::Bookmark,
+            SidebarTab::Comments,
+        ]
+    }
+
+    fn sidebar_text(&self) -> &'static str {
+        match self {
+            SidebarTab::Outline => "Document outline",
+            SidebarTab::Bookmark => "Bookmarks",
+            SidebarTab::Comments => "Comments",
+        }
+    }
+
+    fn sidebar_icon(&self) -> svg::Handle {
+        match self {
+            SidebarTab::Outline => icons::table_of_contents(),
+            SidebarTab::Bookmark => icons::bookmark(),
+            SidebarTab::Comments => icons::comment(),
+        }
+    }
+
+    pub fn view_expanded_button(&self) -> iced::Element<'_, AppMessage> {
+        button(
+            widget::row![
+                text(self.sidebar_text()).width(Length::Fill),
+                widget::svg(self.sidebar_icon())
+                    .width(18.0)
+                    .height(18.0)
+                    .style(|theme: &Theme, _| {
+                        let palette = theme.extended_palette();
+                        widget::svg::Style {
+                            color: Some(palette.primary.base.text),
+                        }
+                    })
+            ]
+            .align_y(alignment::Vertical::Center),
+        )
+        .width(Length::Fill)
+        .height(30.0)
+        .padding(6.0)
+        .style(|theme: &Theme, _status| {
+            let palette = theme.extended_palette();
+            button::Style {
+                background: Some(palette.primary.base.color.into()),
+                text_color: palette.primary.base.text,
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        })
+        .on_press(AppMessage::SetSidebar(*self))
+        .into()
+    }
+
+    pub fn view_collapsed_button(&self) -> iced::Element<'_, AppMessage> {
+        button(
+            widget::svg(self.sidebar_icon())
+                .width(18.0)
+                .height(18.0)
+                .style(|theme: &Theme, _| {
+                    let palette = theme.extended_palette();
+                    widget::svg::Style {
+                        color: Some(palette.primary.base.text),
+                    }
+                }),
+        )
+        .width(Length::Shrink)
+        .height(30.0)
+        .padding(6.0)
+        .style(|theme: &Theme, status| {
+            let palette = theme.extended_palette();
+            widget::button::Style {
+                background: match status {
+                    widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
+                    widget::button::Status::Pressed => Some(palette.primary.strong.color.into()),
+                    _ => Some(palette.primary.base.color.into()),
+                },
+                border: Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        })
+        .on_press(AppMessage::SetSidebar(*self))
+        .into()
+    }
 }
 
 #[derive(Debug)]
@@ -754,7 +849,7 @@ impl App {
             ));
         }
         command_bar = command_bar.spacing(4.0).height(Length::Shrink);
-        scrollable(command_bar)
+        widget::scrollable(command_bar)
             .direction(Direction::Horizontal(
                 Scrollbar::default().scroller_width(0.0).width(0.0),
             ))
@@ -918,157 +1013,18 @@ impl App {
     }
 
     fn view_sidebar(&self) -> Element<'_, AppMessage> {
-        let create_expanded_outline_button = || {
-            button(
-                widget::row![
-                    widget::svg(icons::table_of_contents())
-                        .width(18.0)
-                        .height(18.0)
-                        .style(|theme: &Theme, _| {
-                            let palette = theme.extended_palette();
-                            widget::svg::Style {
-                                color: Some(palette.primary.base.text),
-                            }
-                        }),
-                    widget::space::horizontal().width(8.0),
-                    text("Outline")
-                ]
-                .align_y(alignment::Vertical::Center),
-            )
-            .width(Length::Fill)
-            .height(30.0)
-            .padding(6.0)
-            .style(|theme: &Theme, _status| {
-                let palette = theme.extended_palette();
-                button::Style {
-                    background: Some(palette.primary.base.color.into()),
-                    text_color: palette.primary.base.text,
-                    border: Border {
-                        radius: Radius::from(4.0),
-                        ..Default::default()
-                    },
-                    ..Default::default()
+        let buttons: widget::Row<_> = SidebarTab::all()
+            .iter()
+            .map(|tab| {
+                if &self.sidebar_tab == tab {
+                    tab.view_expanded_button()
+                } else {
+                    tab.view_collapsed_button()
                 }
             })
-            .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
-        };
+            .collect();
 
-        let create_collapsed_outline_button = || {
-            button(
-                widget::svg(icons::table_of_contents())
-                    .width(18.0)
-                    .height(18.0)
-                    .style(|theme: &Theme, _| {
-                        let palette = theme.extended_palette();
-                        widget::svg::Style {
-                            color: Some(palette.primary.base.text),
-                        }
-                    }),
-            )
-            .width(Length::Shrink)
-            .height(30.0)
-            .padding(6.0)
-            .style(|theme: &Theme, status| {
-                let palette = theme.extended_palette();
-                widget::button::Style {
-                    background: match status {
-                        widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
-                        widget::button::Status::Pressed => {
-                            Some(palette.primary.strong.color.into())
-                        }
-                        _ => Some(palette.primary.base.color.into()),
-                    },
-                    border: Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            })
-            .on_press(AppMessage::SetSidebar(SidebarTab::Outline))
-        };
-
-        let create_expanded_bookmark_button = || {
-            button(
-                widget::row![
-                    text("Bookmarks").width(Length::Fill),
-                    widget::svg(icons::bookmark())
-                        .width(18.0)
-                        .height(18.0)
-                        .style(|theme: &Theme, _| {
-                            let palette = theme.extended_palette();
-                            widget::svg::Style {
-                                color: Some(palette.primary.base.text),
-                            }
-                        })
-                ]
-                .align_y(alignment::Vertical::Center),
-            )
-            .width(Length::Fill)
-            .height(30.0)
-            .padding(6.0)
-            .style(|theme: &Theme, _status| {
-                let palette = theme.extended_palette();
-                button::Style {
-                    background: Some(palette.primary.base.color.into()),
-                    text_color: palette.primary.base.text,
-                    border: Border {
-                        radius: Radius::from(4.0),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            })
-            .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
-        };
-
-        let create_collapsed_bookmark_button = || {
-            button(
-                widget::svg(icons::bookmark())
-                    .width(18.0)
-                    .height(18.0)
-                    .style(|theme: &Theme, _| {
-                        let palette = theme.extended_palette();
-                        widget::svg::Style {
-                            color: Some(palette.primary.base.text),
-                        }
-                    }),
-            )
-            .width(Length::Shrink)
-            .height(30.0)
-            .padding(6.0)
-            .style(|theme: &Theme, status| {
-                let palette = theme.extended_palette();
-                widget::button::Style {
-                    background: match status {
-                        widget::button::Status::Hovered => Some(palette.primary.weak.color.into()),
-                        widget::button::Status::Pressed => {
-                            Some(palette.primary.strong.color.into())
-                        }
-                        _ => Some(palette.primary.base.color.into()),
-                    },
-                    border: Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            })
-            .on_press(AppMessage::SetSidebar(SidebarTab::Bookmark))
-        };
-
-        let (outline_button, bookmark_button) = match self.sidebar_tab {
-            SidebarTab::Outline => (
-                create_expanded_outline_button(),
-                create_collapsed_bookmark_button(),
-            ),
-            SidebarTab::Bookmark => (
-                create_collapsed_outline_button(),
-                create_expanded_bookmark_button(),
-            ),
-        };
-
-        let sidebar_picker = widget::row![outline_button, bookmark_button]
+        let sidebar_picker = buttons
             .height(Length::Shrink)
             .spacing(4.0)
             .padding(Padding::default().top(4.0).bottom(4.0));
@@ -1076,6 +1032,7 @@ impl App {
         let contents: Element<'_, AppMessage> = match self.sidebar_tab {
             SidebarTab::Outline => self.view_outline(),
             SidebarTab::Bookmark => self.bookmark_store.view().map(AppMessage::BookmarkMessage),
+            SidebarTab::Comments => self.view_comment_list(),
         };
 
         widget::column![
@@ -1114,6 +1071,32 @@ impl App {
                 col = col.push(widget::scrollable(outline_content));
             }
         }
+        container(col).height(Length::Fill).into()
+    }
+
+    fn view_comment_list(&self) -> Element<'_, AppMessage> {
+        let mut col = widget::column![
+            text("Comments").size(18.0),
+            widget::space::vertical().height(8.0),
+        ];
+
+        let comments: widget::Column<_> = self
+            .pdfs
+            .get(self.pdf_idx)
+            .map(|pdf| {
+                pdf.comments
+                    .iter()
+                    .map(|comment| {
+                        crate::pdf::widget::view_comment_node(&pdf.collapsed_comments, comment)
+                            .map(AppMessage::PdfMessage)
+                    })
+                    .collect()
+            })
+            .unwrap_or(widget::column![])
+            .spacing(8);
+
+        col = col.push(widget::scrollable(comments));
+
         container(col).height(Length::Fill).into()
     }
 

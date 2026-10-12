@@ -47,17 +47,17 @@ struct PageLink {
 }
 
 #[derive(Debug, Clone)]
-struct Comment {
+pub struct Comment {
     id: usize,
     page_idx: usize,
     bounds: Option<mupdf::Rect>,
     /// Bounding rects of the individual quad points of quad-based markup
     /// annotations (highlights, strike-outs, ...); empty for rect-based ones.
     quads: Vec<mupdf::Rect>,
-    content: Option<String>,
-    author: Option<String>,
-    annotation_type: PdfAnnotationType,
-    replies: Vec<Comment>,
+    pub content: Option<String>,
+    pub author: Option<String>,
+    pub annotation_type: PdfAnnotationType,
+    pub replies: Vec<Comment>,
 }
 
 #[derive(Debug, Clone)]
@@ -933,9 +933,9 @@ pub struct PdfViewer {
     search_cancel: Arc<AtomicBool>,
 
     /// Comment-thread roots extracted from PDF annotations.
-    comments: Vec<Comment>,
+    pub comments: Vec<Comment>,
     /// IDs of comment nodes whose reply subtrees are collapsed.
-    collapsed_comments: HashSet<usize>,
+    pub collapsed_comments: HashSet<usize>,
     hovered_comment: Option<usize>,
     active_comment: Option<usize>,
     comment_popup_hovered: bool,
@@ -1825,82 +1825,7 @@ impl PdfViewer {
     }
 
     fn view_comment_node<'a>(&'a self, comment: &'a Comment) -> iced::Element<'a, PdfMessage> {
-        let has_replies = !comment.replies.is_empty();
-        let is_collapsed = self.collapsed_comments.contains(&comment.id);
-        let author = comment.author.as_deref().unwrap_or("Unknown author");
-        let reply_count: iced::Element<'_, PdfMessage> = if has_replies {
-            widget::button(
-                widget::text(format!(
-                    "{} {} replies",
-                    if is_collapsed { "[+]" } else { "[-]" },
-                    comment.replies.len(),
-                ))
-                .style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    widget::text::Style {
-                        color: Some(palette.primary.base.color),
-                        ..Default::default()
-                    }
-                })
-                .size(14.0),
-            )
-            .style(widget::button::text)
-            .padding(2.0)
-            .on_press(PdfMessage::ToggleCommentCollapse(comment.id))
-            .into()
-        } else {
-            widget::space::horizontal().into()
-        };
-        let header = widget::row![
-            reply_count,
-            widget::space::horizontal().width(iced::Length::Fill),
-            widget::text(author)
-                .font(iced::Font {
-                    style: iced::font::Style::Italic,
-                    ..Default::default()
-                })
-                .style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    widget::text::Style {
-                        color: Some(palette.primary.base.color),
-                        ..Default::default()
-                    }
-                }),
-        ]
-        .align_y(iced::alignment::Vertical::Center)
-        .spacing(8);
-
-        let mut body = widget::column![header].spacing(6.0);
-        if let Some(content) = comment.content.as_deref() {
-            body = body.push(
-                widget::text(content)
-                    .size(14.0)
-                    .wrapping(widget::text::Wrapping::Word),
-            );
-        }
-        if !is_collapsed {
-            for reply in &comment.replies {
-                body = body.push(self.view_comment_node(reply));
-            }
-        }
-
-        let line = widget::rule::vertical(2.0).style(|theme: &iced::Theme| {
-            let mut color = theme.extended_palette().primary.base.color;
-            color.a = 0.65;
-            widget::rule::Style {
-                color,
-                radius: iced::border::Radius::from(1.0),
-                fill_mode: widget::rule::FillMode::Full,
-                snap: true,
-            }
-        });
-        widget::row![
-            line,
-            widget::container(body).padding(iced::Padding::new(0.0).left(6.0)),
-        ]
-        .spacing(8.0)
-        .height(iced::Length::Shrink)
-        .into()
+        view_comment_node(&self.collapsed_comments, comment)
     }
 
     fn view_comment_popup(
@@ -2542,6 +2467,88 @@ impl PdfViewer {
             format!("({} / {})", current, total)
         }
     }
+}
+
+pub fn view_comment_node<'a>(
+    collapsed_comments: &'a HashSet<usize>,
+    comment: &'a Comment,
+) -> iced::Element<'a, PdfMessage> {
+    let has_replies = !comment.replies.is_empty();
+    let is_collapsed = collapsed_comments.contains(&comment.id);
+    let author = comment.author.as_deref().unwrap_or("Unknown author");
+    let reply_count: iced::Element<'_, PdfMessage> = if has_replies {
+        widget::button(
+            widget::text(format!(
+                "{} {} replies",
+                if is_collapsed { "[+]" } else { "[-]" },
+                comment.replies.len(),
+            ))
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                widget::text::Style {
+                    color: Some(palette.primary.base.color),
+                    ..Default::default()
+                }
+            })
+            .size(14.0),
+        )
+        .style(widget::button::text)
+        .padding(2.0)
+        .on_press(PdfMessage::ToggleCommentCollapse(comment.id))
+        .into()
+    } else {
+        widget::space::horizontal().into()
+    };
+    let header = widget::row![
+        reply_count,
+        widget::space::horizontal().width(iced::Length::Fill),
+        widget::text(author)
+            .font(iced::Font {
+                style: iced::font::Style::Italic,
+                ..Default::default()
+            })
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                widget::text::Style {
+                    color: Some(palette.primary.base.color),
+                    ..Default::default()
+                }
+            }),
+    ]
+    .align_y(iced::alignment::Vertical::Center)
+    .spacing(8);
+
+    let mut body = widget::column![header].spacing(6.0);
+    if let Some(content) = comment.content.as_deref() {
+        body = body.push(
+            widget::text(content)
+                .size(14.0)
+                .wrapping(widget::text::Wrapping::Word),
+        );
+    }
+    if !is_collapsed {
+        for reply in &comment.replies {
+            body = body.push(view_comment_node(collapsed_comments, reply));
+        }
+    }
+
+    let line = widget::rule::vertical(2.0).style(|theme: &iced::Theme| {
+        let mut color = theme.extended_palette().primary.base.color;
+        color.a = 0.65;
+        widget::rule::Style {
+            color,
+            radius: iced::border::Radius::from(1.0),
+            fill_mode: widget::rule::FillMode::Full,
+            snap: true,
+        }
+    });
+    widget::row![
+        line,
+        widget::container(body).padding(iced::Padding::new(0.0).left(6.0)),
+    ]
+    .spacing(8.0)
+    .height(iced::Length::Shrink)
+    .into()
 }
 
 fn generate_gradient_cache(cache: &mut [[u8; 4]; 256], bg_color: &[u8; 4]) {
