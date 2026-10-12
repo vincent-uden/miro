@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs::canonicalize, path::PathBuf};
+use std::{fs::canonicalize, path::PathBuf};
 
 use iced::{
     Background, Border, Element, Event, Length, Padding, Shadow, Subscription, Theme,
@@ -11,10 +11,8 @@ use iced::{
     keyboard::Modifiers,
     theme::palette,
     widget::{
-        self, PaneGrid, button,
-        canvas::path::lyon_path::Side,
-        container, pane_grid,
-        scrollable::{self, Direction, Scrollbar},
+        self, PaneGrid, button, container, pane_grid,
+        scrollable::{Direction, Scrollbar},
         stack, svg, text,
     },
 };
@@ -141,6 +139,7 @@ pub struct App {
     pub draw_page_borders: bool,
     search_open: bool,
     search_hover: bool,
+    mouse_pressed_in_viewer: Option<MouseButton>,
     bookmark_store: BookmarkStore,
     recent_files: RecentFiles,
     pane_state: pane_grid::State<Pane>,
@@ -257,6 +256,7 @@ impl App {
             draw_page_borders: CONFIG.read().unwrap().page_borders,
             search_open: false,
             search_hover: false,
+            mouse_pressed_in_viewer: None,
             bookmark_store,
             recent_files,
             pane_state: ps,
@@ -501,25 +501,40 @@ impl App {
                 if self.search_open && self.search_hover {
                     iced::Task::none()
                 } else if !self.pdfs.is_empty()
-                    && let Some(action) = self.get_mouse_action(button)
+                    && self.pdfs[self.pdf_idx].is_pointer_over_viewport()
                 {
-                    self.pdfs[self.pdf_idx]
-                        .update(PdfMessage::MouseAction(action, true))
-                        .map(AppMessage::PdfMessage)
+                    self.mouse_pressed_in_viewer = Some(button);
+                    if let Some(action) = self.get_mouse_action(button) {
+                        self.pdfs[self.pdf_idx]
+                            .update(PdfMessage::MouseAction(action, true))
+                            .map(AppMessage::PdfMessage)
+                    } else {
+                        iced::Task::none()
+                    }
                 } else {
                     iced::Task::none()
                 }
             }
             AppMessage::MouseButtonUp(button) => {
+                let started_in_viewer = self.mouse_pressed_in_viewer == Some(button);
+                if started_in_viewer {
+                    self.mouse_pressed_in_viewer = None;
+                }
+
                 if self.search_open && self.search_hover {
+                    if started_in_viewer && !self.pdfs.is_empty() {
+                        self.pdfs[self.pdf_idx].cancel_mouse_interaction();
+                    }
                     iced::Task::none()
                 } else if !self.pdfs.is_empty()
+                    && started_in_viewer
                     && button == MouseButton::Left
                     && CONFIG.read().unwrap().binding_mode == BindingMode::Overview
                     && self.pdfs[self.pdf_idx].is_pointer_over_viewport()
                 {
                     iced::Task::done(AppMessage::OverviewSelect)
                 } else if !self.pdfs.is_empty()
+                    && started_in_viewer
                     && let Some(action) = self.get_mouse_action(button)
                 {
                     self.pdfs[self.pdf_idx]
@@ -606,11 +621,7 @@ impl App {
             }
             AppMessage::CloseActiveTab => iced::Task::done(AppMessage::CloseTab(self.pdf_idx)),
             AppMessage::Scroll(delta) => {
-                if self.pdfs.is_empty() {
-                    iced::Task::none()
-                } else if CONFIG.read().unwrap().binding_mode == BindingMode::Overview
-                    && !self.pdfs[self.pdf_idx].is_pointer_over_viewport()
-                {
+                if self.pdfs.is_empty() || !self.pdfs[self.pdf_idx].is_pointer_over_viewport() {
                     iced::Task::none()
                 } else if CONFIG.read().unwrap().binding_mode == BindingMode::Overview
                     && !self.ctrl_pressed
@@ -1118,6 +1129,8 @@ impl App {
                     Some(AppMessage::MouseMoved(position.into()))
                 }
                 iced::mouse::Event::ButtonPressed(button) => {
+                    // Global mouse bindings still need presses captured by layout widgets;
+                    // the app update hit-tests against the PDF viewport before acting.
                     iced_to_config_mouse_button(button).map(AppMessage::MouseButtonDown)
                 }
                 iced::mouse::Event::ButtonReleased(button) => {

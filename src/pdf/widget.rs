@@ -1217,6 +1217,7 @@ impl PdfViewer {
                 if self.layout.layout != PageLayoutKind::Overview {
                     return iced::Task::none();
                 }
+                self.cancel_mouse_interaction();
                 self.layout.layout = self.layout_before_overview;
                 self.overview_scroll_y.set(0.0);
                 self.overview_scroll_remainder = 0.0;
@@ -1322,10 +1323,11 @@ impl PdfViewer {
                 self.update_hover_state();
             }
             PdfMessage::MouseAction(mouse_action, pressed) => {
+                if pressed && !self.is_pointer_over_viewport() {
+                    return out;
+                }
                 if self.comment_popup_hovered {
-                    self.mouse_interaction = MouseInteraction::None;
-                    self.selection_start = None;
-                    self.selection_end = None;
+                    self.cancel_mouse_interaction();
                 } else if pressed {
                     match mouse_action {
                         MouseAction::Panning => {
@@ -1381,7 +1383,8 @@ impl PdfViewer {
                     }
                 } else {
                     match self.mouse_interaction {
-                        MouseInteraction::None | MouseInteraction::Panning => {
+                        MouseInteraction::None => {}
+                        MouseInteraction::Panning => {
                             let dist_sq = (self.mouse_pos - self.mouse_pressed_at).norm_squared();
                             if dist_sq < MIN_CLICK_DISTANCE * MIN_CLICK_DISTANCE {
                                 if let Some((page_idx, link_idx)) = self.hovered_link {
@@ -2314,6 +2317,12 @@ impl PdfViewer {
             && local_mouse.y >= 0.0
             && local_mouse.x < viewport.width
             && local_mouse.y < viewport.height
+    }
+
+    pub fn cancel_mouse_interaction(&mut self) {
+        self.mouse_interaction = MouseInteraction::None;
+        self.selection_start = None;
+        self.selection_end = None;
     }
 
     pub fn current_page(&self) -> usize {
