@@ -354,26 +354,29 @@ fn overview_render_scale(
 /// Decide whether a page can be rendered once in full or must be scissored to
 /// the visible intersection, and compute the corresponding render parameters.
 ///
-/// `rect_ss` is the page bounding box in screen coordinates (relative to the
-/// widget origin) and `page_bounds` is the page size in PDF coordinates.
+/// `rect_ss` is the page bounding box in logical screen coordinates (relative to
+/// the widget origin), `page_bounds` is the page size in PDF coordinates, and
+/// `raster_scale` converts logical screen units to backing-pixel units.
 fn plan_tile(
     page_idx: usize,
     page_bounds: Rect<f32>,
     rotation: PageRotation,
     rect_ss: Rect<f32>,
     effective_scale: f32,
+    raster_scale: f32,
     viewport_rect: Rect<f32>,
 ) -> TilePlan {
+    let raster_effective_scale = effective_scale * raster_scale;
     let fully_visible = rect_ss.x0.x >= 0.0
         && rect_ss.x1.x <= viewport_rect.x1.x
         && rect_ss.x0.y >= 0.0
         && rect_ss.x1.y <= viewport_rect.x1.y;
 
     if fully_visible {
-        let key = RenderKey::Full(page_idx, effective_scale.to_bits(), rotation);
-        let width = rect_ss.width().ceil().max(1.0) as i32;
-        let height = rect_ss.height().ceil().max(1.0) as i32;
-        let matrix = page_matrix(page_bounds, rotation, effective_scale, 0.0, 0.0);
+        let key = RenderKey::Full(page_idx, raster_effective_scale.to_bits(), rotation);
+        let width = (rect_ss.width() * raster_scale).ceil().max(1.0) as i32;
+        let height = (rect_ss.height() * raster_scale).ceil().max(1.0) as i32;
+        let matrix = page_matrix(page_bounds, rotation, raster_effective_scale, 0.0, 0.0);
         // Scissor must be in device coordinates, i.e. the pixmap size. The
         // unscaled page bounds would cull the bottom/right once the page is
         // scaled up to fit the viewport (e.g. after ZoomFit).
@@ -388,15 +391,15 @@ fn plan_tile(
         }
     } else {
         let vis = rect_ss.intersect(&viewport_rect);
-        let width = vis.width().ceil().max(1.0) as i32;
-        let height = vis.height().ceil().max(1.0) as i32;
+        let width = (vis.width() * raster_scale).ceil().max(1.0) as i32;
+        let height = (vis.height() * raster_scale).ceil().max(1.0) as i32;
 
-        let render_offset_x = rect_ss.x0.x - vis.x0.x;
-        let render_offset_y = rect_ss.x0.y - vis.x0.y;
+        let render_offset_x = (rect_ss.x0.x - vis.x0.x) * raster_scale;
+        let render_offset_y = (rect_ss.x0.y - vis.x0.y) * raster_scale;
 
         let key = RenderKey::Partial(
             page_idx,
-            effective_scale.to_bits(),
+            raster_effective_scale.to_bits(),
             width,
             height,
             render_offset_x.to_bits(),
@@ -407,7 +410,7 @@ fn plan_tile(
         let matrix = page_matrix(
             page_bounds,
             rotation,
-            effective_scale,
+            raster_effective_scale,
             render_offset_x,
             render_offset_y,
         );
@@ -1660,11 +1663,15 @@ impl PdfViewer {
                     // rect_ss = A pages bounding box in screen coordinates (relative to the widgets origin)
                     let page_bounds = self.page_bounds[i];
 
-                    let effective_scale = match self.layout.layout {
-                        PageLayoutKind::Overview => {
-                            overview_render_scale(page_bounds, self.layout.rotation(i), rect_ss)
-                        }
-                        _ => self.scale * self.fractional_scaling,
+                    let (effective_scale, raster_scale) = match self.layout.layout {
+                        PageLayoutKind::Overview => (
+                            overview_render_scale(page_bounds, self.layout.rotation(i), rect_ss),
+                            1.0,
+                        ),
+                        _ => (
+                            self.scale * self.fractional_scaling,
+                            self.fractional_scaling,
+                        ),
                     };
 
                     let TilePlan {
@@ -1680,6 +1687,7 @@ impl PdfViewer {
                         self.layout.rotation(i),
                         rect_ss,
                         effective_scale,
+                        raster_scale,
                         viewport_rect,
                     );
 
@@ -2674,6 +2682,7 @@ mod tests {
             PageRotation::Deg0,
             rect_ss,
             effective_scale,
+            1.0,
             viewport_rect,
         );
 
@@ -2704,6 +2713,7 @@ mod tests {
             PageRotation::Deg0,
             rect_ss,
             effective_scale,
+            1.0,
             viewport_rect,
         );
 

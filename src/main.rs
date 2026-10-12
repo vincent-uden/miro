@@ -33,7 +33,6 @@ mod recent_files;
 mod rpc;
 mod watch;
 
-// of the screen
 // TODO: Figure out why hovering over a menu disables all other inputs/buttons in the program (write
 // my own menu??)
 
