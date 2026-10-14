@@ -5,7 +5,7 @@
   rustPlatform,
   wayland,
   libGL,
-  xorg,
+  libx11,
   libxkbcommon,
   fontconfig,
   pkg-config,
@@ -25,22 +25,36 @@
     ]
     ++ lib.optionals stdenv.hostPlatform.isLinux [
       wayland
-      xorg.libX11
+      libx11
     ];
   libsPath = lib.makeLibraryPath libs;
 
+  src = lib.fileset.toSource {
+    root = unfilteredRoot;
+
+    fileset = lib.fileset.unions [
+      # Default files from crane (Rust and cargo files)
+      (craneLib.fileset.commonCargoSources unfilteredRoot)
+
+      # Example of a folder for images, icons, etc
+      (lib.fileset.maybeMissing ../assets)
+    ];
+  };
+
+  cargoVendorDir = craneLib.vendorCargoDeps {
+    inherit src;
+
+    overrideVendorCargoPackage = package: drv:
+      if package.name == "mupdf-sys" && package.version == "0.8.0"
+      then
+        drv.overrideAttrs (old: {
+          patches = (old.patches or []) ++ [./patches/mupdf-sys-writable-copied-sources.patch];
+        })
+      else drv;
+  };
+
   commonArgs = {
-    src = lib.fileset.toSource {
-      root = unfilteredRoot;
-
-      fileset = lib.fileset.unions [
-        # Default files from crane (Rust and cargo files)
-        (craneLib.fileset.commonCargoSources unfilteredRoot)
-
-        # Example of a folder for images, icons, etc
-        (lib.fileset.maybeMissing ../assets)
-      ];
-    };
+    inherit src cargoVendorDir;
 
     strictDeps = true;
 
