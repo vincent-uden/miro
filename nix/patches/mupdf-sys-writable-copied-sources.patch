@@ -1,0 +1,23 @@
+--- a/build.rs
++++ b/build.rs
+@@ -115,6 +115,20 @@
+         if file_type.is_file() || fs::metadata(&src_path)?.is_file() {
+             fs::copy(&src_path, &dst_path)
+                 .map_err(|e| format!("Couldn't copy {src_path:?} to {dst_path:?}: {e}"))?;
++
++            // Cargo sources in immutable stores are read-only, and `fs::copy`
++            // preserves those permissions. MuPDF's build patches its copied
++            // sources, so ensure the build-tree copy is writable by its owner.
++            #[cfg(unix)]
++            {
++                use std::os::unix::fs::PermissionsExt;
++
++                let permissions = fs::metadata(&dst_path)?.permissions();
++                fs::set_permissions(
++                    &dst_path,
++                    fs::Permissions::from_mode(permissions.mode() | 0o200),
++                )?;
++            }
+         } else {
+             copy_recursive(&src_path, &dst_path, ignore)?;
+         }
