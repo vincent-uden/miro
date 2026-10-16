@@ -130,6 +130,7 @@ impl SidebarTab {
 
 #[derive(Debug)]
 pub struct App {
+    #[cfg(target_os = "macos")]
     mac_menu: Option<platform_specific::macos::Menu>,
     pub pdfs: Vec<PdfViewer>,
     pub pdf_idx: usize,
@@ -246,6 +247,7 @@ impl App {
         }
 
         Self {
+            #[cfg(target_os = "macos")]
             mac_menu: None,
             pdfs: vec![],
             pdf_idx: 0,
@@ -326,15 +328,19 @@ impl App {
         let _span = tracy_client::span!("App update");
         match message {
             AppMessage::InitializeMacMenu => {
-                let recent_files = self.recent_files.get_recent();
-                let m = platform_specific::macos::Menu::new(recent_files);
-                m.init();
-                self.mac_menu = Some(m);
+                #[cfg(target_os = "macos")]
+                {
+                    let recent_files = self.recent_files.get_recent();
+                    let m = platform_specific::macos::Menu::new(recent_files);
+                    m.init();
+                    self.mac_menu = Some(m);
+                }
                 iced::Task::none()
             }
             AppMessage::OpenFile(path_buf) => {
                 let path_buf = canonicalize(path_buf).unwrap();
                 self.recent_files.add_recent(path_buf.clone());
+                #[cfg(target_os = "macos")]
                 if let Some(m) = &self.mac_menu {
                     let recent_files = self.recent_files.get_recent();
                     m.update_recent_files(recent_files);
@@ -970,7 +976,11 @@ impl App {
                                         .into(),
                                 );
                             }
-                            if self.mac_menu.is_none() {
+                            #[cfg(target_os = "macos")]
+                            let has_native_menu = self.mac_menu.is_some();
+                            #[cfg(not(target_os = "macos"))]
+                            let has_native_menu = false;
+                            if !has_native_menu {
                                 let menu_bar = platform_specific::iced_aw::create_menu_bar(
                                     self.pdf_idx,
                                     self.recent_files.get_recent(),
