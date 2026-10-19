@@ -1,9 +1,6 @@
 name: CI
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
   pull_request:
 
@@ -14,69 +11,6 @@ concurrency:
 jobs:
   test:
     name: Test Suite
-    if: github.event_name != 'pull_request'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022]
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-          fetch-depth: 500
-      - uses: dtolnay/rust-toolchain@stable
-      - run: |
-          sudo apt-get update && \
-            sudo apt-get -y install libfontconfig1-dev libglib2.0-dev
-        if: matrix.os == 'ubuntu-latest'
-      - name: Install LLVM
-        if: matrix.os == 'windows-2022'
-        run: choco install -y llvm
-      - name: Setup msbuild
-        if: matrix.os == 'windows-2022'
-        uses: microsoft/setup-msbuild@v1.3.1
-      - run: cargo build --release
-        timeout-minutes: 20
-        if: matrix.os == 'windows-2022'
-        env:
-          LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
-      - run: cargo build --release
-        if: matrix.os != 'windows-2022'
-
-      - name: Create Linux Release
-        if: |
-          github.event_name == 'push' &&
-          startsWith(github.ref, 'refs/tags/') &&
-          matrix.os == 'ubuntu-latest' &&
-          success()
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            target/release/miro-pdf
-          name: Miro ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Windows Release
-        if: |
-          github.event_name == 'push' &&
-          startsWith(github.ref, 'refs/tags/') &&
-          matrix.os == 'windows-2022' &&
-          success()
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            target/release/miro-pdf.exe
-          name: Miro ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  pr_build:
-    name: Build PR
-    if: github.event_name == 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -85,7 +19,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
           submodules: "recursive"
@@ -108,16 +42,3 @@ jobs:
           LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
       - run: cargo build --release
         if: matrix.os != 'windows-2022'
-
-  trigger_publish:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - run: gh workflow run publish.yml
-        env:
-          GH_TOKEN: ${{ github.token }}

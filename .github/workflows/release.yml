@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+          submodules: "recursive"
+          fetch-depth: 500
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          sudo apt-get update && \
+            sudo apt-get -y install libfontconfig1-dev libglib2.0-dev
+        if: matrix.os == 'ubuntu-latest'
+      - name: Install LLVM
+        if: matrix.os == 'windows-2022'
+        run: choco install -y llvm
+      - name: Setup msbuild
+        if: matrix.os == 'windows-2022'
+        uses: microsoft/setup-msbuild@v1.3.1
+      - run: cargo build --release
+        timeout-minutes: 20
+        if: matrix.os == 'windows-2022'
+        env:
+          LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
+      - run: cargo build --release
+        if: matrix.os != 'windows-2022'
+
+      - name: Create Linux Release
+        if: matrix.os == 'ubuntu-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/miro-pdf
+          name: Miro ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Windows Release
+        if: matrix.os == 'windows-2022'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/miro-pdf.exe
+          name: Miro ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trigger_publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - run: gh workflow run publish.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
