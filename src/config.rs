@@ -235,6 +235,8 @@ pub enum BindableMessage {
     MoveRight,
     NextPage,
     PreviousPage,
+    FirstPage,
+    LastPage,
     PageUp,
     PageDown,
     HalfPageUp,
@@ -316,6 +318,8 @@ impl From<BindableMessage> for AppMessage {
             BindableMessage::MoveRight => AppMessage::Move(MoveDirection::Right),
             BindableMessage::NextPage => AppMessage::PdfMessage(PdfMessage::NextPage),
             BindableMessage::PreviousPage => AppMessage::PdfMessage(PdfMessage::PreviousPage),
+            BindableMessage::FirstPage => AppMessage::PdfMessage(PdfMessage::FirstPage),
+            BindableMessage::LastPage => AppMessage::PdfMessage(PdfMessage::LastPage),
             BindableMessage::ZoomHome => AppMessage::PdfMessage(PdfMessage::ZoomHome),
             BindableMessage::ZoomFit => AppMessage::PdfMessage(PdfMessage::ZoomFit),
             BindableMessage::ZoomIn => AppMessage::PdfMessage(PdfMessage::ZoomIn),
@@ -774,6 +778,16 @@ impl Default for Config {
                     KeyInput::from_str("Ctrl+d").unwrap(),
                     BindableMessage::HalfPageDown,
                 ),
+                Keybind::new(KeySeq::from_str("g g").unwrap(), BindableMessage::FirstPage),
+                Keybind::new(KeyInput::from_str("G").unwrap(), BindableMessage::LastPage),
+                Keybind::new(
+                    KeyInput::from_str("Home").unwrap(),
+                    BindableMessage::FirstPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("End").unwrap(),
+                    BindableMessage::LastPage,
+                ),
                 Keybind::new(
                     KeyInput::from_str("Alt+Left").unwrap(),
                     BindableMessage::JumpBack,
@@ -935,6 +949,14 @@ impl Default for Config {
                 Keybind::new(
                     KeyInput::from_str("Right").unwrap(),
                     BindableMessage::NextPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("Home").unwrap(),
+                    BindableMessage::FirstPage,
+                ),
+                Keybind::new(
+                    KeyInput::from_str("End").unwrap(),
+                    BindableMessage::LastPage,
                 ),
                 Keybind::new(
                     KeyInput::from_str("Ctrl+r").unwrap(),

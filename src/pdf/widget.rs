@@ -1171,6 +1171,12 @@ impl PdfViewer {
 
                 self.translation.y += (prev.center().y - current.center().y) as f64;
             }
+            PdfMessage::FirstPage => {
+                return self.update(PdfMessage::SetPage(0));
+            }
+            PdfMessage::LastPage => {
+                return self.update(PdfMessage::SetPage(page_count.saturating_sub(1)));
+            }
             PdfMessage::SetPage(idx) => {
                 if idx < page_count
                     && let Ok(translation) = self.layout.translation_for_page(
@@ -2285,6 +2291,7 @@ impl PdfViewer {
                     false
                 }
             }
+            PdfMessage::FirstPage | PdfMessage::LastPage => true,
             _ => false,
         }
     }
@@ -3231,6 +3238,25 @@ mod tests {
             viewer.comments.is_empty(),
             "links.pdf should have no comments"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn first_and_last_page_jump_to_the_ends_of_the_document() -> Result<()> {
+        let mut viewer = PdfViewer::from_path(PathBuf::from("assets/multiple-page-layouts.pdf"))?;
+        viewer.set_viewport_for_test(iced::Size::new(800.0, 600.0));
+        viewer.layout = PageLayout::new(PageLayoutKind::SinglePage);
+        let last_page = viewer.page_count()? as usize - 1;
+        assert!(
+            last_page > 1,
+            "the test needs a document with several pages"
+        );
+
+        let _ = viewer.update(PdfMessage::LastPage);
+        assert_eq!(viewer.current_page(), last_page);
+
+        let _ = viewer.update(PdfMessage::FirstPage);
+        assert_eq!(viewer.current_page(), 0);
         Ok(())
     }
 }

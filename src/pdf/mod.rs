@@ -187,6 +187,8 @@ pub fn merge_search_rects(char_rects: &[(usize, Rect<f32>)]) -> Vec<(usize, Rect
 pub enum PdfMessage {
     NextPage,
     PreviousPage,
+    FirstPage,
+    LastPage,
     PageUp,
     PageDown,
     HalfPageUp,
