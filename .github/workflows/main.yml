@@ -45,10 +45,10 @@ jobs:
       - name: Setup msbuild
         if: matrix.os == 'windows-2022'
         uses: microsoft/setup-msbuild@v1.3.1
-      - run: cargo build --release
+      - run: cargo build --release --target ${{ matrix.target }}
         timeout-minutes: 20
         if: matrix.os == 'windows-2022'
         env:
           LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
-      - run: cargo build --release
+      - run: cargo build --release --target ${{ matrix.target }}
         if: matrix.os != 'windows-2022'
