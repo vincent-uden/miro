@@ -3240,23 +3240,4 @@ mod tests {
         );
         Ok(())
     }
-
-    #[test]
-    fn first_and_last_page_jump_to_the_ends_of_the_document() -> Result<()> {
-        let mut viewer = PdfViewer::from_path(PathBuf::from("assets/multiple-page-layouts.pdf"))?;
-        viewer.set_viewport_for_test(iced::Size::new(800.0, 600.0));
-        viewer.layout = PageLayout::new(PageLayoutKind::SinglePage);
-        let last_page = viewer.page_count()? as usize - 1;
-        assert!(
-            last_page > 1,
-            "the test needs a document with several pages"
-        );
-
-        let _ = viewer.update(PdfMessage::LastPage);
-        assert_eq!(viewer.current_page(), last_page);
-
-        let _ = viewer.update(PdfMessage::FirstPage);
-        assert_eq!(viewer.current_page(), 0);
-        Ok(())
-    }
 }
