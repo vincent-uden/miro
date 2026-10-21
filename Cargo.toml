@@ -83,5 +83,5 @@ strip = false
 lto = false
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/miro-pdf{binary-ext}"
+pkg-url = "{ repo }/releases/download/v{ version }/miro-pdf-{ target }{ binary-ext}"
 pkg-fmt = "bin"
