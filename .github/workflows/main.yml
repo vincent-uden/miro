@@ -15,7 +15,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-2022]
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
     permissions:
       contents: read
     steps:
@@ -25,6 +33,8 @@ jobs:
           submodules: "recursive"
           fetch-depth: 500
       - uses: dtolnay/rust-toolchain@stable
+      - name: Add ${{ matrix.target }}
+        run: rustup target add ${{ matrix.target }}
       - run: |
           sudo apt-get update && \
             sudo apt-get -y install libfontconfig1-dev libglib2.0-dev
@@ -35,10 +45,10 @@ jobs:
       - name: Setup msbuild
         if: matrix.os == 'windows-2022'
         uses: microsoft/setup-msbuild@v1.3.1
-      - run: cargo build --release
+      - run: cargo build --release --target ${{ matrix.target }}
         timeout-minutes: 20
         if: matrix.os == 'windows-2022'
         env:
           LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
-      - run: cargo build --release
+      - run: cargo build --release --target ${{ matrix.target }}
         if: matrix.os != 'windows-2022'
